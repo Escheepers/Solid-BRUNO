@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Direction: Command Console (Dark)</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    background: #05070a;
+    font-family: Consolas, "SF Mono", "Cascadia Code", "Courier New", monospace;
+    color: #c8d0da;
+    padding: 28px 0 60px;
+  }
+  .rationale {
+    max-width: 1280px;
+    margin: 0 auto 18px;
+    padding: 0 4px;
+    font-size: 13px;
+    line-height: 1.5;
+    color: #b9c1cc;
+    font-family: -apple-system, "Segoe UI", Arial, sans-serif;
+  }
+  .rationale b { color: #fff; }
+  .frame {
+    width: 1280px;
+    margin: 0 auto;
+    background: #0a0e14;
+    border: 1px solid #1c232e;
+    box-shadow: 0 0 0 1px #000, 0 20px 60px rgba(0,0,0,0.7);
+  }
+  .titlebar {
+    height: 32px;
+    background: #0d1117;
+    border-bottom: 1px solid #1c232e;
+    display: flex;
+    align-items: center;
+    padding: 0 12px;
+    gap: 8px;
+  }
+  .dot { width: 9px; height: 9px; border-radius: 50%; }
+  .dot.r { background: #ff5f56; }
+  .dot.y { background: #ffbd2e; }
+  .dot.g { background: #27c93f; }
+  .addr {
+    flex: 1;
+    margin-left: 14px;
+    background: #05070a;
+    border: 1px solid #1c232e;
+    font-size: 11px;
+    color: #6b7686;
+    padding: 3px 10px;
+  }
+  .appbar {
+    height: 42px;
+    border-bottom: 1px solid #1c232e;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 18px;
+    background: #0a0e14;
+  }
+  .brand { font-weight: 700; font-size: 13px; color: #ffb454; letter-spacing: 0.5px; }
+  .brand span { color: #6b7686; }
+  .navlinks { display: flex; gap: 22px; font-size: 12px; }
+  .navlinks a { color: #6b7686; text-decoration: none; }
+  .navlinks a.active { color: #39ff88; }
+  .navlinks a.active::before { content: "> "; }
+  .user { font-size: 11.5px; color: #6b7686; }
+
+  .content { padding: 16px 18px 0; }
+  .cmdline {
+    font-size: 12px;
+    color: #6b7686;
+    margin-bottom: 12px;
+  }
+  .cmdline .prompt { color: #39ff88; }
+  .cmdline .cmd { color: #ffb454; }
+
+  .pagehead {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 12px;
+  }
+  .pagehead h1 {
+    font-size: 16px;
+    font-weight: 700;
+    color: #e6ebf1;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .pagehead .count { font-size: 12px; color: #6b7686; margin-left: 10px; text-transform: none; }
+  .btn-new {
+    background: #ffb454;
+    color: #0a0e14;
+    border: none;
+    padding: 7px 16px;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+  }
+
+  .filterbar {
+    display: flex;
+    gap: 18px;
+    padding: 10px 0;
+    border-top: 1px solid #1c232e;
+    border-bottom: 1px solid #1c232e;
+    margin-bottom: 0;
+    align-items: center;
+  }
+  .filterbar .field { display: flex; flex-direction: column; gap: 2px; }
+  .filterbar label { font-size: 9.5px; color: #6b7686; text-transform: uppercase; letter-spacing: 0.5px; }
+  .filterbar input, .filterbar select {
+    background: #05070a;
+    border: 1px solid #232b38;
+    color: #c8d0da;
+    font-size: 12px;
+    padding: 4px 8px;
+    font-family: inherit;
+    width: 160px;
+  }
+  .filterbar .search input { width: 220px; }
+  .filterbar .clear { margin-left: auto; color: #ff6e6e; font-size: 12px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+  thead th {
+    text-align: left;
+    padding: 7px 10px;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #6b7686;
+    border-bottom: 1px solid #ffb454;
+    font-weight: 700;
+  }
+  thead th.num { text-align: right; }
+  tbody td {
+    padding: 5px 10px;
+    border-bottom: 1px solid #151b24;
+    white-space: nowrap;
+    color: #c8d0da;
+  }
+  tbody td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  tbody td.veh { color: #e6ebf1; }
+  tbody tr:hover td { background: #0d1117; }
+  tbody tr.log-row td {
+    background: #1a0e0e;
+    color: #ff8a8a;
+    font-size: 11px;
+    padding: 4px 10px;
+    border-bottom: 1px solid #2a1414;
+  }
+  .anon { color: #6b7686; font-style: italic; }
+
+  .badge { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.3px; }
+  .badge .sq { width: 8px; height: 8px; }
+  .badge.active { color: #39ff88; }
+  .badge.active .sq { background: #39ff88; }
+  .badge.completed { color: #7c8798; }
+  .badge.completed .sq { background: #7c8798; }
+  .badge.cancelled { color: #ff5f56; }
+  .badge.cancelled .sq { background: #ff5f56; }
+
+  .actions a { color: #5ea6ff; text-decoration: none; font-size: 11px; margin-right: 12px; }
+  .actions a.disabled { color: #3a4150; }
+
+  .footerbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 9px 10px;
+    font-size: 11.5px;
+    color: #6b7686;
+    border-top: 1px solid #1c232e;
+  }
+  .pager span { padding: 2px 8px; border: 1px solid #232b38; margin-left: 4px; }
+  .pager span.cur { background: #ffb454; color: #0a0e14; border-color: #ffb454; font-weight: 700; }
+  .bottom-pad { height: 20px; }
+</style>
+</head>
+<body>
+
+<div class="rationale">
+  <b>Direction: "Command Console"</b> — Dark mode. Monospace end-to-end, sharp edges, and a terminal palette (amber accent, phosphor-green/red status) turn the bookings list into an operations console. Row separation is a single hairline; the flagged cancel attempt renders as an inserted system log line, reinforcing the "this is a machine you operate" feel.
+</div>
+
+<div class="frame">
+  <div class="titlebar">
+    <div class="dot r"></div><div class="dot y"></div><div class="dot g"></div>
+    <div class="addr">app.brunovehiclehire.internal/bookings</div>
+  </div>
+
+  <div class="appbar">
+    <div class="brand">BRUNO<span>_VEHICLE_HIRE</span></div>
+    <div class="navlinks">
+      <a class="active" href="#">bookings</a>
+      <a href="#">vehicles</a>
+      <a href="#">customers</a>
+      <a href="#">reports</a>
+    </div>
+    <div class="user">user: etiennes@agilebridge.co.za</div>
+  </div>
+
+  <div class="content">
+    <div class="cmdline"><span class="prompt">&gt;_</span> <span class="cmd">bookings --list</span> --status=all --range=2026-08-01..2026-09-30</div>
+
+    <div class="pagehead">
+      <h1>Bookings<span class="count">// 143 records</span></h1>
+      <button class="btn-new">[ + NEW BOOKING ]</button>
+    </div>
+
+    <div class="filterbar">
+      <div class="field search">
+        <label>search</label>
+        <input placeholder="vehicle, customer, plate...">
+      </div>
+      <div class="field">
+        <label>status</label>
+        <select><option>all</option></select>
+      </div>
+      <div class="field">
+        <label>start</label>
+        <input value="2026-08-01">
+      </div>
+      <div class="field">
+        <label>end</label>
+        <input value="2026-09-30">
+      </div>
+      <div class="clear">[ clear ]</div>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th>vehicle</th>
+          <th>customer</th>
+          <th>start</th>
+          <th>end</th>
+          <th class="num">total</th>
+          <th>status</th>
+          <th>actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="veh">Toyota Corolla — CA123456</td>
+          <td>Thabo Nkosi</td>
+          <td>2026-08-20</td>
+          <td>2026-08-27</td>
+          <td class="num">R4,200.00</td>
+          <td><span class="badge completed"><span class="sq"></span>completed</span></td>
+          <td class="actions"><a href="#">view</a><a class="disabled">cancel</a></td>
+        </tr>
+        <tr class="log-row">
+          <td colspan="7">ERR: cannot cancel booking B-2026-0091 — already completed [thabo.nkosi]</td>
+        </tr>
+        <tr>
+          <td class="veh">VW Polo Vivo — GP884213</td>
+          <td>Aisha Patel</td>
+          <td>2026-08-25</td>
+          <td>2026-09-02</td>
+          <td class="num">R3,150.00</td>
+          <td><span class="badge active"><span class="sq"></span>active</span></td>
+          <td class="actions"><a href="#">view</a><a href="#">cancel</a></td>
+        </tr>
+        <tr>
+          <td class="veh">Ford Ranger — WC552901</td>
+          <td>Johan van der Merwe</td>
+          <td>2026-08-28</td>
+          <td>2026-09-05</td>
+          <td class="num">R8,960.00</td>
+          <td><span class="badge active"><span class="sq"></span>active</span></td>
+          <td class="actions"><a href="#">view</a><a href="#">cancel</a></td>
+        </tr>
+        <tr>
+          <td class="veh">Hyundai i20 — KZN338847</td>
+          <td>Lindiwe Dlamini</td>
+          <td>2026-08-15</td>
+          <td>2026-08-19</td>
+          <td class="num">R2,480.00</td>
+          <td><span class="badge completed"><span class="sq"></span>completed</span></td>
+          <td class="actions"><a href="#">view</a><a class="disabled">cancel</a></td>
+        </tr>
+        <tr>
+          <td class="veh">Toyota Hilux — GP102938</td>
+          <td class="anon">customer (anonymized)</td>
+          <td>2026-08-10</td>
+          <td>2026-08-17</td>
+          <td class="num">R7,350.00</td>
+          <td><span class="badge completed"><span class="sq"></span>completed</span></td>
+          <td class="actions"><a href="#">view</a><a class="disabled">cancel</a></td>
+        </tr>
+        <tr>
+          <td class="veh">Renault Kwid — CA778102</td>
+          <td>Kagiso Molefe</td>
+          <td>2026-08-30</td>
+          <td>2026-09-03</td>
+          <td class="num">R1,860.00</td>
+          <td><span class="badge active"><span class="sq"></span>active</span></td>
+          <td class="actions"><a href="#">view</a><a href="#">cancel</a></td>
+        </tr>
+        <tr>
+          <td class="veh">BMW 3 Series — WC441087</td>
+          <td>Sarah Botha</td>
+          <td>2026-09-01</td>
+          <td>2026-09-08</td>
+          <td class="num">R9,800.00</td>
+          <td><span class="badge active"><span class="sq"></span>active</span></td>
+          <td class="actions"><a href="#">view</a><a href="#">cancel</a></td>
+        </tr>
+        <tr>
+          <td class="veh">Isuzu D-Max — GP665319</td>
+          <td>Pieter Coetzee</td>
+          <td>2026-08-12</td>
+          <td>2026-08-14</td>
+          <td class="num">R3,900.00</td>
+          <td><span class="badge cancelled"><span class="sq"></span>cancelled</span></td>
+          <td class="actions"><a href="#">view</a></td>
+        </tr>
+        <tr>
+          <td class="veh">Toyota Corolla — CA556234</td>
+          <td>Naledi Khumalo</td>
+          <td>2026-08-22</td>
+          <td>2026-08-24</td>
+          <td class="num">R1,400.00</td>
+          <td><span class="badge completed"><span class="sq"></span>completed</span></td>
+          <td class="actions"><a href="#">view</a><a class="disabled">cancel</a></td>
+        </tr>
+        <tr>
+          <td class="veh">VW Polo Vivo — GP991023</td>
+          <td>Michael O'Connell</td>
+          <td>2026-08-31</td>
+          <td>2026-09-06</td>
+          <td class="num">R4,725.00</td>
+          <td><span class="badge active"><span class="sq"></span>active</span></td>
+          <td class="actions"><a href="#">view</a><a href="#">cancel</a></td>
+        </tr>
+        <tr>
+          <td class="veh">Ford EcoSport — WC220456</td>
+          <td>Zanele Mokoena</td>
+          <td>2026-08-18</td>
+          <td>2026-08-21</td>
+          <td class="num">R2,250.00</td>
+          <td><span class="badge completed"><span class="sq"></span>completed</span></td>
+          <td class="actions"><a href="#">view</a><a class="disabled">cancel</a></td>
+        </tr>
+        <tr>
+          <td class="veh">Hyundai Creta — KZN774310</td>
+          <td>David Reddy</td>
+          <td>2026-08-29</td>
+          <td>2026-09-04</td>
+          <td class="num">R5,580.00</td>
+          <td><span class="badge active"><span class="sq"></span>active</span></td>
+          <td class="actions"><a href="#">view</a><a href="#">cancel</a></td>
+        </tr>
+        <tr>
+          <td class="veh">Toyota Hilux — GP334781</td>
+          <td>Amanda Fourie</td>
+          <td>2026-08-05</td>
+          <td>2026-08-09</td>
+          <td class="num">R6,120.00</td>
+          <td><span class="badge completed"><span class="sq"></span>completed</span></td>
+          <td class="actions"><a href="#">view</a><a class="disabled">cancel</a></td>
+        </tr>
+        <tr>
+          <td class="veh">Renault Kwid — CA119045</td>
+          <td>Sipho Zulu</td>
+          <td>2026-09-01</td>
+          <td>2026-09-02</td>
+          <td class="num">R620.00</td>
+          <td><span class="badge active"><span class="sq"></span>active</span></td>
+          <td class="actions"><a href="#">view</a><a href="#">cancel</a></td>
+        </tr>
+        <tr>
+          <td class="veh">BMW 3 Series — WC887632</td>
+          <td>Emily Naidoo</td>
+          <td>2026-08-08</td>
+          <td>2026-08-15</td>
+          <td class="num">R11,200.00</td>
+          <td><span class="badge completed"><span class="sq"></span>completed</span></td>
+          <td class="actions"><a href="#">view</a><a class="disabled">cancel</a></td>
+        </tr>
+        <tr>
+          <td class="veh">Isuzu D-Max — GP556098</td>
+          <td>Bongani Sithole</td>
+          <td>2026-08-27</td>
+          <td>2026-08-30</td>
+          <td class="num">R3,510.00</td>
+          <td><span class="badge active"><span class="sq"></span>active</span></td>
+          <td class="actions"><a href="#">view</a><a href="#">cancel</a></td>
+        </tr>
+        <tr>
+          <td class="veh">Toyota Corolla — CA662980</td>
+          <td>Refilwe Mahlangu</td>
+          <td>2026-08-14</td>
+          <td>2026-08-16</td>
+          <td class="num">R1,050.00</td>
+          <td><span class="badge completed"><span class="sq"></span>completed</span></td>
+          <td class="actions"><a href="#">view</a><a class="disabled">cancel</a></td>
+        </tr>
+        <tr>
+          <td class="veh">VW Polo Vivo — GP447712</td>
+          <td>Werner Kruger</td>
+          <td>2026-08-24</td>
+          <td>2026-08-28</td>
+          <td class="num">R3,360.00</td>
+          <td><span class="badge active"><span class="sq"></span>active</span></td>
+          <td class="actions"><a href="#">view</a><a href="#">cancel</a></td>
+        </tr>
+        <tr>
+          <td class="veh">Ford Ranger — WC330198</td>
+          <td>Nomvula Cele</td>
+          <td>2026-08-19</td>
+          <td>2026-08-26</td>
+          <td class="num">R8,050.00</td>
+          <td><span class="badge completed"><span class="sq"></span>completed</span></td>
+          <td class="actions"><a href="#">view</a><a class="disabled">cancel</a></td>
+        </tr>
+        <tr>
+          <td class="veh">Hyundai i20 — KZN552467</td>
+          <td>Ahmed Vawda</td>
+          <td>2026-08-31</td>
+          <td>2026-09-07</td>
+          <td class="num">R3,920.00</td>
+          <td><span class="badge active"><span class="sq"></span>active</span></td>
+          <td class="actions"><a href="#">view</a><a href="#">cancel</a></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="footerbar">
+      <div>rows 1-20 / 143</div>
+      <div class="pager">
+        <span class="cur">1</span><span>2</span><span>3</span><span>...</span><span>8</span><span>next &gt;</span>
+      </div>
+    </div>
+    <div class="bottom-pad"></div>
+  </div>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,81 @@
+# STATUS DEFINITIONS:
+# ==================
+# Epic Status:
+#   - backlog: Epic not yet started
+#   - in-progress: Epic actively being worked on
+#   - done: All stories in epic completed
+
+# Story Status:
+#   - backlog: Story only exists in epic file
+#   - ready-for-dev: Story file created, ready for development
+#   - in-progress: Developer actively working on implementation
+#   - review: Implementation complete, ready for review
+#   - done: Story completed
+
+# Retrospective Status:
+#   - optional: Can be completed but not required
+#   - done: Retrospective has been completed
+
+# Action Item Status:
+#   - open: Committed during a retrospective, not yet addressed
+#   - in-progress: Actively being worked on
+#   - done: Completed
+
+# WORKFLOW NOTES:
+# ===============
+# - Epic transitions to 'in-progress' automatically when its first story starts (via build's sprint sync)
+# - Stories can be worked in parallel if team capacity allows
+# - Developer typically creates the next story after the previous one is 'done' to incorporate learnings
+# - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
+# - Retrospective appends its action items to action_items; the status view surfaces open ones
+generated: 09-01-2026 14:54
+last_updated: 09-01-2026 14:54
+project: Bruno Vehicle Hire
+project_key: NOKEY
+tracking_system: file-system
+story_location: _bmad-output/implementation-artifacts
+development_status:
+  epic-1: backlog
+  1-1-backend-solution-scaffolding-test-harness: backlog
+  1-2-local-database-docker-compose-environment: backlog
+  1-3-vehicle-domain-model-tdd: backlog
+  1-4-api-key-authentication-foundation: backlog
+  1-5-global-error-handling-problemdetails: backlog
+  1-6-angular-app-shell-design-tokens: backlog
+  1-7-vehicle-list-the-walking-skeleton-proof: backlog
+  epic-1-retrospective: optional
+
+  epic-2: backlog
+  2-1-create-a-vehicle: backlog
+  2-2-edit-a-vehicle: backlog
+  2-3-soft-delete-a-vehicle: backlog
+  2-4-restore-a-soft-deleted-vehicle: backlog
+  2-5-view-vehicle-detail: backlog
+  epic-2-retrospective: optional
+
+  epic-3: backlog
+  3-1-list-create-customers: backlog
+  3-2-edit-a-customer: backlog
+  3-3-hard-delete-a-customer-with-no-bookings: backlog
+  3-4-deactivate-restore-a-customer: backlog
+  3-5-erase-anonymize-a-customer-s-personal-data: backlog
+  epic-3-retrospective: optional
+
+  epic-4: backlog
+  4-1-list-create-bookings: backlog
+  4-2-booking-overlap-prevention-application-database: backlog
+  4-3-cancel-a-booking: backlog
+  4-4-automatic-booking-completion: backlog
+  4-5-booking-detail-view: backlog
+  epic-4-retrospective: optional
+
+  epic-5: backlog
+  5-1-view-print-customer-summary: backlog
+  epic-5-retrospective: optional
+
+  epic-6: backlog
+  6-1-seed-data-readme: backlog
+  6-2-code-coverage-reports: backlog
+  6-3-optional-stretch-observability-logs-to-grafana-loki: backlog
+  6-4-accessibility-verification-pass: backlog
+  epic-6-retrospective: optional

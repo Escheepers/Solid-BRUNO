@@ -1,0 +1,709 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Bruno Vehicle Hire — Color Theme Variations</title>
+<style>
+/* ============================================================================
+   BRUNO VEHICLE HIRE — COLOR THEME OPTIONS (v1)
+   Internal back-office app. Compact/dense information density.
+   Both light + dark mode required per theme. No existing brand to match.
+
+   Semantic roles per theme (documented here for easy lifting into code):
+   --bg            page background
+   --surface       card / table / panel background
+   --border        hairlines, dividers, table borders
+   --text          primary text
+   --text-2        secondary / muted text (labels, meta)
+   --primary       interactive / active / brand accent
+   --success       completed / positive state
+   --warning       caution / needs-attention state
+   --danger        error / blocking / booking-overlap / delete-guard state
+   ============================================================================
+
+   THEME 1 — "Utilitarian Graphite" (neutral, functional, spreadsheet-adjacent)
+     Light: bg #f4f5f6  surface #ffffff  border #d8dbde  text #1f2328  text-2 #5c6470
+            primary #3b5bdb  success #2f9e44  warning #e8590c  danger #c92a2a
+     Dark:  bg #1a1d21  surface #232629  border #3a3f44  text #e8eaed  text-2 #9aa1a9
+            primary #6d8dfd  success #51cf66  warning #ff922b  danger #ff6b6b
+
+   THEME 2 — "Warm Ledger" (warm neutrals, amber/terracotta accent, less clinical)
+     Light: bg #faf7f2  surface #ffffff  border #e3dccc  text #2e2a24  text-2 #78705f
+            primary #a8622a  success #4c7a3d  warning #c77d16  danger #b3401f
+     Dark:  bg #211d17  surface #2b261e  border #453d30  text #f1ece2  text-2 #b3a690
+            primary #e0954f  success #7fb069  warning #e6a23c  danger #e2683f
+
+   THEME 3 — "High-Contrast Bold" (deep ink + vivid cobalt, maximum legibility)
+     Light: bg #ffffff  surface #f0f2f5  border #b8bfc9  text #0a0e14  text-2 #3d4552
+            primary #0058e6  success #0a7d34  warning #b35c00  danger #d40000
+     Dark:  bg #05070a  surface #12161c  border #2c3540  text #f5f8fc  text-2 #a8b2c0
+            primary #3d8bff  success #2ee66b  warning #ffb020  danger #ff3b3b
+
+   THEME 4 — "Muted Slate-Teal" (subdued, understated, low-glare professional)
+     Light: bg #f2f4f3  surface #fbfcfb  border #d4dad7  text #2b322f  text-2 #667169
+            primary #4a6b6f  success #5c8a6a  warning #a08150  danger #a2564f
+     Dark:  bg #1c211f  surface #252b28  border #3a423e  text #dde3e0  text-2 #93a099
+            primary #7fa3a6  success #8ab896  warning #c9a06a  danger #c47f79
+
+   THEME 5 — "Classic Corporate Blue" (conventional enterprise / trustworthy)
+     Light: bg #eef1f6  surface #ffffff  border #ccd4e0  text #1c2733  text-2 #5a6b80
+            primary #1a56c4  success #1c7c3c  warning #b8790a  danger #c62828
+     Dark:  bg #131a24  surface #1c2531  border #33404f  text #e6ebf2  text-2 #94a3b5
+            primary #5b8def  success #4caf6b  warning #f0a63c  danger #f0564f
+
+   THEME 6 — "Technical Mono" (near-monochrome, single sharp accent, tool-like)
+     Light: bg #f7f7f7  surface #ffffff  border #d9d9d9  text #161616  text-2 #6b6b6b
+            primary #0f62fe  success #198038  warning #8a6d00  danger #da1e28
+     Dark:  bg #101010  surface #1a1a1a  border #333333  text #f4f4f4  text-2 #a8a8a8
+            primary #4589ff  success #42be65  warning #d2a106  danger #fa4d56
+   ============================================================================ */
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding: 32px 40px 80px;
+  background: #e9eaec;
+  color: #14161a;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.page-header {
+  max-width: 1400px;
+  margin: 0 auto 36px;
+}
+.page-header h1 {
+  font-size: 22px;
+  margin: 0 0 6px;
+  letter-spacing: -0.01em;
+}
+.page-header p {
+  margin: 0;
+  color: #4a4f57;
+  font-size: 13px;
+  max-width: 900px;
+}
+
+.theme {
+  max-width: 1400px;
+  margin: 0 auto 44px;
+  background: #ffffff;
+  border: 1px solid #d5d7db;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.theme-header {
+  padding: 16px 22px;
+  border-bottom: 1px solid #d5d7db;
+  background: #fafafb;
+}
+.theme-header .num {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  color: #767b84;
+  letter-spacing: 0.06em;
+  margin-bottom: 3px;
+}
+.theme-header h2 {
+  margin: 0 0 4px;
+  font-size: 17px;
+}
+.theme-header .register {
+  margin: 0;
+  font-size: 12.5px;
+  font-style: italic;
+  color: #565c66;
+}
+
+.tokens-wrap {
+  padding: 14px 22px 4px;
+}
+.tokens-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: #8a8f98;
+  margin: 0 0 8px;
+}
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #d9dbe0;
+  border-radius: 6px;
+  padding: 4px 8px 4px 4px;
+  background: #fff;
+  font-size: 11px;
+}
+.chip .swatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  border: 1px solid rgba(0,0,0,0.15);
+  flex-shrink: 0;
+}
+.chip .role {
+  font-weight: 600;
+  color: #23262b;
+}
+.chip .hex {
+  color: #767b84;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 10.5px;
+}
+
+.modes-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(400px, 1fr));
+  gap: 18px;
+  padding: 4px 22px 22px;
+}
+
+.mode-panel {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px;
+}
+.mode-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-2);
+  margin-bottom: 10px;
+}
+.mode-label .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+}
+.mode-label.light .dot { background: #ffffff; }
+.mode-label.dark .dot { background: #000000; }
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.card-title-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--border);
+}
+.card-title-bar .title {
+  font-weight: 700;
+  font-size: 12px;
+  color: var(--text);
+}
+.card-title-bar .btn {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: #fff;
+  background: var(--primary);
+  border-radius: 4px;
+  padding: 3px 9px;
+  border: 1px solid color-mix(in srgb, var(--primary) 70%, black);
+}
+
+table.bookings {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11.5px;
+}
+table.bookings th {
+  text-align: left;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-2);
+  font-weight: 700;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--border) 35%, var(--surface));
+}
+table.bookings td {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  vertical-align: middle;
+}
+table.bookings tr:last-child td { border-bottom: none; }
+table.bookings .muted { color: var(--text-2); font-size: 10.5px; }
+
+.badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 2px 7px;
+  border-radius: 3px;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+.badge.active {
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 14%, var(--surface));
+  border-color: color-mix(in srgb, var(--primary) 35%, var(--surface));
+}
+.badge.completed {
+  color: var(--success);
+  background: color-mix(in srgb, var(--success) 16%, var(--surface));
+  border-color: color-mix(in srgb, var(--success) 35%, var(--surface));
+}
+.badge.cancelled {
+  color: var(--text-2);
+  background: color-mix(in srgb, var(--text-2) 14%, var(--surface));
+  border-color: color-mix(in srgb, var(--text-2) 30%, var(--surface));
+}
+
+.error-banner {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin: 10px 10px 10px;
+  padding: 7px 9px;
+  border-radius: 5px;
+  border: 1px solid color-mix(in srgb, var(--danger) 55%, var(--surface));
+  background: color-mix(in srgb, var(--danger) 14%, var(--surface));
+  color: color-mix(in srgb, var(--danger) 88%, var(--text));
+  font-size: 11px;
+}
+.error-banner .ico {
+  font-weight: 800;
+  color: var(--danger);
+}
+.error-banner strong { color: var(--danger); }
+
+.warning-inline {
+  margin: 0 10px 10px;
+  padding: 6px 9px;
+  border-radius: 5px;
+  border: 1px solid color-mix(in srgb, var(--warning) 50%, var(--surface));
+  background: color-mix(in srgb, var(--warning) 14%, var(--surface));
+  color: color-mix(in srgb, var(--warning) 80%, var(--text));
+  font-size: 10.5px;
+}
+.warning-inline .ico { color: var(--warning); font-weight: 800; }
+
+.footer-note {
+  max-width: 1400px;
+  margin: 0 auto;
+  color: #6b7078;
+  font-size: 11.5px;
+}
+</style>
+</head>
+<body>
+
+<div class="page-header">
+  <h1>Bruno Vehicle Hire — Color Theme Variations (Round 1)</h1>
+  <p>Six candidate palettes for the internal, staff-only back-office app (Vehicles / Customers / Bookings, compact table density). Each variation shows its full semantic token set and a realistic Bookings row rendering — including a booking-overlap error state, since conflict and delete-guard messaging is a core interaction — in both light and dark mode.</p>
+</div>
+
+<!-- ============================= THEME 1 ============================= -->
+<section class="theme">
+  <div class="theme-header">
+    <div class="num">VARIATION 1 OF 6</div>
+    <h2>Utilitarian Graphite</h2>
+    <p class="register">Neutral and unadorned — reads as a precision instrument, not a product; gets out of the way of the data.</p>
+  </div>
+
+  <div class="tokens-wrap">
+    <p class="tokens-label">Light tokens</p>
+    <div class="chip-row">
+      <div class="chip"><span class="swatch" style="background:#f4f5f6"></span><span class="role">background</span><span class="hex">#f4f5f6</span></div>
+      <div class="chip"><span class="swatch" style="background:#ffffff"></span><span class="role">surface</span><span class="hex">#ffffff</span></div>
+      <div class="chip"><span class="swatch" style="background:#d8dbde"></span><span class="role">border</span><span class="hex">#d8dbde</span></div>
+      <div class="chip"><span class="swatch" style="background:#1f2328"></span><span class="role">text</span><span class="hex">#1f2328</span></div>
+      <div class="chip"><span class="swatch" style="background:#3b5bdb"></span><span class="role">primary</span><span class="hex">#3b5bdb</span></div>
+      <div class="chip"><span class="swatch" style="background:#2f9e44"></span><span class="role">success</span><span class="hex">#2f9e44</span></div>
+      <div class="chip"><span class="swatch" style="background:#e8590c"></span><span class="role">warning</span><span class="hex">#e8590c</span></div>
+      <div class="chip"><span class="swatch" style="background:#c92a2a"></span><span class="role">danger</span><span class="hex">#c92a2a</span></div>
+    </div>
+    <p class="tokens-label">Dark tokens</p>
+    <div class="chip-row">
+      <div class="chip"><span class="swatch" style="background:#1a1d21"></span><span class="role">background</span><span class="hex">#1a1d21</span></div>
+      <div class="chip"><span class="swatch" style="background:#232629"></span><span class="role">surface</span><span class="hex">#232629</span></div>
+      <div class="chip"><span class="swatch" style="background:#3a3f44"></span><span class="role">border</span><span class="hex">#3a3f44</span></div>
+      <div class="chip"><span class="swatch" style="background:#e8eaed"></span><span class="role">text</span><span class="hex">#e8eaed</span></div>
+      <div class="chip"><span class="swatch" style="background:#6d8dfd"></span><span class="role">primary</span><span class="hex">#6d8dfd</span></div>
+      <div class="chip"><span class="swatch" style="background:#51cf66"></span><span class="role">success</span><span class="hex">#51cf66</span></div>
+      <div class="chip"><span class="swatch" style="background:#ff922b"></span><span class="role">warning</span><span class="hex">#ff922b</span></div>
+      <div class="chip"><span class="swatch" style="background:#ff6b6b"></span><span class="role">danger</span><span class="hex">#ff6b6b</span></div>
+    </div>
+  </div>
+
+  <div class="modes-row">
+    <div class="mode-panel" style="--bg:#f4f5f6; --surface:#ffffff; --border:#d8dbde; --text:#1f2328; --text-2:#5c6470; --primary:#3b5bdb; --success:#2f9e44; --warning:#e8590c; --danger:#c92a2a;">
+      <div class="mode-label light"><span class="dot"></span>Light</div>
+      <div class="card">
+        <div class="card-title-bar"><span class="title">Bookings</span><span class="btn">+ New Booking</span></div>
+        <table class="bookings">
+          <tr><th>Customer</th><th>Vehicle</th><th>Dates</th><th>Status</th></tr>
+          <tr><td>T. Ndlovu<div class="muted">BK-10042</div></td><td>Toyota Corolla<div class="muted">CA 123-456</div></td><td>12–15 Sep</td><td><span class="badge active">Active</span></td></tr>
+          <tr><td>M. van Wyk<div class="muted">BK-09988</div></td><td>Ford Ranger<div class="muted">CA 987-654</div></td><td>01–05 Aug</td><td><span class="badge completed">Completed</span></td></tr>
+          <tr><td>S. Patel<div class="muted">BK-09861</div></td><td>VW Polo<div class="muted">CA 456-789</div></td><td>20–22 Sep</td><td><span class="badge cancelled">Cancelled</span></td></tr>
+        </table>
+        <div class="error-banner"><span class="ico">&#9888;</span><span><strong>Cannot save booking:</strong> Toyota Corolla (CA 123-456) is already booked 12–15 Sep for BK-10042.</span></div>
+      </div>
+    </div>
+
+    <div class="mode-panel" style="--bg:#1a1d21; --surface:#232629; --border:#3a3f44; --text:#e8eaed; --text-2:#9aa1a9; --primary:#6d8dfd; --success:#51cf66; --warning:#ff922b; --danger:#ff6b6b;">
+      <div class="mode-label dark"><span class="dot"></span>Dark</div>
+      <div class="card">
+        <div class="card-title-bar"><span class="title">Bookings</span><span class="btn">+ New Booking</span></div>
+        <table class="bookings">
+          <tr><th>Customer</th><th>Vehicle</th><th>Dates</th><th>Status</th></tr>
+          <tr><td>T. Ndlovu<div class="muted">BK-10042</div></td><td>Toyota Corolla<div class="muted">CA 123-456</div></td><td>12–15 Sep</td><td><span class="badge active">Active</span></td></tr>
+          <tr><td>M. van Wyk<div class="muted">BK-09988</div></td><td>Ford Ranger<div class="muted">CA 987-654</div></td><td>01–05 Aug</td><td><span class="badge completed">Completed</span></td></tr>
+          <tr><td>S. Patel<div class="muted">BK-09861</div></td><td>VW Polo<div class="muted">CA 456-789</div></td><td>20–22 Sep</td><td><span class="badge cancelled">Cancelled</span></td></tr>
+        </table>
+        <div class="error-banner"><span class="ico">&#9888;</span><span><strong>Cannot save booking:</strong> Toyota Corolla (CA 123-456) is already booked 12–15 Sep for BK-10042.</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================= THEME 2 ============================= -->
+<section class="theme">
+  <div class="theme-header">
+    <div class="num">VARIATION 2 OF 6</div>
+    <h2>Warm Ledger</h2>
+    <p class="register">Paper-and-ink warmth — approachable for staff who stare at this all day, still restrained enough for back-office use.</p>
+  </div>
+
+  <div class="tokens-wrap">
+    <p class="tokens-label">Light tokens</p>
+    <div class="chip-row">
+      <div class="chip"><span class="swatch" style="background:#faf7f2"></span><span class="role">background</span><span class="hex">#faf7f2</span></div>
+      <div class="chip"><span class="swatch" style="background:#ffffff"></span><span class="role">surface</span><span class="hex">#ffffff</span></div>
+      <div class="chip"><span class="swatch" style="background:#e3dccc"></span><span class="role">border</span><span class="hex">#e3dccc</span></div>
+      <div class="chip"><span class="swatch" style="background:#2e2a24"></span><span class="role">text</span><span class="hex">#2e2a24</span></div>
+      <div class="chip"><span class="swatch" style="background:#a8622a"></span><span class="role">primary</span><span class="hex">#a8622a</span></div>
+      <div class="chip"><span class="swatch" style="background:#4c7a3d"></span><span class="role">success</span><span class="hex">#4c7a3d</span></div>
+      <div class="chip"><span class="swatch" style="background:#c77d16"></span><span class="role">warning</span><span class="hex">#c77d16</span></div>
+      <div class="chip"><span class="swatch" style="background:#b3401f"></span><span class="role">danger</span><span class="hex">#b3401f</span></div>
+    </div>
+    <p class="tokens-label">Dark tokens</p>
+    <div class="chip-row">
+      <div class="chip"><span class="swatch" style="background:#211d17"></span><span class="role">background</span><span class="hex">#211d17</span></div>
+      <div class="chip"><span class="swatch" style="background:#2b261e"></span><span class="role">surface</span><span class="hex">#2b261e</span></div>
+      <div class="chip"><span class="swatch" style="background:#453d30"></span><span class="role">border</span><span class="hex">#453d30</span></div>
+      <div class="chip"><span class="swatch" style="background:#f1ece2"></span><span class="role">text</span><span class="hex">#f1ece2</span></div>
+      <div class="chip"><span class="swatch" style="background:#e0954f"></span><span class="role">primary</span><span class="hex">#e0954f</span></div>
+      <div class="chip"><span class="swatch" style="background:#7fb069"></span><span class="role">success</span><span class="hex">#7fb069</span></div>
+      <div class="chip"><span class="swatch" style="background:#e6a23c"></span><span class="role">warning</span><span class="hex">#e6a23c</span></div>
+      <div class="chip"><span class="swatch" style="background:#e2683f"></span><span class="role">danger</span><span class="hex">#e2683f</span></div>
+    </div>
+  </div>
+
+  <div class="modes-row">
+    <div class="mode-panel" style="--bg:#faf7f2; --surface:#ffffff; --border:#e3dccc; --text:#2e2a24; --text-2:#78705f; --primary:#a8622a; --success:#4c7a3d; --warning:#c77d16; --danger:#b3401f;">
+      <div class="mode-label light"><span class="dot"></span>Light</div>
+      <div class="card">
+        <div class="card-title-bar"><span class="title">Bookings</span><span class="btn">+ New Booking</span></div>
+        <table class="bookings">
+          <tr><th>Customer</th><th>Vehicle</th><th>Dates</th><th>Status</th></tr>
+          <tr><td>T. Ndlovu<div class="muted">BK-10042</div></td><td>Toyota Corolla<div class="muted">CA 123-456</div></td><td>12–15 Sep</td><td><span class="badge active">Active</span></td></tr>
+          <tr><td>M. van Wyk<div class="muted">BK-09988</div></td><td>Ford Ranger<div class="muted">CA 987-654</div></td><td>01–05 Aug</td><td><span class="badge completed">Completed</span></td></tr>
+          <tr><td>S. Patel<div class="muted">BK-09861</div></td><td>VW Polo<div class="muted">CA 456-789</div></td><td>20–22 Sep</td><td><span class="badge cancelled">Cancelled</span></td></tr>
+        </table>
+        <div class="error-banner"><span class="ico">&#9888;</span><span><strong>Cannot save booking:</strong> Toyota Corolla (CA 123-456) is already booked 12–15 Sep for BK-10042.</span></div>
+      </div>
+    </div>
+
+    <div class="mode-panel" style="--bg:#211d17; --surface:#2b261e; --border:#453d30; --text:#f1ece2; --text-2:#b3a690; --primary:#e0954f; --success:#7fb069; --warning:#e6a23c; --danger:#e2683f;">
+      <div class="mode-label dark"><span class="dot"></span>Dark</div>
+      <div class="card">
+        <div class="card-title-bar"><span class="title">Bookings</span><span class="btn">+ New Booking</span></div>
+        <table class="bookings">
+          <tr><th>Customer</th><th>Vehicle</th><th>Dates</th><th>Status</th></tr>
+          <tr><td>T. Ndlovu<div class="muted">BK-10042</div></td><td>Toyota Corolla<div class="muted">CA 123-456</div></td><td>12–15 Sep</td><td><span class="badge active">Active</span></td></tr>
+          <tr><td>M. van Wyk<div class="muted">BK-09988</div></td><td>Ford Ranger<div class="muted">CA 987-654</div></td><td>01–05 Aug</td><td><span class="badge completed">Completed</span></td></tr>
+          <tr><td>S. Patel<div class="muted">BK-09861</div></td><td>VW Polo<div class="muted">CA 456-789</div></td><td>20–22 Sep</td><td><span class="badge cancelled">Cancelled</span></td></tr>
+        </table>
+        <div class="error-banner"><span class="ico">&#9888;</span><span><strong>Cannot save booking:</strong> Toyota Corolla (CA 123-456) is already booked 12–15 Sep for BK-10042.</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================= THEME 3 ============================= -->
+<section class="theme">
+  <div class="theme-header">
+    <div class="num">VARIATION 3 OF 6</div>
+    <h2>High-Contrast Bold</h2>
+    <p class="register">Sharp, decisive, no-ambiguity — ink-black text, saturated cobalt accent; built for fast scanning and long shifts.</p>
+  </div>
+
+  <div class="tokens-wrap">
+    <p class="tokens-label">Light tokens</p>
+    <div class="chip-row">
+      <div class="chip"><span class="swatch" style="background:#ffffff"></span><span class="role">background</span><span class="hex">#ffffff</span></div>
+      <div class="chip"><span class="swatch" style="background:#f0f2f5"></span><span class="role">surface</span><span class="hex">#f0f2f5</span></div>
+      <div class="chip"><span class="swatch" style="background:#b8bfc9"></span><span class="role">border</span><span class="hex">#b8bfc9</span></div>
+      <div class="chip"><span class="swatch" style="background:#0a0e14"></span><span class="role">text</span><span class="hex">#0a0e14</span></div>
+      <div class="chip"><span class="swatch" style="background:#0058e6"></span><span class="role">primary</span><span class="hex">#0058e6</span></div>
+      <div class="chip"><span class="swatch" style="background:#0a7d34"></span><span class="role">success</span><span class="hex">#0a7d34</span></div>
+      <div class="chip"><span class="swatch" style="background:#b35c00"></span><span class="role">warning</span><span class="hex">#b35c00</span></div>
+      <div class="chip"><span class="swatch" style="background:#d40000"></span><span class="role">danger</span><span class="hex">#d40000</span></div>
+    </div>
+    <p class="tokens-label">Dark tokens</p>
+    <div class="chip-row">
+      <div class="chip"><span class="swatch" style="background:#05070a"></span><span class="role">background</span><span class="hex">#05070a</span></div>
+      <div class="chip"><span class="swatch" style="background:#12161c"></span><span class="role">surface</span><span class="hex">#12161c</span></div>
+      <div class="chip"><span class="swatch" style="background:#2c3540"></span><span class="role">border</span><span class="hex">#2c3540</span></div>
+      <div class="chip"><span class="swatch" style="background:#f5f8fc"></span><span class="role">text</span><span class="hex">#f5f8fc</span></div>
+      <div class="chip"><span class="swatch" style="background:#3d8bff"></span><span class="role">primary</span><span class="hex">#3d8bff</span></div>
+      <div class="chip"><span class="swatch" style="background:#2ee66b"></span><span class="role">success</span><span class="hex">#2ee66b</span></div>
+      <div class="chip"><span class="swatch" style="background:#ffb020"></span><span class="role">warning</span><span class="hex">#ffb020</span></div>
+      <div class="chip"><span class="swatch" style="background:#ff3b3b"></span><span class="role">danger</span><span class="hex">#ff3b3b</span></div>
+    </div>
+  </div>
+
+  <div class="modes-row">
+    <div class="mode-panel" style="--bg:#ffffff; --surface:#f0f2f5; --border:#b8bfc9; --text:#0a0e14; --text-2:#3d4552; --primary:#0058e6; --success:#0a7d34; --warning:#b35c00; --danger:#d40000;">
+      <div class="mode-label light"><span class="dot"></span>Light</div>
+      <div class="card">
+        <div class="card-title-bar"><span class="title">Bookings</span><span class="btn">+ New Booking</span></div>
+        <table class="bookings">
+          <tr><th>Customer</th><th>Vehicle</th><th>Dates</th><th>Status</th></tr>
+          <tr><td>T. Ndlovu<div class="muted">BK-10042</div></td><td>Toyota Corolla<div class="muted">CA 123-456</div></td><td>12–15 Sep</td><td><span class="badge active">Active</span></td></tr>
+          <tr><td>M. van Wyk<div class="muted">BK-09988</div></td><td>Ford Ranger<div class="muted">CA 987-654</div></td><td>01–05 Aug</td><td><span class="badge completed">Completed</span></td></tr>
+          <tr><td>S. Patel<div class="muted">BK-09861</div></td><td>VW Polo<div class="muted">CA 456-789</div></td><td>20–22 Sep</td><td><span class="badge cancelled">Cancelled</span></td></tr>
+        </table>
+        <div class="error-banner"><span class="ico">&#9888;</span><span><strong>Cannot save booking:</strong> Toyota Corolla (CA 123-456) is already booked 12–15 Sep for BK-10042.</span></div>
+      </div>
+    </div>
+
+    <div class="mode-panel" style="--bg:#05070a; --surface:#12161c; --border:#2c3540; --text:#f5f8fc; --text-2:#a8b2c0; --primary:#3d8bff; --success:#2ee66b; --warning:#ffb020; --danger:#ff3b3b;">
+      <div class="mode-label dark"><span class="dot"></span>Dark</div>
+      <div class="card">
+        <div class="card-title-bar"><span class="title">Bookings</span><span class="btn">+ New Booking</span></div>
+        <table class="bookings">
+          <tr><th>Customer</th><th>Vehicle</th><th>Dates</th><th>Status</th></tr>
+          <tr><td>T. Ndlovu<div class="muted">BK-10042</div></td><td>Toyota Corolla<div class="muted">CA 123-456</div></td><td>12–15 Sep</td><td><span class="badge active">Active</span></td></tr>
+          <tr><td>M. van Wyk<div class="muted">BK-09988</div></td><td>Ford Ranger<div class="muted">CA 987-654</div></td><td>01–05 Aug</td><td><span class="badge completed">Completed</span></td></tr>
+          <tr><td>S. Patel<div class="muted">BK-09861</div></td><td>VW Polo<div class="muted">CA 456-789</div></td><td>20–22 Sep</td><td><span class="badge cancelled">Cancelled</span></td></tr>
+        </table>
+        <div class="error-banner"><span class="ico">&#9888;</span><span><strong>Cannot save booking:</strong> Toyota Corolla (CA 123-456) is already booked 12–15 Sep for BK-10042.</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================= THEME 4 ============================= -->
+<section class="theme">
+  <div class="theme-header">
+    <div class="num">VARIATION 4 OF 6</div>
+    <h2>Muted Slate-Teal</h2>
+    <p class="register">Deliberately quiet and low-glare — recedes into the background so exceptions (warnings, conflicts) are what actually stand out.</p>
+  </div>
+
+  <div class="tokens-wrap">
+    <p class="tokens-label">Light tokens</p>
+    <div class="chip-row">
+      <div class="chip"><span class="swatch" style="background:#f2f4f3"></span><span class="role">background</span><span class="hex">#f2f4f3</span></div>
+      <div class="chip"><span class="swatch" style="background:#fbfcfb"></span><span class="role">surface</span><span class="hex">#fbfcfb</span></div>
+      <div class="chip"><span class="swatch" style="background:#d4dad7"></span><span class="role">border</span><span class="hex">#d4dad7</span></div>
+      <div class="chip"><span class="swatch" style="background:#2b322f"></span><span class="role">text</span><span class="hex">#2b322f</span></div>
+      <div class="chip"><span class="swatch" style="background:#4a6b6f"></span><span class="role">primary</span><span class="hex">#4a6b6f</span></div>
+      <div class="chip"><span class="swatch" style="background:#5c8a6a"></span><span class="role">success</span><span class="hex">#5c8a6a</span></div>
+      <div class="chip"><span class="swatch" style="background:#a08150"></span><span class="role">warning</span><span class="hex">#a08150</span></div>
+      <div class="chip"><span class="swatch" style="background:#a2564f"></span><span class="role">danger</span><span class="hex">#a2564f</span></div>
+    </div>
+    <p class="tokens-label">Dark tokens</p>
+    <div class="chip-row">
+      <div class="chip"><span class="swatch" style="background:#1c211f"></span><span class="role">background</span><span class="hex">#1c211f</span></div>
+      <div class="chip"><span class="swatch" style="background:#252b28"></span><span class="role">surface</span><span class="hex">#252b28</span></div>
+      <div class="chip"><span class="swatch" style="background:#3a423e"></span><span class="role">border</span><span class="hex">#3a423e</span></div>
+      <div class="chip"><span class="swatch" style="background:#dde3e0"></span><span class="role">text</span><span class="hex">#dde3e0</span></div>
+      <div class="chip"><span class="swatch" style="background:#7fa3a6"></span><span class="role">primary</span><span class="hex">#7fa3a6</span></div>
+      <div class="chip"><span class="swatch" style="background:#8ab896"></span><span class="role">success</span><span class="hex">#8ab896</span></div>
+      <div class="chip"><span class="swatch" style="background:#c9a06a"></span><span class="role">warning</span><span class="hex">#c9a06a</span></div>
+      <div class="chip"><span class="swatch" style="background:#c47f79"></span><span class="role">danger</span><span class="hex">#c47f79</span></div>
+    </div>
+  </div>
+
+  <div class="modes-row">
+    <div class="mode-panel" style="--bg:#f2f4f3; --surface:#fbfcfb; --border:#d4dad7; --text:#2b322f; --text-2:#667169; --primary:#4a6b6f; --success:#5c8a6a; --warning:#a08150; --danger:#a2564f;">
+      <div class="mode-label light"><span class="dot"></span>Light</div>
+      <div class="card">
+        <div class="card-title-bar"><span class="title">Bookings</span><span class="btn">+ New Booking</span></div>
+        <table class="bookings">
+          <tr><th>Customer</th><th>Vehicle</th><th>Dates</th><th>Status</th></tr>
+          <tr><td>T. Ndlovu<div class="muted">BK-10042</div></td><td>Toyota Corolla<div class="muted">CA 123-456</div></td><td>12–15 Sep</td><td><span class="badge active">Active</span></td></tr>
+          <tr><td>M. van Wyk<div class="muted">BK-09988</div></td><td>Ford Ranger<div class="muted">CA 987-654</div></td><td>01–05 Aug</td><td><span class="badge completed">Completed</span></td></tr>
+          <tr><td>S. Patel<div class="muted">BK-09861</div></td><td>VW Polo<div class="muted">CA 456-789</div></td><td>20–22 Sep</td><td><span class="badge cancelled">Cancelled</span></td></tr>
+        </table>
+        <div class="error-banner"><span class="ico">&#9888;</span><span><strong>Cannot save booking:</strong> Toyota Corolla (CA 123-456) is already booked 12–15 Sep for BK-10042.</span></div>
+      </div>
+    </div>
+
+    <div class="mode-panel" style="--bg:#1c211f; --surface:#252b28; --border:#3a423e; --text:#dde3e0; --text-2:#93a099; --primary:#7fa3a6; --success:#8ab896; --warning:#c9a06a; --danger:#c47f79;">
+      <div class="mode-label dark"><span class="dot"></span>Dark</div>
+      <div class="card">
+        <div class="card-title-bar"><span class="title">Bookings</span><span class="btn">+ New Booking</span></div>
+        <table class="bookings">
+          <tr><th>Customer</th><th>Vehicle</th><th>Dates</th><th>Status</th></tr>
+          <tr><td>T. Ndlovu<div class="muted">BK-10042</div></td><td>Toyota Corolla<div class="muted">CA 123-456</div></td><td>12–15 Sep</td><td><span class="badge active">Active</span></td></tr>
+          <tr><td>M. van Wyk<div class="muted">BK-09988</div></td><td>Ford Ranger<div class="muted">CA 987-654</div></td><td>01–05 Aug</td><td><span class="badge completed">Completed</span></td></tr>
+          <tr><td>S. Patel<div class="muted">BK-09861</div></td><td>VW Polo<div class="muted">CA 456-789</div></td><td>20–22 Sep</td><td><span class="badge cancelled">Cancelled</span></td></tr>
+        </table>
+        <div class="error-banner"><span class="ico">&#9888;</span><span><strong>Cannot save booking:</strong> Toyota Corolla (CA 123-456) is already booked 12–15 Sep for BK-10042.</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================= THEME 5 ============================= -->
+<section class="theme">
+  <div class="theme-header">
+    <div class="num">VARIATION 5 OF 6</div>
+    <h2>Classic Corporate Blue</h2>
+    <p class="register">Familiar enterprise-software register — the safe, conventional choice that reads instantly as "internal ops tool."</p>
+  </div>
+
+  <div class="tokens-wrap">
+    <p class="tokens-label">Light tokens</p>
+    <div class="chip-row">
+      <div class="chip"><span class="swatch" style="background:#eef1f6"></span><span class="role">background</span><span class="hex">#eef1f6</span></div>
+      <div class="chip"><span class="swatch" style="background:#ffffff"></span><span class="role">surface</span><span class="hex">#ffffff</span></div>
+      <div class="chip"><span class="swatch" style="background:#ccd4e0"></span><span class="role">border</span><span class="hex">#ccd4e0</span></div>
+      <div class="chip"><span class="swatch" style="background:#1c2733"></span><span class="role">text</span><span class="hex">#1c2733</span></div>
+      <div class="chip"><span class="swatch" style="background:#1a56c4"></span><span class="role">primary</span><span class="hex">#1a56c4</span></div>
+      <div class="chip"><span class="swatch" style="background:#1c7c3c"></span><span class="role">success</span><span class="hex">#1c7c3c</span></div>
+      <div class="chip"><span class="swatch" style="background:#b8790a"></span><span class="role">warning</span><span class="hex">#b8790a</span></div>
+      <div class="chip"><span class="swatch" style="background:#c62828"></span><span class="role">danger</span><span class="hex">#c62828</span></div>
+    </div>
+    <p class="tokens-label">Dark tokens</p>
+    <div class="chip-row">
+      <div class="chip"><span class="swatch" style="background:#131a24"></span><span class="role">background</span><span class="hex">#131a24</span></div>
+      <div class="chip"><span class="swatch" style="background:#1c2531"></span><span class="role">surface</span><span class="hex">#1c2531</span></div>
+      <div class="chip"><span class="swatch" style="background:#33404f"></span><span class="role">border</span><span class="hex">#33404f</span></div>
+      <div class="chip"><span class="swatch" style="background:#e6ebf2"></span><span class="role">text</span><span class="hex">#e6ebf2</span></div>
+      <div class="chip"><span class="swatch" style="background:#5b8def"></span><span class="role">primary</span><span class="hex">#5b8def</span></div>
+      <div class="chip"><span class="swatch" style="background:#4caf6b"></span><span class="role">success</span><span class="hex">#4caf6b</span></div>
+      <div class="chip"><span class="swatch" style="background:#f0a63c"></span><span class="role">warning</span><span class="hex">#f0a63c</span></div>
+      <div class="chip"><span class="swatch" style="background:#f0564f"></span><span class="role">danger</span><span class="hex">#f0564f</span></div>
+    </div>
+  </div>
+
+  <div class="modes-row">
+    <div class="mode-panel" style="--bg:#eef1f6; --surface:#ffffff; --border:#ccd4e0; --text:#1c2733; --text-2:#5a6b80; --primary:#1a56c4; --success:#1c7c3c; --warning:#b8790a; --danger:#c62828;">
+      <div class="mode-label light"><span class="dot"></span>Light</div>
+      <div class="card">
+        <div class="card-title-bar"><span class="title">Bookings</span><span class="btn">+ New Booking</span></div>
+        <table class="bookings">
+          <tr><th>Customer</th><th>Vehicle</th><th>Dates</th><th>Status</th></tr>
+          <tr><td>T. Ndlovu<div class="muted">BK-10042</div></td><td>Toyota Corolla<div class="muted">CA 123-456</div></td><td>12–15 Sep</td><td><span class="badge active">Active</span></td></tr>
+          <tr><td>M. van Wyk<div class="muted">BK-09988</div></td><td>Ford Ranger<div class="muted">CA 987-654</div></td><td>01–05 Aug</td><td><span class="badge completed">Completed</span></td></tr>
+          <tr><td>S. Patel<div class="muted">BK-09861</div></td><td>VW Polo<div class="muted">CA 456-789</div></td><td>20–22 Sep</td><td><span class="badge cancelled">Cancelled</span></td></tr>
+        </table>
+        <div class="error-banner"><span class="ico">&#9888;</span><span><strong>Cannot save booking:</strong> Toyota Corolla (CA 123-456) is already booked 12–15 Sep for BK-10042.</span></div>
+      </div>
+    </div>
+
+    <div class="mode-panel" style="--bg:#131a24; --surface:#1c2531; --border:#33404f; --text:#e6ebf2; --text-2:#94a3b5; --primary:#5b8def; --success:#4caf6b; --warning:#f0a63c; --danger:#f0564f;">
+      <div class="mode-label dark"><span class="dot"></span>Dark</div>
+      <div class="card">
+        <div class="card-title-bar"><span class="title">Bookings</span><span class="btn">+ New Booking</span></div>
+        <table class="bookings">
+          <tr><th>Customer</th><th>Vehicle</th><th>Dates</th><th>Status</th></tr>
+          <tr><td>T. Ndlovu<div class="muted">BK-10042</div></td><td>Toyota Corolla<div class="muted">CA 123-456</div></td><td>12–15 Sep</td><td><span class="badge active">Active</span></td></tr>
+          <tr><td>M. van Wyk<div class="muted">BK-09988</div></td><td>Ford Ranger<div class="muted">CA 987-654</div></td><td>01–05 Aug</td><td><span class="badge completed">Completed</span></td></tr>
+          <tr><td>S. Patel<div class="muted">BK-09861</div></td><td>VW Polo<div class="muted">CA 456-789</div></td><td>20–22 Sep</td><td><span class="badge cancelled">Cancelled</span></td></tr>
+        </table>
+        <div class="error-banner"><span class="ico">&#9888;</span><span><strong>Cannot save booking:</strong> Toyota Corolla (CA 123-456) is already booked 12–15 Sep for BK-10042.</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================= THEME 6 ============================= -->
+<section class="theme">
+  <div class="theme-header">
+    <div class="num">VARIATION 6 OF 6</div>
+    <h2>Technical Mono</h2>
+    <p class="register">Engineering-console feel — near-grayscale with one sharp signal color, so semantic states are the only color in the room.</p>
+  </div>
+
+  <div class="tokens-wrap">
+    <p class="tokens-label">Light tokens</p>
+    <div class="chip-row">
+      <div class="chip"><span class="swatch" style="background:#f7f7f7"></span><span class="role">background</span><span class="hex">#f7f7f7</span></div>
+      <div class="chip"><span class="swatch" style="background:#ffffff"></span><span class="role">surface</span><span class="hex">#ffffff</span></div>
+      <div class="chip"><span class="swatch" style="background:#d9d9d9"></span><span class="role">border</span><span class="hex">#d9d9d9</span></div>
+      <div class="chip"><span class="swatch" style="background:#161616"></span><span class="role">text</span><span class="hex">#161616</span></div>
+      <div class="chip"><span class="swatch" style="background:#0f62fe"></span><span class="role">primary</span><span class="hex">#0f62fe</span></div>
+      <div class="chip"><span class="swatch" style="background:#198038"></span><span class="role">success</span><span class="hex">#198038</span></div>
+      <div class="chip"><span class="swatch" style="background:#8a6d00"></span><span class="role">warning</span><span class="hex">#8a6d00</span></div>
+      <div class="chip"><span class="swatch" style="background:#da1e28"></span><span class="role">danger</span><span class="hex">#da1e28</span></div>
+    </div>
+    <p class="tokens-label">Dark tokens</p>
+    <div class="chip-row">
+      <div class="chip"><span class="swatch" style="background:#101010"></span><span class="role">background</span><span class="hex">#101010</span></div>
+      <div class="chip"><span class="swatch" style="background:#1a1a1a"></span><span class="role">surface</span><span class="hex">#1a1a1a</span></div>
+      <div class="chip"><span class="swatch" style="background:#333333"></span><span class="role">border</span><span class="hex">#333333</span></div>
+      <div class="chip"><span class="swatch" style="background:#f4f4f4"></span><span class="role">text</span><span class="hex">#f4f4f4</span></div>
+      <div class="chip"><span class="swatch" style="background:#4589ff"></span><span class="role">primary</span><span class="hex">#4589ff</span></div>
+      <div class="chip"><span class="swatch" style="background:#42be65"></span><span class="role">success</span><span class="hex">#42be65</span></div>
+      <div class="chip"><span class="swatch" style="background:#d2a106"></span><span class="role">warning</span><span class="hex">#d2a106</span></div>
+      <div class="chip"><span class="swatch" style="background:#fa4d56"></span><span class="role">danger</span><span class="hex">#fa4d56</span></div>
+    </div>
+  </div>
+
+  <div class="modes-row">
+    <div class="mode-panel" style="--bg:#f7f7f7; --surface:#ffffff; --border:#d9d9d9; --text:#161616; --text-2:#6b6b6b; --primary:#0f62fe; --success:#198038; --warning:#8a6d00; --danger:#da1e28;">
+      <div class="mode-label light"><span class="dot"></span>Light</div>
+      <div class="card">
+        <div class="card-title-bar"><span class="title">Bookings</span><span class="btn">+ New Booking</span></div>
+        <table class="bookings">
+          <tr><th>Customer</th><th>Vehicle</th><th>Dates</th><th>Status</th></tr>
+          <tr><td>T. Ndlovu<div class="muted">BK-10042</div></td><td>Toyota Corolla<div class="muted">CA 123-456</div></td><td>12–15 Sep</td><td><span class="badge active">Active</span></td></tr>
+          <tr><td>M. van Wyk<div class="muted">BK-09988</div></td><td>Ford Ranger<div class="muted">CA 987-654</div></td><td>01–05 Aug</td><td><span class="badge completed">Completed</span></td></tr>
+          <tr><td>S. Patel<div class="muted">BK-09861</div></td><td>VW Polo<div class="muted">CA 456-789</div></td><td>20–22 Sep</td><td><span class="badge cancelled">Cancelled</span></td></tr>
+        </table>
+        <div class="error-banner"><span class="ico">&#9888;</span><span><strong>Cannot save booking:</strong> Toyota Corolla (CA 123-456) is already booked 12–15 Sep for BK-10042.</span></div>
+      </div>
+    </div>
+
+    <div class="mode-panel" style="--bg:#101010; --surface:#1a1a1a; --border:#333333; --text:#f4f4f4; --text-2:#a8a8a8; --primary:#4589ff; --success:#42be65; --warning:#d2a106; --danger:#fa4d56;">
+      <div class="mode-label dark"><span class="dot"></span>Dark</div>
+      <div class="card">
+        <div class="card-title-bar"><span class="title">Bookings</span><span class="btn">+ New Booking</span></div>
+        <table class="bookings">
+          <tr><th>Customer</th><th>Vehicle</th><th>Dates</th><th>Status</th></tr>
+          <tr><td>T. Ndlovu<div class="muted">BK-10042</div></td><td>Toyota Corolla<div class="muted">CA 123-456</div></td><td>12–15 Sep</td><td><span class="badge active">Active</span></td></tr>
+          <tr><td>M. van Wyk<div class="muted">BK-09988</div></td><td>Ford Ranger<div class="muted">CA 987-654</div></td><td>01–05 Aug</td><td><span class="badge completed">Completed</span></td></tr>
+          <tr><td>S. Patel<div class="muted">BK-09861</div></td><td>VW Polo<div class="muted">CA 456-789</div></td><td>20–22 Sep</td><td><span class="badge cancelled">Cancelled</span></td></tr>
+        </table>
+        <div class="error-banner"><span class="ico">&#9888;</span><span><strong>Cannot save booking:</strong> Toyota Corolla (CA 123-456) is already booked 12–15 Sep for BK-10042.</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<p class="footer-note">All 8 semantic roles (background, surface, border, text, primary, success, warning, danger) are defined for both light and dark per variation. Exact hex values are documented in the &lt;style&gt; comment block at the top of this file for direct reuse in the Angular theme tokens.</p>
+
+</body>
+</html>

@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Direction: Quiet Enterprise (Dark)</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    background: #0e1116;
+    font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    color: #d7dbe2;
+    padding: 28px 0 60px;
+  }
+  .rationale {
+    max-width: 1280px;
+    margin: 0 auto 18px;
+    padding: 0 4px;
+    font-size: 13.5px;
+    line-height: 1.5;
+    color: #cfd3da;
+  }
+  .rationale b { color: #fff; }
+  .frame {
+    width: 1280px;
+    margin: 0 auto;
+    background: #12161d;
+    border-radius: 12px;
+    overflow: hidden;
+    border: 1px solid #232a35;
+    box-shadow: 0 20px 50px rgba(0,0,0,0.55);
+  }
+  .titlebar {
+    height: 36px;
+    background: #171c25;
+    border-bottom: 1px solid #232a35;
+    display: flex;
+    align-items: center;
+    padding: 0 14px;
+    gap: 8px;
+  }
+  .dot { width: 10px; height: 10px; border-radius: 50%; }
+  .dot.r { background: #e5645a; }
+  .dot.y { background: #e3b34d; }
+  .dot.g { background: #59c37b; }
+  .addr {
+    flex: 1;
+    margin-left: 14px;
+    background: #0e1116;
+    border-radius: 6px;
+    font-size: 11.5px;
+    color: #8b93a1;
+    padding: 5px 12px;
+  }
+  .appbar {
+    height: 52px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 22px;
+    background: #12161d;
+  }
+  .brandwrap { display: flex; align-items: center; gap: 10px; }
+  .logo {
+    width: 26px; height: 26px;
+    background: linear-gradient(135deg, #5b8def, #3f6fd1);
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 13px; color: #fff;
+  }
+  .brand { font-weight: 600; font-size: 14px; color: #f1f3f6; letter-spacing: 0.2px; }
+  .navlinks { display: flex; gap: 26px; font-size: 13px; }
+  .navlinks a { color: #8b93a1; text-decoration: none; }
+  .navlinks a.active { color: #f1f3f6; font-weight: 600; }
+  .userchip {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 12px; color: #a8afba;
+  }
+  .avatar {
+    width: 22px; height: 22px; border-radius: 50%;
+    background: #3a4150; display: flex; align-items: center; justify-content: center;
+    font-size: 10px; font-weight: 700; color: #d7dbe2;
+  }
+
+  .content { padding: 22px 22px 0; }
+  .pagehead {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+  }
+  .pagehead h1 { font-size: 19px; font-weight: 600; color: #f1f3f6; }
+  .pagehead .count { font-size: 12.5px; color: #7c8492; margin-left: 10px; font-weight: 400; }
+  .btn-new {
+    background: #5b8def;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    padding: 9px 18px;
+    font-size: 13px;
+    font-weight: 600;
+    box-shadow: 0 4px 12px rgba(91,141,239,0.35);
+  }
+
+  .card {
+    background: #171c25;
+    border: 1px solid #232a35;
+    border-radius: 12px;
+    overflow: hidden;
+  }
+
+  .filterbar {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 14px 18px;
+    border-bottom: 1px solid #232a35;
+  }
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .field label { font-size: 10.5px; color: #7c8492; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; }
+  .field input, .field select {
+    background: #0e1116;
+    border: 1px solid #2a3140;
+    border-radius: 7px;
+    color: #d7dbe2;
+    font-size: 12.5px;
+    padding: 6px 10px;
+    width: 150px;
+  }
+  .field.search input { width: 220px; }
+  .clearlink {
+    margin-left: auto;
+    font-size: 12.5px;
+    color: #5b8def;
+    align-self: flex-end;
+    padding-bottom: 7px;
+  }
+
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  thead th {
+    text-align: left;
+    padding: 9px 18px;
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-weight: 600;
+    color: #7c8492;
+    border-bottom: 1px solid #232a35;
+  }
+  thead th.num { text-align: right; }
+  tbody td {
+    padding: 6.5px 18px;
+    color: #d7dbe2;
+    white-space: nowrap;
+  }
+  tbody tr:nth-child(even) td { background: #14181f; }
+  tbody td.num { text-align: right; color: #c3c8d1; }
+  tbody td.veh { color: #f1f3f6; font-weight: 500; }
+  tbody tr.error-row td { background: #241a1c; }
+
+  .anon { color: #6d7480; font-style: italic; }
+
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    border-radius: 999px;
+    padding: 3px 10px 3px 8px;
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .badge .dotb { width: 6px; height: 6px; border-radius: 50%; }
+  .badge.active { background: rgba(89,195,123,0.14); color: #7bd99a; }
+  .badge.active .dotb { background: #59c37b; }
+  .badge.completed { background: rgba(139,147,161,0.14); color: #a8afba; }
+  .badge.completed .dotb { background: #8b93a1; }
+  .badge.cancelled { background: rgba(229,100,90,0.14); color: #f0a9a3; }
+  .badge.cancelled .dotb { background: #e5645a; }
+
+  .actions { display: flex; gap: 14px; }
+  .actions a { color: #7fa6ef; text-decoration: none; font-size: 12px; font-weight: 500; }
+  .actions a.disabled { color: #454c58; cursor: not-allowed; }
+  .inline-err {
+    color: #f0a9a3;
+    font-size: 10.5px;
+    margin-top: 3px;
+  }
+
+  .footerbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 18px;
+    font-size: 12px;
+    color: #7c8492;
+    border-top: 1px solid #232a35;
+  }
+  .pager { display: flex; gap: 4px; }
+  .pager span {
+    border-radius: 6px;
+    padding: 3px 9px;
+    color: #a8afba;
+  }
+  .pager span.cur { background: #5b8def; color: #fff; font-weight: 600; }
+  .bottom-pad { height: 20px; }
+</style>
+</head>
+<body>
+
+<div class="rationale">
+  <b>Direction: "Quiet Enterprise"</b> — Dark mode. Separation comes from whitespace, faint zebra tinting and one rounded card rather than ruled lines; soft pill badges carry color at low intensity so the screen stays calm across a long shift. Rounded, low-contrast, and confident without shouting.
+</div>
+
+<div class="frame">
+  <div class="titlebar">
+    <div class="dot r"></div><div class="dot y"></div><div class="dot g"></div>
+    <div class="addr">app.brunovehiclehire.co.za/bookings</div>
+  </div>
+
+  <div class="appbar">
+    <div class="brandwrap">
+      <div class="logo">B</div>
+      <div class="brand">Bruno Vehicle Hire</div>
+    </div>
+    <div class="navlinks">
+      <a class="active" href="#">Bookings</a>
+      <a href="#">Vehicles</a>
+      <a href="#">Customers</a>
+      <a href="#">Reports</a>
+    </div>
+    <div class="userchip">
+      Bruno Vehicle Hire — Staff Terminal
+    </div>
+  </div>
+
+  <div class="content">
+    <div class="pagehead">
+      <div><h1 style="display:inline">Bookings<span class="count">143 records</span></h1></div>
+      <button class="btn-new">+ New Booking</button>
+    </div>
+
+    <div class="card">
+      <div class="filterbar">
+        <div class="field search">
+          <label>Search</label>
+          <input placeholder="vehicle, customer, plate…">
+        </div>
+        <div class="field">
+          <label>Status</label>
+          <select><option>All statuses</option></select>
+        </div>
+        <div class="field">
+          <label>Start date</label>
+          <input value="2026-08-01">
+        </div>
+        <div class="field">
+          <label>End date</label>
+          <input value="2026-09-30">
+        </div>
+        <div class="clearlink">Clear all filters</div>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Vehicle</th>
+            <th>Customer</th>
+            <th>Start</th>
+            <th>End</th>
+            <th class="num">Total</th>
+            <th>Status</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="error-row">
+            <td class="veh">Toyota Corolla — CA123456</td>
+            <td>Thabo Nkosi</td>
+            <td>20 Aug 2026</td>
+            <td>27 Aug 2026</td>
+            <td class="num">R4,200.00</td>
+            <td><span class="badge completed"><span class="dotb"></span>Completed</span></td>
+            <td>
+              <div class="actions"><a href="#">View</a><a class="disabled">Cancel</a></div>
+              <div class="inline-err">Cannot cancel — booking already completed</div>
+            </td>
+          </tr>
+          <tr>
+            <td class="veh">VW Polo Vivo — GP884213</td>
+            <td>Aisha Patel</td>
+            <td>25 Aug 2026</td>
+            <td>02 Sep 2026</td>
+            <td class="num">R3,150.00</td>
+            <td><span class="badge active"><span class="dotb"></span>Active</span></td>
+            <td><div class="actions"><a href="#">View</a><a href="#">Cancel</a></div></td>
+          </tr>
+          <tr>
+            <td class="veh">Ford Ranger — WC552901</td>
+            <td>Johan van der Merwe</td>
+            <td>28 Aug 2026</td>
+            <td>05 Sep 2026</td>
+            <td class="num">R8,960.00</td>
+            <td><span class="badge active"><span class="dotb"></span>Active</span></td>
+            <td><div class="actions"><a href="#">View</a><a href="#">Cancel</a></div></td>
+          </tr>
+          <tr>
+            <td class="veh">Hyundai i20 — KZN338847</td>
+            <td>Lindiwe Dlamini</td>
+            <td>15 Aug 2026</td>
+            <td>19 Aug 2026</td>
+            <td class="num">R2,480.00</td>
+            <td><span class="badge completed"><span class="dotb"></span>Completed</span></td>
+            <td><div class="actions"><a href="#">View</a><a class="disabled">Cancel</a></div></td>
+          </tr>
+          <tr>
+            <td class="veh">Toyota Hilux — GP102938</td>
+            <td class="anon">Customer (anonymized)</td>
+            <td>10 Aug 2026</td>
+            <td>17 Aug 2026</td>
+            <td class="num">R7,350.00</td>
+            <td><span class="badge completed"><span class="dotb"></span>Completed</span></td>
+            <td><div class="actions"><a href="#">View</a><a class="disabled">Cancel</a></div></td>
+          </tr>
+          <tr>
+            <td class="veh">Renault Kwid — CA778102</td>
+            <td>Kagiso Molefe</td>
+            <td>30 Aug 2026</td>
+            <td>03 Sep 2026</td>
+            <td class="num">R1,860.00</td>
+            <td><span class="badge active"><span class="dotb"></span>Active</span></td>
+            <td><div class="actions"><a href="#">View</a><a href="#">Cancel</a></div></td>
+          </tr>
+          <tr>
+            <td class="veh">BMW 3 Series — WC441087</td>
+            <td>Sarah Botha</td>
+            <td>01 Sep 2026</td>
+            <td>08 Sep 2026</td>
+            <td class="num">R9,800.00</td>
+            <td><span class="badge active"><span class="dotb"></span>Active</span></td>
+            <td><div class="actions"><a href="#">View</a><a href="#">Cancel</a></div></td>
+          </tr>
+          <tr>
+            <td class="veh">Isuzu D-Max — GP665319</td>
+            <td>Pieter Coetzee</td>
+            <td>12 Aug 2026</td>
+            <td>14 Aug 2026</td>
+            <td class="num">R3,900.00</td>
+            <td><span class="badge cancelled"><span class="dotb"></span>Cancelled</span></td>
+            <td><div class="actions"><a href="#">View</a></div></td>
+          </tr>
+          <tr>
+            <td class="veh">Toyota Corolla — CA556234</td>
+            <td>Naledi Khumalo</td>
+            <td>22 Aug 2026</td>
+            <td>24 Aug 2026</td>
+            <td class="num">R1,400.00</td>
+            <td><span class="badge completed"><span class="dotb"></span>Completed</span></td>
+            <td><div class="actions"><a href="#">View</a><a class="disabled">Cancel</a></div></td>
+          </tr>
+          <tr>
+            <td class="veh">VW Polo Vivo — GP991023</td>
+            <td>Michael O'Connell</td>
+            <td>31 Aug 2026</td>
+            <td>06 Sep 2026</td>
+            <td class="num">R4,725.00</td>
+            <td><span class="badge active"><span class="dotb"></span>Active</span></td>
+            <td><div class="actions"><a href="#">View</a><a href="#">Cancel</a></div></td>
+          </tr>
+          <tr>
+            <td class="veh">Ford EcoSport — WC220456</td>
+            <td>Zanele Mokoena</td>
+            <td>18 Aug 2026</td>
+            <td>21 Aug 2026</td>
+            <td class="num">R2,250.00</td>
+            <td><span class="badge completed"><span class="dotb"></span>Completed</span></td>
+            <td><div class="actions"><a href="#">View</a><a class="disabled">Cancel</a></div></td>
+          </tr>
+          <tr>
+            <td class="veh">Hyundai Creta — KZN774310</td>
+            <td>David Reddy</td>
+            <td>29 Aug 2026</td>
+            <td>04 Sep 2026</td>
+            <td class="num">R5,580.00</td>
+            <td><span class="badge active"><span class="dotb"></span>Active</span></td>
+            <td><div class="actions"><a href="#">View</a><a href="#">Cancel</a></div></td>
+          </tr>
+          <tr>
+            <td class="veh">Toyota Hilux — GP334781</td>
+            <td>Amanda Fourie</td>
+            <td>05 Aug 2026</td>
+            <td>09 Aug 2026</td>
+            <td class="num">R6,120.00</td>
+            <td><span class="badge completed"><span class="dotb"></span>Completed</span></td>
+            <td><div class="actions"><a href="#">View</a><a class="disabled">Cancel</a></div></td>
+          </tr>
+          <tr>
+            <td class="veh">Renault Kwid — CA119045</td>
+            <td>Sipho Zulu</td>
+            <td>01 Sep 2026</td>
+            <td>02 Sep 2026</td>
+            <td class="num">R620.00</td>
+            <td><span class="badge active"><span class="dotb"></span>Active</span></td>
+            <td><div class="actions"><a href="#">View</a><a href="#">Cancel</a></div></td>
+          </tr>
+          <tr>
+            <td class="veh">BMW 3 Series — WC887632</td>
+            <td>Emily Naidoo</td>
+            <td>08 Aug 2026</td>
+            <td>15 Aug 2026</td>
+            <td class="num">R11,200.00</td>
+            <td><span class="badge completed"><span class="dotb"></span>Completed</span></td>
+            <td><div class="actions"><a href="#">View</a><a class="disabled">Cancel</a></div></td>
+          </tr>
+          <tr>
+            <td class="veh">Isuzu D-Max — GP556098</td>
+            <td>Bongani Sithole</td>
+            <td>27 Aug 2026</td>
+            <td>30 Aug 2026</td>
+            <td class="num">R3,510.00</td>
+            <td><span class="badge active"><span class="dotb"></span>Active</span></td>
+            <td><div class="actions"><a href="#">View</a><a href="#">Cancel</a></div></td>
+          </tr>
+          <tr>
+            <td class="veh">Toyota Corolla — CA662980</td>
+            <td>Refilwe Mahlangu</td>
+            <td>14 Aug 2026</td>
+            <td>16 Aug 2026</td>
+            <td class="num">R1,050.00</td>
+            <td><span class="badge completed"><span class="dotb"></span>Completed</span></td>
+            <td><div class="actions"><a href="#">View</a><a class="disabled">Cancel</a></div></td>
+          </tr>
+          <tr>
+            <td class="veh">VW Polo Vivo — GP447712</td>
+            <td>Werner Kruger</td>
+            <td>24 Aug 2026</td>
+            <td>28 Aug 2026</td>
+            <td class="num">R3,360.00</td>
+            <td><span class="badge active"><span class="dotb"></span>Active</span></td>
+            <td><div class="actions"><a href="#">View</a><a href="#">Cancel</a></div></td>
+          </tr>
+          <tr>
+            <td class="veh">Ford Ranger — WC330198</td>
+            <td>Nomvula Cele</td>
+            <td>19 Aug 2026</td>
+            <td>26 Aug 2026</td>
+            <td class="num">R8,050.00</td>
+            <td><span class="badge completed"><span class="dotb"></span>Completed</span></td>
+            <td><div class="actions"><a href="#">View</a><a class="disabled">Cancel</a></div></td>
+          </tr>
+          <tr>
+            <td class="veh">Hyundai i20 — KZN552467</td>
+            <td>Ahmed Vawda</td>
+            <td>31 Aug 2026</td>
+            <td>07 Sep 2026</td>
+            <td class="num">R3,920.00</td>
+            <td><span class="badge active"><span class="dotb"></span>Active</span></td>
+            <td><div class="actions"><a href="#">View</a><a href="#">Cancel</a></div></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="footerbar">
+        <div>Showing 1–20 of 143</div>
+        <div class="pager">
+          <span class="cur">1</span><span>2</span><span>3</span><span>…</span><span>8</span><span>Next ›</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="bottom-pad"></div>
+  </div>
+</div>
+
+</body>
+</html>
