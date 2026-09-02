@@ -109,29 +109,21 @@ public class VehicleMigrationTests : IAsyncLifetime
         await using var seedContext = CreateDbContext();
         await seedContext.Database.MigrateAsync();
 
-        seedContext.Vehicles.Add(new Vehicle
-        {
-            Id = Guid.CreateVersion7(),
-            RegistrationNumber = "CA123456",
-            Make = "Toyota",
-            Model = "Corolla",
-            Year = 2023,
-            DailyRate = 350m,
-            CreatedDate = DateTime.UtcNow,
-        });
+        seedContext.Vehicles.Add(Vehicle.Create(
+            registrationNumber: "CA123456",
+            make: "Toyota",
+            model: "Corolla",
+            year: 2023,
+            dailyRate: 350m));
         await seedContext.SaveChangesAsync();
 
         await using var duplicateContext = CreateDbContext();
-        duplicateContext.Vehicles.Add(new Vehicle
-        {
-            Id = Guid.CreateVersion7(),
-            RegistrationNumber = "CA123456",
-            Make = "Honda",
-            Model = "Civic",
-            Year = 2024,
-            DailyRate = 400m,
-            CreatedDate = DateTime.UtcNow,
-        });
+        duplicateContext.Vehicles.Add(Vehicle.Create(
+            registrationNumber: "CA123456",
+            make: "Honda",
+            model: "Civic",
+            year: 2024,
+            dailyRate: 400m));
 
         var act = () => duplicateContext.SaveChangesAsync();
 

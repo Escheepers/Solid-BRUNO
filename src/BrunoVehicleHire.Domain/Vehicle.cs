@@ -1,26 +1,117 @@
+using BrunoVehicleHire.Domain.Exceptions;
+
 namespace BrunoVehicleHire.Domain;
 
 /// <summary>
-/// Schema-only shape for the Vehicle aggregate, matching domain-model.md exactly.
-/// Story 1.3 enriches this same file with <c>Vehicle.Create(...)</c>, private setters,
-/// and invariant checks -- the column shape (names/types) does not change, so no second
-/// migration is needed. Do not add behavior or a second "V2" entity here.
+/// The Vehicle aggregate root. The only way to construct a valid instance is
+/// <see cref="Create"/>, which enforces every invariant below; EF Core materializes
+/// existing rows via the private parameterless constructor, bypassing no invariant
+/// since the row was valid when it was written. No property has a public setter --
+/// state changes only through aggregate methods (e.g. <see cref="SoftDelete"/>).
 /// </summary>
 public class Vehicle
 {
-    public Guid Id { get; set; }
+    private const int EarliestPlausibleYear = 1900;
 
-    public string RegistrationNumber { get; set; } = string.Empty;
+    public Guid Id { get; private set; }
 
-    public string Make { get; set; } = string.Empty;
+    public string RegistrationNumber { get; private set; } = string.Empty;
 
-    public string Model { get; set; } = string.Empty;
+    public string Make { get; private set; } = string.Empty;
 
-    public int Year { get; set; }
+    public string Model { get; private set; } = string.Empty;
 
-    public decimal DailyRate { get; set; }
+    public int Year { get; private set; }
 
-    public bool IsDeleted { get; set; }
+    public decimal DailyRate { get; private set; }
 
-    public DateTime CreatedDate { get; set; }
+    public bool IsDeleted { get; private set; }
+
+    public DateTime CreatedDate { get; private set; }
+
+    /// <summary>Reserved for EF Core materialization -- never call directly.</summary>
+    private Vehicle()
+    {
+    }
+
+    private Vehicle(
+        Guid id,
+        string registrationNumber,
+        string make,
+        string model,
+        int year,
+        decimal dailyRate,
+        DateTime createdDate)
+    {
+        Id = id;
+        RegistrationNumber = registrationNumber;
+        Make = make;
+        Model = model;
+        Year = year;
+        DailyRate = dailyRate;
+        IsDeleted = false;
+        CreatedDate = createdDate;
+    }
+
+    /// <summary>
+    /// Constructs a new, valid <see cref="Vehicle"/>, throwing <see cref="DomainRuleViolationException"/>
+    /// if any invariant is violated. <paramref name="timeProvider"/> defaults to <see cref="TimeProvider.System"/>
+    /// so tests can inject a fixed clock and assert an exact <see cref="CreatedDate"/>.
+    /// </summary>
+    public static Vehicle Create(
+        string registrationNumber,
+        string make,
+        string model,
+        int year,
+        decimal dailyRate,
+        TimeProvider? timeProvider = null)
+    {
+        timeProvider ??= TimeProvider.System;
+
+        if (string.IsNullOrWhiteSpace(registrationNumber))
+        {
+            throw new DomainRuleViolationException(
+                nameof(Vehicle), nameof(RegistrationNumber), "RegistrationNumber must not be blank.");
+        }
+
+        if (string.IsNullOrWhiteSpace(make))
+        {
+            throw new DomainRuleViolationException(
+                nameof(Vehicle), nameof(Make), "Make must not be blank.");
+        }
+
+        if (string.IsNullOrWhiteSpace(model))
+        {
+            throw new DomainRuleViolationException(
+                nameof(Vehicle), nameof(Model), "Model must not be blank.");
+        }
+
+        if (dailyRate <= 0)
+        {
+            throw new DomainRuleViolationException(
+                nameof(Vehicle), nameof(DailyRate), "DailyRate must be positive.");
+        }
+
+        var nextCalendarYear = timeProvider.GetUtcNow().Year + 1;
+        if (year < EarliestPlausibleYear || year > nextCalendarYear)
+        {
+            throw new DomainRuleViolationException(
+                nameof(Vehicle), nameof(Year), $"Year must be between {EarliestPlausibleYear} and {nextCalendarYear}.");
+        }
+
+        return new Vehicle(
+            Guid.CreateVersion7(),
+            registrationNumber,
+            make,
+            model,
+            year,
+            dailyRate,
+            timeProvider.GetUtcNow().UtcDateTime);
+    }
+
+    /// <summary>Marks the vehicle deleted. Idempotent: calling it again is a no-op, not an error.</summary>
+    public void SoftDelete()
+    {
+        IsDeleted = true;
+    }
 }
