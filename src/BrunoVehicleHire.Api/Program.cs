@@ -1,4 +1,6 @@
 using BrunoVehicleHire.Api.Auth;
+using BrunoVehicleHire.Api.ErrorHandling;
+using BrunoVehicleHire.Domain.Exceptions;
 using BrunoVehicleHire.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
@@ -22,6 +24,11 @@ builder.Services.AddAuthorization(options =>
         .RequireAuthenticatedUser()
         .Build();
 });
+
+// AD-8: RFC 9457 ProblemDetails for every unhandled exception, produced by GlobalExceptionHandler
+// and written via the built-in IProblemDetailsService.
+builder.Services.AddProblemDetails();
+builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 
 builder.Services.AddControllers();
 
@@ -68,6 +75,10 @@ using (var scope = app.Services.CreateScope())
 }
 
 // Configure the HTTP request pipeline.
+// UseExceptionHandler() is the first pipeline middleware (AD-8/Story 1.5) so GlobalExceptionHandler
+// can catch exceptions thrown by any later middleware, not just endpoint handlers.
+app.UseExceptionHandler();
+
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -80,6 +91,25 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
+
+if (app.Environment.IsEnvironment("Testing"))
+{
+    // Diagnostic-only endpoints so Story 1.5's own integration tests can exercise the full
+    // pipeline (auth + GlobalExceptionHandler) against a real HTTP request. Mapped only under the
+    // "Testing" environment name, which the real app is never started with (Development/
+    // Production only) -- zero Production/Development attack surface. Still mapped after
+    // UseAuthentication()/UseAuthorization() so the global FallbackPolicy (Story 1.4) protects
+    // them like every other endpoint.
+    app.MapGet("/api/test/throw-domain-rule", () =>
+    {
+        throw new DomainRuleViolationException("Vehicle", "Year", "Year must be between 1900 and next year.");
+    });
+
+    app.MapGet("/api/test/throw-unhandled", () =>
+    {
+        throw new InvalidOperationException("some internal detail that must never reach the client");
+    });
+}
 
 app.Run();
 
