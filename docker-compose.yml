@@ -1,0 +1,32 @@
+services:
+  postgres:
+    image: postgres:18
+    container_name: bruno-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: bruno
+      POSTGRES_PASSWORD: bruno_dev_password
+      POSTGRES_DB: brunovehiclehire
+    ports:
+      - "5432:5432"
+    volumes:
+      # Postgres 18's official image expects a single mount at /var/lib/postgresql (not the old
+      # .../postgresql/data), placing data in a major-version-keyed subdirectory for pg_upgrade
+      # compatibility -- mounting at .../data directly makes the container fail to start.
+      - postgres-data:/var/lib/postgresql
+      # Creates the btree_gist extension on first init (see AD-7 in the architecture spine).
+      - ./docker/postgres-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bruno -d brunovehiclehire"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres-data:
+  # Provisioned now for Epic 3/4's ASP.NET Core Data Protection key ring (PII value-converter
+  # encryption), unused by this story. No Api container exists yet -- this story's Api runs via
+  # `dotnet run` on the host, so Program.cs persists keys to the local ./dataprotection-keys
+  # folder (see appsettings.json: DataProtection:KeyRingPath). Once the Api is containerized,
+  # mount this volume at that same path so both routes converge on one key ring.
+  dataprotection-keys:

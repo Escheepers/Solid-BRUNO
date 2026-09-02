@@ -12,8 +12,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- ProjectReference to Infrastructure is the AD-1 permitted exception: only Api.Controllers
+         (enforced by ArchitectureFitnessTests) may not depend on Infrastructure. Api itself needs
+         this reference to compose DI (AddDbContext, Data Protection) in Program.cs. -->
     <ProjectReference Include="..\BrunoVehicleHire.Application\BrunoVehicleHire.Application.csproj" />
     <ProjectReference Include="..\BrunoVehicleHire.Domain\BrunoVehicleHire.Domain.csproj" />
+    <ProjectReference Include="..\BrunoVehicleHire.Infrastructure\BrunoVehicleHire.Infrastructure.csproj" />
   </ItemGroup>
 
 </Project>

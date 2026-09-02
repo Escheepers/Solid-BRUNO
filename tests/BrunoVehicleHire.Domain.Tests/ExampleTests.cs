@@ -12,7 +12,7 @@ public class ExampleTests
     [Fact]
     public void DomainProject_IsReferencedAndInstantiable()
     {
-        var instance = new Class1();
+        var instance = new Vehicle();
 
         Assert.NotNull(instance);
     }
