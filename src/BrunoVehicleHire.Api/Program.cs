@@ -1,7 +1,12 @@
 using BrunoVehicleHire.Api.Auth;
 using BrunoVehicleHire.Api.ExceptionHandling;
+using BrunoVehicleHire.Application.Common;
+using BrunoVehicleHire.Application.Vehicles;
+using BrunoVehicleHire.Application.Vehicles.Queries;
 using BrunoVehicleHire.Domain.Exceptions;
 using BrunoVehicleHire.Infrastructure.Persistence;
+using BrunoVehicleHire.Infrastructure.Repositories;
+using FluentValidation;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.DataProtection;
@@ -31,6 +36,24 @@ builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 
 builder.Services.AddControllers();
+
+// The first real CQRS slice (Story 1.7): MediatR pipeline with the shared ValidationBehavior
+// (AD-10) registered as an open behavior so every current and future request gets its registered
+// FluentValidation validators run before the handler executes. The MediatR Community license key
+// is read from configuration (dotnet user-secrets in Development) -- never committed to
+// appsettings.json.
+builder.Services.AddMediatR(cfg =>
+{
+    cfg.RegisterServicesFromAssembly(typeof(GetVehiclesQuery).Assembly);
+    cfg.AddOpenBehavior(typeof(ValidationBehavior<,>));
+    cfg.LicenseKey = builder.Configuration["MediatR:LicenseKey"];
+});
+
+// FluentValidation.DependencyInjectionExtensions -- never FluentValidation.AspNetCore (AD-10
+// explicitly names it deprecated).
+builder.Services.AddValidatorsFromAssembly(typeof(GetVehiclesQuery).Assembly);
+
+builder.Services.AddScoped<IVehicleRepository, VehicleRepository>();
 
 // Swashbuckle: declares the ApiKey header security scheme + a global security requirement so
 // Swagger UI's "Authorize" dialog exercises the real enforcement pipeline (AD-11).

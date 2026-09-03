@@ -35,14 +35,14 @@ project_key: NOKEY
 tracking_system: file-system
 story_location: _bmad-output/implementation-artifacts
 development_status:
-  epic-1: in-progress
+  epic-1: done
   1-1-backend-solution-scaffolding-test-harness: done
   1-2-local-database-docker-compose-environment: done
   1-3-vehicle-domain-model-tdd: done
   1-4-api-key-authentication-foundation: done
   1-5-global-error-handling-problemdetails: done
   1-6-angular-app-shell-design-tokens: done
-  1-7-vehicle-list-the-walking-skeleton-proof: backlog
+  1-7-vehicle-list-the-walking-skeleton-proof: done
   epic-1-retrospective: optional
 
   epic-2: backlog

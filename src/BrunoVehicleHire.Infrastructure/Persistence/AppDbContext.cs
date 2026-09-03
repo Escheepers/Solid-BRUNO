@@ -4,9 +4,10 @@ using Microsoft.EntityFrameworkCore;
 namespace BrunoVehicleHire.Infrastructure.Persistence;
 
 /// <summary>
-/// EF Core composition root for the Postgres database. Schema-only for this story:
-/// one DbSet (Vehicle) with a unique index on RegistrationNumber. Repositories,
-/// query filters, and additional aggregates arrive with their own stories.
+/// EF Core composition root for the Postgres database. One DbSet (Vehicle) with a unique index on
+/// RegistrationNumber, plus a global query filter (AD-13) so soft-deleted vehicles never surface
+/// through any EF Core query anywhere in the app, present or future. Additional aggregates arrive
+/// with their own stories.
 /// </summary>
 public class AppDbContext : DbContext
 {
@@ -41,6 +42,10 @@ public class AppDbContext : DbContext
 
             entity.Property(v => v.DailyRate)
                 .HasColumnType("numeric(18,2)");
+
+            // AD-13: soft-deleted vehicles never surface through EF Core queries anywhere in the
+            // app -- query-time only, so this needs no new migration.
+            entity.HasQueryFilter(v => !v.IsDeleted);
         });
     }
 }

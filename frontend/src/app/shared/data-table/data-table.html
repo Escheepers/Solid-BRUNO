@@ -1,0 +1,50 @@
+@if (loading()) {
+  <app-skeleton [rows]="6" />
+} @else {
+  <div class="overflow-x-auto">
+    <table class="w-full text-left">
+      <thead class="bg-surface-header">
+        <tr>
+          @for (column of columns(); track column.header) {
+            <th class="py-row-y px-row-x text-section-label uppercase text-text-faint" scope="col">
+              {{ column.header }}
+            </th>
+          }
+        </tr>
+      </thead>
+      <tbody>
+        @for (row of rows(); track $index) {
+          <tr class="odd:bg-surface-alt">
+            @for (column of columns(); track column.header) {
+              <td class="py-row-y px-row-x text-body text-text-body">
+                {{ column.cell(row) }}
+              </td>
+            }
+          </tr>
+        }
+      </tbody>
+    </table>
+  </div>
+
+  <div class="flex items-center justify-between px-row-x py-row-y text-caption text-text-muted">
+    <span>Showing {{ rangeStart() }}&ndash;{{ rangeEnd() }} of {{ totalCount() }}</span>
+    <div class="flex gap-3">
+      <button
+        type="button"
+        class="text-button text-text-faint disabled:text-text-disabled"
+        [disabled]="page() <= 1"
+        (click)="goToPrevious()"
+      >
+        Previous
+      </button>
+      <button
+        type="button"
+        class="text-button text-text-faint disabled:text-text-disabled"
+        [disabled]="page() >= totalPages()"
+        (click)="goToNext()"
+      >
+        Next
+      </button>
+    </div>
+  </div>
+}

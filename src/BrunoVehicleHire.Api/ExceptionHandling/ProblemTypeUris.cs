@@ -14,6 +14,15 @@ public static class ProblemTypeUris
     public const string UnexpectedError = "urn:bruno:server:unexpected-error";
 
     /// <summary>
+    /// Fixed <c>type</c> URI for every <c>400 Bad Request</c> validation-failure response
+    /// (<see cref="GlobalExceptionHandler"/>'s <c>FluentValidation.ValidationException</c> branch).
+    /// Unlike the per-entity/per-rule <see cref="For"/> template used for <c>409</c>s, every
+    /// validation failure uses this single fixed URI: the field-level detail already lives in
+    /// <c>ValidationProblemDetails.Errors</c>, so a per-field URI would be redundant.
+    /// </summary>
+    public const string ValidationFailure = "urn:bruno:validation:invalid-request";
+
+    /// <summary>
     /// Builds a <c>urn:bruno:{entity-kebab-case}:{rule-kebab-case}</c> type URI, e.g.
     /// <c>For("Vehicle", "RegistrationNumber")</c> -&gt; <c>"urn:bruno:vehicle:registration-number"</c>.
     /// </summary>

@@ -1,9 +1,11 @@
 using BrunoVehicleHire.Api.ExceptionHandling;
 using BrunoVehicleHire.Domain.Exceptions;
 using FluentAssertions;
+using FluentValidation.Results;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using NSubstitute;
+using ValidationException = FluentValidation.ValidationException;
 
 namespace BrunoVehicleHire.Api.Tests;
 
@@ -114,6 +116,94 @@ public class GlobalExceptionHandlerTests
         context.ProblemDetails.Status.Should().Be(StatusCodes.Status500InternalServerError);
         context.ProblemDetails.Type.Should().Be(ProblemTypeUris.UnexpectedError);
         context.ProblemDetails.Detail.Should().NotContain(exception.Message);
+    }
+
+    [Fact]
+    public async Task TryHandleAsync_ValidationException_SingleFieldFailure_Returns400WithFieldInErrors()
+    {
+        var (handler, problemDetailsService) = CreateHandler();
+        var httpContext = new DefaultHttpContext();
+        var exception = new ValidationException(new[]
+        {
+            new ValidationFailure("PageSize", "PageSize must be between 1 and 100."),
+        });
+
+        var handled = await handler.TryHandleAsync(httpContext, exception, CancellationToken.None);
+
+        handled.Should().BeTrue();
+        httpContext.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+
+        var context = GetWrittenContext(problemDetailsService);
+        context.ProblemDetails.Should().BeOfType<ValidationProblemDetails>();
+        var validationProblemDetails = (ValidationProblemDetails)context.ProblemDetails;
+        validationProblemDetails.Status.Should().Be(StatusCodes.Status400BadRequest);
+        validationProblemDetails.Type.Should().Be(ProblemTypeUris.ValidationFailure);
+        validationProblemDetails.Title.Should().Be("One or more validation errors occurred.");
+        validationProblemDetails.Errors.Should().ContainKey("PageSize");
+        validationProblemDetails.Errors["PageSize"].Should().Contain("PageSize must be between 1 and 100.");
+    }
+
+    [Fact]
+    public async Task TryHandleAsync_ValidationException_PopulatesDetail_SoFrontendNormalizationRecognizesIt()
+    {
+        // Regression test: every ProblemDetails-shaped response this API produces must populate
+        // Detail, since the Angular error-normalization interceptor's isProblemDetails type guard
+        // requires it to classify a 400/409 as a BusinessRuleError rather than a ServerError. This
+        // branch initially omitted Detail (found during Story 1.7's frontend implementation), which
+        // silently misclassified every validation failure as a ServerError on the frontend.
+        var (handler, problemDetailsService) = CreateHandler();
+        var httpContext = new DefaultHttpContext();
+        var exception = new ValidationException(new[]
+        {
+            new ValidationFailure("PageSize", "PageSize must be between 1 and 100."),
+        });
+
+        await handler.TryHandleAsync(httpContext, exception, CancellationToken.None);
+
+        var context = GetWrittenContext(problemDetailsService);
+        context.ProblemDetails.Detail.Should().NotBeNullOrWhiteSpace();
+    }
+
+    [Fact]
+    public async Task TryHandleAsync_ValidationException_MultipleFieldFailures_Returns400WithMultipleKeysInErrors()
+    {
+        var (handler, problemDetailsService) = CreateHandler();
+        var httpContext = new DefaultHttpContext();
+        var exception = new ValidationException(new[]
+        {
+            new ValidationFailure("Page", "Page must be greater than or equal to 1."),
+            new ValidationFailure("PageSize", "PageSize must be between 1 and 100."),
+        });
+
+        await handler.TryHandleAsync(httpContext, exception, CancellationToken.None);
+
+        var context = GetWrittenContext(problemDetailsService);
+        var validationProblemDetails = (ValidationProblemDetails)context.ProblemDetails;
+        validationProblemDetails.Errors.Should().ContainKey("Page");
+        validationProblemDetails.Errors.Should().ContainKey("PageSize");
+        validationProblemDetails.Errors["Page"].Should().Contain("Page must be greater than or equal to 1.");
+        validationProblemDetails.Errors["PageSize"].Should().Contain("PageSize must be between 1 and 100.");
+    }
+
+    [Fact]
+    public async Task TryHandleAsync_ValidationException_SamePropertyMultipleFailures_GroupsIntoOneKeyWithMultipleMessages()
+    {
+        var (handler, problemDetailsService) = CreateHandler();
+        var httpContext = new DefaultHttpContext();
+        var exception = new ValidationException(new[]
+        {
+            new ValidationFailure("Search", "Search must not exceed 100 characters."),
+            new ValidationFailure("Search", "Search must not contain special characters."),
+        });
+
+        await handler.TryHandleAsync(httpContext, exception, CancellationToken.None);
+
+        var context = GetWrittenContext(problemDetailsService);
+        var validationProblemDetails = (ValidationProblemDetails)context.ProblemDetails;
+        validationProblemDetails.Errors.Should().ContainKey("Search");
+        validationProblemDetails.Errors["Search"].Should().HaveCount(2);
+        validationProblemDetails.Errors["Search"].Should().Contain("Search must not exceed 100 characters.");
+        validationProblemDetails.Errors["Search"].Should().Contain("Search must not contain special characters.");
     }
 }
 

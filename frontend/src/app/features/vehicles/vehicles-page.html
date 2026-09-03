@@ -1,2 +1,33 @@
-<h1 class="text-page-title text-text">Vehicles</h1>
-<p class="text-body text-text-muted">Coming soon.</p>
+<div class="flex flex-col gap-6 p-8">
+  <h1 class="text-page-title text-text">Vehicles</h1>
+
+  <input
+    type="search"
+    placeholder="Search vehicles..."
+    aria-label="Search vehicles"
+    class="w-full max-w-sm rounded-md border border-input-border bg-input-bg px-4 py-2 text-body text-text-body placeholder:text-text-faint"
+    [value]="searchInput()"
+    (input)="onSearchInput($any($event.target).value)"
+  />
+
+  @if (isGenuinelyEmpty()) {
+    <p class="text-body text-text-muted">No vehicles yet &mdash; create one.</p>
+  } @else if (isFilteredEmpty()) {
+    <div class="flex flex-col items-start gap-2">
+      <p class="text-body text-text-muted">No vehicles match these filters.</p>
+      <button type="button" class="text-button text-primary" (click)="clearFilters()">
+        Clear all filters
+      </button>
+    </div>
+  } @else {
+    <app-data-table
+      [columns]="columns"
+      [rows]="vehicles()"
+      [loading]="query.isPending()"
+      [page]="page()"
+      [pageSize]="pageSize"
+      [totalCount]="totalCount()"
+      (pageChange)="onPageChange($event)"
+    />
+  }
+</div>
