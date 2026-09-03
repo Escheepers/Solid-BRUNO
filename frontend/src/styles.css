@@ -1,0 +1,140 @@
+/* You can add global styles to this file, and also import other style files */
+
+@import 'tailwindcss';
+
+/*
+ * Design tokens transcribed from DESIGN.md's frontmatter (`colors`, `typography`,
+ * `rounded`, `spacing`). Every value below must trace back 1:1 to a DESIGN.md token —
+ * never hand-type a raw hex/px value in a component template; always reach for the
+ * Tailwind utility these tokens generate (e.g. `bg-surface`, `text-page-title`, `p-8`,
+ * `rounded-xl`, `py-row-y`).
+ */
+@theme {
+  /* Colors — DESIGN.md `colors` (light-mode values; -dark overrides live in the
+     `prefers-color-scheme: dark` block below, applied to the same CSS custom property). */
+  --color-background: #f7f8fa;
+  --color-surface: #ffffff;
+  --color-surface-header: #f3f4f7;
+  --color-surface-alt: #f3f4f7;
+  --color-border: #e3e6ec;
+  --color-input-border: #d7dbe3;
+  --color-text: #1c2128;
+  --color-text-body: #2c323c;
+  --color-text-muted: #5b6472;
+  --color-text-faint: #4b5563;
+  --color-text-disabled: #b7bcc4;
+  --color-primary: #1d4ed8;
+  --color-primary-hover: #3f6fd1;
+  --color-primary-foreground: #ffffff;
+  --color-success-text: #166534;
+  --color-success-bg: #dcfce7;
+  --color-success-dot: #166534;
+  --color-neutral-text: #374151;
+  --color-neutral-bg: #e5e7eb;
+  --color-neutral-dot: #374151;
+  --color-danger-text: #991b1b;
+  --color-danger-bg: #fee2e2;
+  --color-danger-dot: #991b1b;
+  --color-error-row-bg: #fdf1ef;
+  --color-anonymized-text: #4b5563;
+  --color-link: #1d4ed8;
+  --color-input-bg: #f3f4f7;
+
+  /* Typography — DESIGN.md `typography`. Single system sans stack shared by every
+     entry, so it's captured once as `--font-sans` (used by the `font-sans` utility)
+     rather than repeated per entry. Each named entry below pairs its font size with
+     its font weight (and letter-spacing, where DESIGN.md specifies one) via Tailwind
+     v4's `--text-{name}--{property}` tuple syntax, so e.g. `text-page-title` alone
+     applies both the 19px size and the 600 weight. */
+  --font-sans: -apple-system, 'Segoe UI', Roboto, Arial, sans-serif;
+
+  --text-page-title: 19px;
+  --text-page-title--font-weight: 600;
+
+  --text-section-label: 10.5px;
+  --text-section-label--font-weight: 600;
+  --text-section-label--letter-spacing: 0.4px;
+
+  --text-body: 12.5px;
+  --text-body--font-weight: 400;
+
+  --text-body-emphasis: 12.5px;
+  --text-body-emphasis--font-weight: 500;
+
+  --text-button: 13px;
+  --text-button--font-weight: 600;
+
+  --text-caption: 12px;
+  --text-caption--font-weight: 400;
+
+  /* Rounded — DESIGN.md `rounded` */
+  --radius-sm: 6px;
+  --radius-md: 7px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-full: 9999px;
+
+  /* Spacing — DESIGN.md `spacing`. This is a deliberately irregular scale (not a
+     linear multiple of one base unit), so every key is an explicit named override
+     rather than a scalar multiplier — these take priority over Tailwind's default
+     calculated spacing scale for the matching key, while leaving the default scale
+     intact for any other numeric spacing utility not listed here. */
+  --spacing-1: 4px;
+  --spacing-2: 6px;
+  --spacing-3: 8px;
+  --spacing-4: 10px;
+  --spacing-5: 14px;
+  --spacing-6: 16px;
+  --spacing-7: 18px;
+  --spacing-8: 22px;
+  --spacing-9: 26px;
+  --spacing-row-y: 6.5px;
+  --spacing-row-x: 18px;
+}
+
+@layer base {
+  body {
+    @apply font-sans bg-background text-text-body;
+  }
+}
+
+/*
+ * Dark mode ships via `prefers-color-scheme` only — DESIGN.md/EXPERIENCE.md never
+ * define a manual light/dark toggle control, so OS-preference-only is the whole
+ * implementation. Overriding the CSS custom property here (outside `@theme`, so it's
+ * unlayered and naturally wins over the `@layer theme` declarations above) flips
+ * every `bg-*`/`text-*`/`border-*`/etc. utility built from these tokens automatically,
+ * with no `dark:` variant needed anywhere in a component template.
+ */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-background: #0e1116;
+    --color-surface: #171c25;
+    --color-surface-header: #12161d;
+    --color-surface-alt: #14181f;
+    --color-border: #232a35;
+    --color-input-border: #2a3140;
+    --color-text: #f1f3f6;
+    --color-text-body: #d7dbe2;
+    --color-text-muted: #8b93a1;
+    --color-text-faint: #8b93a1;
+    --color-text-disabled: #454c58;
+    --color-primary: #3f6fd1;
+    --color-primary-hover: #5b8def;
+    /* --color-primary-foreground has no -dark variant in DESIGN.md: white reads
+       correctly on both the light- and dark-mode button fill. */
+    --color-success-text: #86efac;
+    --color-success-bg: #14532d;
+    --color-success-dot: #86efac;
+    --color-neutral-text: #d1d5db;
+    --color-neutral-bg: #1f2937;
+    --color-neutral-dot: #d1d5db;
+    --color-danger-text: #fca5a5;
+    --color-danger-bg: #7f1d1d;
+    --color-danger-dot: #fca5a5;
+    --color-error-row-bg: #241a1c;
+    --color-anonymized-text: #9ca3af;
+    --color-link: #7fa6ef;
+    --color-input-bg: #0e1116;
+  }
+}

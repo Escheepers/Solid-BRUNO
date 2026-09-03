@@ -1,0 +1,17 @@
+<header class="bg-surface border-b border-border">
+  <nav class="flex gap-6 px-8 py-5" aria-label="Primary">
+    @for (link of links; track link.path) {
+      <a
+        [routerLink]="link.path"
+        routerLinkActive
+        ariaCurrentWhenActive="page"
+        #rla="routerLinkActive"
+        [class]="
+          'text-button ' + (rla.isActive ? 'text-primary underline font-bold!' : 'text-text-faint')
+        "
+      >
+        {{ link.label }}
+      </a>
+    }
+  </nav>
+</header>

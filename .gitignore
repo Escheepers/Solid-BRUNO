@@ -19,3 +19,9 @@ obj/
 
 # Local Data Protection key ring (host-run Api, see docker-compose.yml)
 /src/BrunoVehicleHire.Api/dataprotection-keys/
+
+# Angular (frontend/)
+frontend/node_modules/
+frontend/dist/
+frontend/.angular/
+frontend/coverage/
