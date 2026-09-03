@@ -1,5 +1,5 @@
 using BrunoVehicleHire.Api.Auth;
-using BrunoVehicleHire.Api.ErrorHandling;
+using BrunoVehicleHire.Api.ExceptionHandling;
 using BrunoVehicleHire.Domain.Exceptions;
 using BrunoVehicleHire.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Authentication;

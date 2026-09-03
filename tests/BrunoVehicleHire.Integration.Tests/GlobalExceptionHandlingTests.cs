@@ -1,7 +1,7 @@
 using System.Net;
 using System.Text.Json;
 using BrunoVehicleHire.Api.Auth;
-using BrunoVehicleHire.Api.ErrorHandling;
+using BrunoVehicleHire.Api.ExceptionHandling;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;

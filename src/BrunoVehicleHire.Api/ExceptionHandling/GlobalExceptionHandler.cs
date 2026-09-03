@@ -3,7 +3,7 @@ using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 
-namespace BrunoVehicleHire.Api.ErrorHandling;
+namespace BrunoVehicleHire.Api.ExceptionHandling;
 
 /// <summary>
 /// AD-8's global exception handler: maps <see cref="DomainRuleViolationException"/> to a

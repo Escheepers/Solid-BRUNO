@@ -41,8 +41,8 @@ The AC's PII non-interpolation requirement ("no ProblemDetails response ever int
 
 ## Code Map
 
-- `src/BrunoVehicleHire.Api/ErrorHandling/ProblemTypeUris.cs` -- new -- `public static class ProblemTypeUris { public static string For(string entity, string rule) => $"urn:bruno:{ToKebabCase(entity)}:{ToKebabCase(rule)}"; public const string UnexpectedError = "urn:bruno:server:unexpected-error"; }` plus a private `ToKebabCase` (PascalCase → kebab-case) helper
-- `src/BrunoVehicleHire.Api/ErrorHandling/GlobalExceptionHandler.cs` -- new -- `IExceptionHandler` implementation; `DomainRuleViolationException` → 409 via `ProblemTypeUris.For(ex.Entity, ex.Rule)`; anything else → 500 via `ProblemTypeUris.UnexpectedError` and a fixed generic `Detail`; writes via injected `IProblemDetailsService`
+- `src/BrunoVehicleHire.Api/ExceptionHandling/ProblemTypeUris.cs` -- new -- `public static class ProblemTypeUris { public static string For(string entity, string rule) => $"urn:bruno:{ToKebabCase(entity)}:{ToKebabCase(rule)}"; public const string UnexpectedError = "urn:bruno:server:unexpected-error"; }` plus a private `ToKebabCase` (PascalCase → kebab-case) helper
+- `src/BrunoVehicleHire.Api/ExceptionHandling/GlobalExceptionHandler.cs` -- new -- `IExceptionHandler` implementation; `DomainRuleViolationException` → 409 via `ProblemTypeUris.For(ex.Entity, ex.Rule)`; anything else → 500 via `ProblemTypeUris.UnexpectedError` and a fixed generic `Detail`; writes via injected `IProblemDetailsService`
 - `src/BrunoVehicleHire.Api/Program.cs` -- modify -- `builder.Services.AddProblemDetails()`, `builder.Services.AddExceptionHandler<GlobalExceptionHandler>()`, `app.UseExceptionHandler()` as the first pipeline middleware; two diagnostic minimal-API endpoints (`GET /api/test/throw-domain-rule`, `GET /api/test/throw-unhandled`) mapped only `if (app.Environment.IsEnvironment("Testing"))`, existing solely so this story's own integration tests can exercise the full pipeline against a real HTTP request without waiting for a real domain-throwing endpoint (Story 1.7)
 - `tests/BrunoVehicleHire.Api.Tests/GlobalExceptionHandlerTests.cs` -- new -- unit tests calling `TryHandleAsync` directly against a bare `DefaultHttpContext` for both branches (409 shape, 500 shape, 500 never contains `exception.Message`), plus `ProblemTypeUris` kebab-casing tests
 - `tests/BrunoVehicleHire.Integration.Tests/GlobalExceptionHandlingTests.cs` -- new -- `WebApplicationFactory<Program>` (`UseEnvironment("Testing")`) hitting the two diagnostic endpoints with a valid `X-Api-Key` header, asserting real HTTP status codes, `Content-Type: application/problem+json`, and full ProblemDetails shape
@@ -50,8 +50,8 @@ The AC's PII non-interpolation requirement ("no ProblemDetails response ever int
 ## Tasks & Acceptance
 
 **Execution:**
-- [x] `src/BrunoVehicleHire.Api/ErrorHandling/ProblemTypeUris.cs` -- write failing unit tests for `ToKebabCase`/`For`/`UnexpectedError` first, then implement
-- [x] `src/BrunoVehicleHire.Api/ErrorHandling/GlobalExceptionHandler.cs` -- write failing unit tests first (`DomainRuleViolationException` → 409 shape; generic exception → 500 shape; 500 detail never contains `exception.Message`), then implement against a real `IProblemDetailsService` (from `AddProblemDetails()`)
+- [x] `src/BrunoVehicleHire.Api/ExceptionHandling/ProblemTypeUris.cs` -- write failing unit tests for `ToKebabCase`/`For`/`UnexpectedError` first, then implement
+- [x] `src/BrunoVehicleHire.Api/ExceptionHandling/GlobalExceptionHandler.cs` -- write failing unit tests first (`DomainRuleViolationException` → 409 shape; generic exception → 500 shape; 500 detail never contains `exception.Message`), then implement against a real `IProblemDetailsService` (from `AddProblemDetails()`)
 - [x] `src/BrunoVehicleHire.Api/Program.cs` -- register `AddProblemDetails()`/`AddExceptionHandler<GlobalExceptionHandler>()`/`UseExceptionHandler()` (first middleware), add the two `Testing`-only diagnostic endpoints
 - [x] `tests/BrunoVehicleHire.Integration.Tests/GlobalExceptionHandlingTests.cs` -- write failing integration tests first against the real pipeline, then confirm green
 - [x] Full `dotnet test`; re-run `ArchitectureFitnessTests`
@@ -87,10 +87,10 @@ The `type` URI's "rule" segment is `DomainRuleViolationException.Rule`, itself a
 **The handler itself (the point of this story)**
 
 - `TryHandleAsync` — the 409/500 split, and the fixed generic detail that never echoes `exception.Message`.
-  [`GlobalExceptionHandler.cs:26`](../../src/BrunoVehicleHire.Api/ErrorHandling/GlobalExceptionHandler.cs#L26)
+  [`GlobalExceptionHandler.cs:26`](../../src/BrunoVehicleHire.Api/ExceptionHandling/GlobalExceptionHandler.cs#L26)
 
 - `ProblemTypeUris.For` — the one shared kebab-casing function every `type` URI goes through.
-  [`ProblemTypeUris.cs:20`](../../src/BrunoVehicleHire.Api/ErrorHandling/ProblemTypeUris.cs#L20)
+  [`ProblemTypeUris.cs:20`](../../src/BrunoVehicleHire.Api/ExceptionHandling/ProblemTypeUris.cs#L20)
 
 - `UseExceptionHandler()` as the first pipeline middleware.
   [`Program.cs:80`](../../src/BrunoVehicleHire.Api/Program.cs#L80)

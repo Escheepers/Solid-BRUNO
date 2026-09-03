@@ -1,6 +1,6 @@
 using System.Text;
 
-namespace BrunoVehicleHire.Api.ErrorHandling;
+namespace BrunoVehicleHire.Api.ExceptionHandling;
 
 /// <summary>
 /// Single shared source of RFC 9457 <c>type</c> URIs for every ProblemDetails response this API

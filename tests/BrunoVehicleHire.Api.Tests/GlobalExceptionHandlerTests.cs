@@ -1,4 +1,4 @@
-using BrunoVehicleHire.Api.ErrorHandling;
+using BrunoVehicleHire.Api.ExceptionHandling;
 using BrunoVehicleHire.Domain.Exceptions;
 using FluentAssertions;
 using Microsoft.AspNetCore.Http;
