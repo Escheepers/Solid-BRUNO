@@ -1,4 +1,4 @@
-import { Component, inject, input, output, signal } from '@angular/core';
+import { Component, computed, effect, inject, input, output, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { QueryClient, injectMutation } from '@tanstack/angular-query-experimental';
@@ -8,13 +8,15 @@ import { ApiClient } from '../../core/api-client/api-client';
 import { NormalizedApiError, fieldFromType } from '../../core/api-client/normalized-api-error';
 import { VehicleDto } from '../../core/models/vehicle-dto';
 import { Button } from '../../shared/button/button';
+import { ConfirmDialog } from '../../shared/confirm-dialog/confirm-dialog';
 import { Input } from '../../shared/input/input';
 import { Modal } from '../../shared/modal/modal';
 import { ToastService } from '../../shared/toast/toast.service';
+import { Vehicle } from './models/vehicle';
 
 type VehicleFormFieldName = 'registrationNumber' | 'make' | 'model' | 'year' | 'dailyRate';
 
-interface CreateVehiclePayload {
+interface VehiclePayload {
   registrationNumber: string;
   make: string;
   model: string;
@@ -26,24 +28,45 @@ interface CreateVehiclePayload {
  * — `invalidateQueries` matches every params variant sharing this key prefix. */
 const VEHICLES_LIST_QUERY_KEY = ['vehicles', 'list'] as const;
 
+const BLANK_FORM_VALUE = {
+  registrationNumber: '',
+  make: '',
+  model: '',
+  year: '',
+  dailyRate: '',
+};
+
 /**
- * The "+ New Vehicle" form (this story's real, first consumer of `Modal`/`Input`/
- * `Button`/`Toast`). Owns the `FormGroup` and all business-rule/validation-vs-server
- * error mapping — the shared components it composes stay ignorant of any of this
- * (SRP). Client-side `Validators` mirror exactly what
- * `CreateVehicleCommandValidator` checks server-side (RegistrationNumber/Make/Model
+ * The "+ New Vehicle" / "Edit Vehicle" form — one component serving both create and
+ * edit (spec-2-2's Scope decision 5; the two forms are ~95% identical, generalized
+ * from Story 2.1's `CreateVehicleModal` rather than duplicated). `vehicle()` is
+ * `null` for create, or the `Vehicle` being edited; its presence branches the HTTP
+ * verb (POST/PUT), the success toast copy, and the Modal title, and pre-populates
+ * the form. Owns the `FormGroup` and all business-rule/validation-vs-server error
+ * mapping — the shared components it composes stay ignorant of any of this (SRP).
+ * Client-side `Validators` mirror exactly what `CreateVehicleCommandValidator`/
+ * `UpdateVehicleCommandValidator` check server-side (RegistrationNumber/Make/Model
  * required, DailyRate positive) — the only place field-shape rules are duplicated on
  * the frontend, per the DRY requirement. `Year` is deliberately left with no more
  * than `required`, matching the backend, which validates it as a domain invariant
  * (409), not a FluentValidation shape check (spec-2-1's Design Notes).
+ *
+ * The discard-guard (spec-2-2) lives entirely here, not in `Modal`: intercepting
+ * `Modal`'s `closeRequest`, if the form is dirty a `ConfirmDialog` is shown instead
+ * of changing `Modal`'s `open` state at all — `Modal` never actually closes (and
+ * never runs its own focus-return logic) until the discard is confirmed, which is
+ * exactly why cancelling the discard returns focus to the exact field the user was
+ * on without any bespoke "remember which field" tracking (see the spec's Design
+ * Notes).
  */
 @Component({
-  selector: 'app-create-vehicle-modal',
-  imports: [Modal, Input, Button, ReactiveFormsModule],
-  templateUrl: './create-vehicle-modal.html',
+  selector: 'app-vehicle-form-modal',
+  imports: [Modal, Input, Button, ReactiveFormsModule, ConfirmDialog],
+  templateUrl: './vehicle-form-modal.html',
 })
-export class CreateVehicleModal {
+export class VehicleFormModal {
   readonly open = input.required<boolean>();
+  readonly vehicle = input<Vehicle | null>(null);
   readonly closeRequest = output<void>();
 
   private readonly apiClient = inject(ApiClient);
@@ -62,6 +85,7 @@ export class CreateVehicleModal {
   private readonly submitAttempted = signal(false);
   private readonly serverFieldErrors = signal<Partial<Record<VehicleFormFieldName, string>>>({});
   protected readonly serverErrorMessage = signal<string | null>(null);
+  protected readonly showDiscardConfirm = signal(false);
 
   protected readonly registrationNumberError = this.fieldErrorSignal('registrationNumber');
   protected readonly makeError = this.fieldErrorSignal('make');
@@ -69,13 +93,47 @@ export class CreateVehicleModal {
   protected readonly yearError = this.fieldErrorSignal('year');
   protected readonly dailyRateError = this.fieldErrorSignal('dailyRate');
 
-  protected readonly mutation = injectMutation<VehicleDto, NormalizedApiError, CreateVehiclePayload>(
+  protected readonly modalTitle = computed(() => (this.vehicle() ? 'Edit Vehicle' : '+ New Vehicle'));
+  protected readonly submitLabel = computed(() =>
+    this.vehicle() ? 'Save Changes' : 'Create Vehicle',
+  );
+
+  private wasOpen = false;
+
+  constructor() {
+    /**
+     * Pre-populates the form from `vehicle()` (or blanks it, for create) every time
+     * the Modal transitions from closed to open — not merely whenever `vehicle()`
+     * changes, since `VehiclesPage` mounts a single, reused `VehicleFormModal`
+     * instance rather than recreating one per open. Keying only on `vehicle()`
+     * would fail to re-populate when the same vehicle reference is edited twice in
+     * a row (e.g. reopening immediately after a "Keep editing" cancel elsewhere, or
+     * without the list query refetching in between).
+     */
+    effect(() => {
+      const isOpen = this.open();
+      const vehicle = this.vehicle();
+
+      if (isOpen && !this.wasOpen) {
+        this.populateForm(vehicle);
+      }
+      this.wasOpen = isOpen;
+    });
+  }
+
+  protected readonly mutation = injectMutation<VehicleDto, NormalizedApiError, VehiclePayload>(
     () => ({
-      mutationFn: (payload) =>
-        firstValueFrom(this.apiClient.post<VehicleDto, CreateVehiclePayload>('vehicles', payload)),
+      mutationFn: (payload) => {
+        const vehicle = this.vehicle();
+        return vehicle
+          ? firstValueFrom(
+              this.apiClient.put<VehicleDto, VehiclePayload>(`vehicles/${vehicle.id}`, payload),
+            )
+          : firstValueFrom(this.apiClient.post<VehicleDto, VehiclePayload>('vehicles', payload));
+      },
       onSuccess: () => {
         this.queryClient.invalidateQueries({ queryKey: VEHICLES_LIST_QUERY_KEY });
-        this.toastService.success('Vehicle created.');
+        this.toastService.success(this.vehicle() ? 'Vehicle updated.' : 'Vehicle created.');
         this.resetAndClose();
       },
       onError: (error) => this.applyError(error),
@@ -101,22 +159,49 @@ export class CreateVehicleModal {
     });
   }
 
+  /**
+   * Intercepts `Modal`'s close request (Escape/backdrop/close button): an untouched
+   * form closes immediately as before (`EXPERIENCE.md`: "no confirmation for a
+   * still-empty/untouched form"); a dirty form shows the discard-confirmation
+   * dialog instead, leaving `Modal`'s `open` state untouched.
+   */
   protected onModalCloseRequest(): void {
+    if (this.form.dirty) {
+      this.showDiscardConfirm.set(true);
+      return;
+    }
     this.resetAndClose();
   }
 
+  protected onConfirmDiscard(): void {
+    this.showDiscardConfirm.set(false);
+    this.resetAndClose();
+  }
+
+  protected onCancelDiscard(): void {
+    this.showDiscardConfirm.set(false);
+  }
+
   private resetAndClose(): void {
-    this.form.reset({
-      registrationNumber: '',
-      make: '',
-      model: '',
-      year: '',
-      dailyRate: '',
-    });
+    this.populateForm(null);
+    this.closeRequest.emit();
+  }
+
+  private populateForm(vehicle: Vehicle | null): void {
+    this.form.reset(
+      vehicle
+        ? {
+            registrationNumber: vehicle.registrationNumber,
+            make: vehicle.make,
+            model: vehicle.model,
+            year: String(vehicle.year),
+            dailyRate: String(vehicle.dailyRate),
+          }
+        : BLANK_FORM_VALUE,
+    );
     this.submitAttempted.set(false);
     this.serverFieldErrors.set({});
     this.serverErrorMessage.set(null);
-    this.closeRequest.emit();
   }
 
   /**
@@ -125,7 +210,8 @@ export class CreateVehicleModal {
    * never see raw error shapes). A 400's `errors` dictionary (FluentValidation, keyed
    * PascalCase) maps each key to its control by lowercasing its first letter; a
    * 409's single-field case uses `fieldFromType`; a `ServerError` never touches a
-   * field at all.
+   * field at all. Identical for both create (POST) and edit (PUT) — a 409 against a
+   * different vehicle's RegistrationNumber renders inline exactly the same way.
    */
   private applyError(error: NormalizedApiError): void {
     if (error.kind === 'server-error') {

@@ -7,7 +7,8 @@ namespace BrunoVehicleHire.Api.Controllers;
 
 /// <summary>
 /// The Vehicle aggregate's HTTP entry point: sends <see cref="GetVehiclesQuery"/>/
-/// <see cref="CreateVehicleCommand"/> via <see cref="ISender"/> and returns each result directly.
+/// <see cref="CreateVehicleCommand"/>/<see cref="UpdateVehicleCommand"/> via <see cref="ISender"/>
+/// and returns each result directly.
 /// Deliberately carries no [Authorize]/[AllowAnonymous] attribute -- protection comes entirely
 /// from the global FallbackPolicy registered in Program.cs (Story 1.4). Validation of every
 /// request shape happens entirely in each request's own validator via the shared MediatR pipeline
@@ -37,5 +38,21 @@ public class VehiclesController(ISender sender) : ControllerBase
         var dto = await sender.Send(command, cancellationToken);
 
         return Created($"/api/vehicles/{dto.Id}", dto);
+    }
+
+    /// <summary>
+    /// The route id always wins over any <c>vehicleId</c> present in the request body (the resource
+    /// identity comes from the URL, the body describes the desired state) -- avoids a second
+    /// near-duplicate request DTO purely to split route-bound from body-bound fields.
+    /// </summary>
+    [HttpPut("{id:guid}")]
+    public async Task<IActionResult> Update(
+        Guid id,
+        [FromBody] UpdateVehicleCommand command,
+        CancellationToken cancellationToken)
+    {
+        var dto = await sender.Send(command with { VehicleId = id }, cancellationToken);
+
+        return Ok(dto);
     }
 }

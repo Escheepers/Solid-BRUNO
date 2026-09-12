@@ -93,6 +93,16 @@ public class VehiclesEndpointTests : IAsyncLifetime
         return request;
     }
 
+    private HttpRequestMessage AuthenticatedPut(string path, object body)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Put, path)
+        {
+            Content = JsonContent.Create(body),
+        };
+        request.Headers.Add(ApiKeyDefaults.HeaderName, ConfiguredKey);
+        return request;
+    }
+
     private async Task SeedVehiclesAsync(params Vehicle[] vehicles)
     {
         using var scope = _factory.Services.CreateScope();
@@ -346,5 +356,138 @@ public class VehiclesEndpointTests : IAsyncLifetime
         var response = await _client.SendAsync(request);
 
         response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+    }
+
+    [Fact]
+    public async Task Put_ValidEdit_Returns200WithUpdatedDto_AndChangeIsRetrievableViaGet()
+    {
+        var vehicle = Vehicle.Create("CA404040", "Toyota", "Corolla", 2023, 350m);
+        await SeedVehiclesAsync(vehicle);
+
+        using var request = AuthenticatedPut($"/api/vehicles/{vehicle.Id}", new
+        {
+            registrationNumber = "CA404040",
+            make = "Toyota",
+            model = "Corolla",
+            year = 2023,
+            dailyRate = 999m,
+        });
+
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var json = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(json);
+
+        document.RootElement.GetProperty("id").GetGuid().Should().Be(vehicle.Id);
+        document.RootElement.GetProperty("dailyRate").GetDecimal().Should().Be(999m);
+
+        // Prove the write really committed -- a subsequent GET must see it too.
+        using var getRequest = AuthenticatedGet("/api/vehicles?page=1&pageSize=20&search=CA404040");
+        var getResponse = await _client.SendAsync(getRequest);
+
+        var getJson = await getResponse.Content.ReadAsStringAsync();
+        using var getDocument = JsonDocument.Parse(getJson);
+
+        getDocument.RootElement.GetProperty("items")[0].GetProperty("dailyRate").GetDecimal().Should().Be(999m);
+    }
+
+    [Fact]
+    public async Task Put_DuplicateRegistrationNumberAgainstADifferentVehicle_Returns409WithExactDetailMessage()
+    {
+        var otherVehicle = Vehicle.Create("CA505050", "Ford", "Ranger", 2022, 500m);
+        var vehicleBeingEdited = Vehicle.Create("CA606060", "Honda", "Civic", 2021, 300m);
+        await SeedVehiclesAsync(otherVehicle, vehicleBeingEdited);
+
+        using var request = AuthenticatedPut($"/api/vehicles/{vehicleBeingEdited.Id}", new
+        {
+            registrationNumber = "CA505050",
+            make = "Honda",
+            model = "Civic",
+            year = 2021,
+            dailyRate = 300m,
+        });
+
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+
+        var json = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(json);
+
+        document.RootElement.GetProperty("detail").GetString()
+            .Should().Be("This registration number is already in use.");
+    }
+
+    [Fact]
+    public async Task Put_SubmittingVehiclesOwnUnchangedRegistrationNumber_Returns200NotConflict()
+    {
+        // Regression-proving row: the exclude-self check must not flag a vehicle's own current
+        // RegistrationNumber as a duplicate of itself.
+        var vehicle = Vehicle.Create("CA707070", "Nissan", "Micra", 2020, 250m);
+        await SeedVehiclesAsync(vehicle);
+
+        using var request = AuthenticatedPut($"/api/vehicles/{vehicle.Id}", new
+        {
+            registrationNumber = "CA707070",
+            make = "Nissan",
+            model = "Micra",
+            year = 2020,
+            dailyRate = 275m,
+        });
+
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var json = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(json);
+
+        document.RootElement.GetProperty("dailyRate").GetDecimal().Should().Be(275m);
+    }
+
+    [Fact]
+    public async Task Put_NonexistentVehicleId_Returns404()
+    {
+        var missingId = Guid.NewGuid();
+
+        using var request = AuthenticatedPut($"/api/vehicles/{missingId}", new
+        {
+            registrationNumber = "CA808080",
+            make = "Toyota",
+            model = "Corolla",
+            year = 2023,
+            dailyRate = 350m,
+        });
+
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task Put_BlankMake_Returns400WithMakeInErrors()
+    {
+        var vehicle = Vehicle.Create("CA909090", "Toyota", "Corolla", 2023, 350m);
+        await SeedVehiclesAsync(vehicle);
+
+        using var request = AuthenticatedPut($"/api/vehicles/{vehicle.Id}", new
+        {
+            registrationNumber = "CA909090",
+            make = "   ",
+            model = "Corolla",
+            year = 2023,
+            dailyRate = 350m,
+        });
+
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        var json = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(json);
+
+        document.RootElement.GetProperty("errors").TryGetProperty("Make", out _).Should().BeTrue();
     }
 }

@@ -50,11 +50,25 @@ public class VehicleRepository(AppDbContext dbContext) : IVehicleRepository
     /// so this pre-check must match that same unfiltered scope. Every other read in this repository
     /// relies on the global soft-delete query filter (AD-13); this is the one deliberate exception.
     /// </summary>
-    public async Task<bool> ExistsByRegistrationNumberAsync(string registrationNumber, CancellationToken cancellationToken)
+    public async Task<bool> ExistsByRegistrationNumberAsync(
+        string registrationNumber, Guid? excludingId, CancellationToken cancellationToken)
     {
         return await dbContext.Vehicles
             .IgnoreQueryFilters()
-            .AnyAsync(v => v.RegistrationNumber == registrationNumber, cancellationToken);
+            .AnyAsync(
+                v => v.RegistrationNumber == registrationNumber && (excludingId == null || v.Id != excludingId),
+                cancellationToken);
+    }
+
+    /// <summary>
+    /// A plain, filtered lookup -- deliberately does NOT call <c>IgnoreQueryFilters()</c> (unlike
+    /// <see cref="ExistsByRegistrationNumberAsync"/> above). See <c>IVehicleRepository</c>'s doc
+    /// comment and spec-2-2's Design Notes for why the two methods differ.
+    /// </summary>
+    public async Task<Vehicle?> GetByIdAsync(Guid id, CancellationToken cancellationToken)
+    {
+        return await dbContext.Vehicles
+            .FirstOrDefaultAsync(v => v.Id == id, cancellationToken);
     }
 
     public async Task AddAsync(Vehicle vehicle, CancellationToken cancellationToken)

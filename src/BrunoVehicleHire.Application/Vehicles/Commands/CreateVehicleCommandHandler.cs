@@ -22,7 +22,7 @@ public class CreateVehicleCommandHandler(IVehicleRepository repository, IUnitOfW
     public async Task<VehicleDto> Handle(CreateVehicleCommand request, CancellationToken cancellationToken)
     {
         var alreadyExists = await repository.ExistsByRegistrationNumberAsync(
-            request.RegistrationNumber, cancellationToken);
+            request.RegistrationNumber, excludingId: null, cancellationToken);
 
         if (alreadyExists)
         {

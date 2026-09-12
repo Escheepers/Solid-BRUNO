@@ -217,4 +217,29 @@ describe('VehiclesPage', () => {
 
     expect(fixture.nativeElement.querySelector('[role="dialog"]')).not.toBeNull();
   });
+
+  it('clicking "Edit" on a row opens the modal pre-populated with that row’s data', async () => {
+    await settle();
+    expectVehiclesRequest('').flush(
+      pagedResult([vehicleDto({ id: 'v7', registrationNumber: 'CA777777', make: 'Isuzu' })]),
+    );
+    await settle();
+
+    const editButton = Array.from<HTMLButtonElement>(
+      fixture.nativeElement.querySelectorAll('tbody button'),
+    ).find((b) => b.textContent?.trim() === 'Edit');
+    expect(editButton).toBeTruthy();
+
+    editButton!.click();
+    fixture.detectChanges();
+
+    const dialog = fixture.nativeElement.querySelector('[role="dialog"]');
+    expect(dialog).not.toBeNull();
+    expect(dialog.textContent).toContain('Edit Vehicle');
+
+    const registrationInput: HTMLInputElement = fixture.nativeElement.querySelector(
+      'app-input input',
+    );
+    expect(registrationInput.value).toBe('CA777777');
+  });
 });

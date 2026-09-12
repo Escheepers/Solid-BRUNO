@@ -14,6 +14,16 @@ export interface ColumnDef<T> {
 }
 
 /**
+ * One row-level action rendered as a trailing text-link cell (spec-2-2's Scope
+ * decision 2). Deliberately generic — `DataTable` has no idea what "Edit" (or any
+ * other action) means (SRP); the caller supplies the label and the click handler.
+ */
+export interface RowAction<T> {
+  label: string;
+  onClick: (row: T) => void;
+}
+
+/**
  * The one generic, reusable table (`{components.data-table}` in DESIGN.md), built
  * against its first real consumer (Vehicles, Story 1.7) rather than speculatively
  * ahead of usage. Zebra striping, uppercase `section-label` headers, and the
@@ -23,7 +33,10 @@ export interface ColumnDef<T> {
  * `loading` is true. Does not handle empty states itself — a `DataTable` with zero
  * rows and `loading=false` is the caller's concern (e.g. Vehicles' two distinct
  * empty-state messages), since the two states this story needs are entity-specific
- * text, not a shared component DESIGN.md names.
+ * text, not a shared component DESIGN.md names. `actions` (spec-2-2) adds an
+ * optional trailing column of generic row-level text-link actions — rendered only
+ * when at least one is supplied, so every pre-existing caller (columns/rows/etc.
+ * only) keeps working unchanged.
  */
 @Component({
   selector: 'app-data-table',
@@ -37,6 +50,7 @@ export class DataTable<T> {
   readonly page = input(1);
   readonly pageSize = input(20);
   readonly totalCount = input(0);
+  readonly actions = input<RowAction<T>[]>([]);
 
   readonly pageChange = output<number>();
 

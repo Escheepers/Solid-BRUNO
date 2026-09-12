@@ -23,6 +23,14 @@ public static class ProblemTypeUris
     public const string ValidationFailure = "urn:bruno:validation:invalid-request";
 
     /// <summary>
+    /// Fixed <c>type</c> URI for every <c>404 Not Found</c> response
+    /// (<see cref="GlobalExceptionHandler"/>'s <c>NotFoundException</c> branch). One fixed URI,
+    /// mirroring <see cref="ValidationFailure"/>'s reasoning -- the specific entity/id lives in
+    /// <c>Detail</c>, so a per-entity URI would be redundant.
+    /// </summary>
+    public const string NotFound = "urn:bruno:server:not-found";
+
+    /// <summary>
     /// Builds a <c>urn:bruno:{entity-kebab-case}:{rule-kebab-case}</c> type URI, e.g.
     /// <c>For("Vehicle", "RegistrationNumber")</c> -&gt; <c>"urn:bruno:vehicle:registration-number"</c>.
     /// </summary>

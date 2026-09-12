@@ -30,12 +30,14 @@
       [page]="page()"
       [pageSize]="pageSize"
       [totalCount]="totalCount()"
+      [actions]="actions"
       (pageChange)="onPageChange($event)"
     />
   }
 
-  <app-create-vehicle-modal
-    [open]="isCreateModalOpen()"
-    (closeRequest)="onCreateModalClose()"
+  <app-vehicle-form-modal
+    [open]="isFormModalOpen()"
+    [vehicle]="editingVehicle()"
+    (closeRequest)="onFormModalClose()"
   />
 </div>

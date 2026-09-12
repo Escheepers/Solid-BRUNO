@@ -68,6 +68,65 @@ public class Vehicle
     {
         timeProvider ??= TimeProvider.System;
 
+        ValidateInvariants(registrationNumber, make, model, year, dailyRate, timeProvider);
+
+        return new Vehicle(
+            Guid.CreateVersion7(),
+            registrationNumber,
+            make,
+            model,
+            year,
+            dailyRate,
+            timeProvider.GetUtcNow().UtcDateTime);
+    }
+
+    /// <summary>
+    /// Reassigns every mutable field, throwing <see cref="DomainRuleViolationException"/> if any
+    /// invariant is violated -- the exact same invariants <see cref="Create"/> enforces, via the
+    /// shared <see cref="ValidateInvariants"/> validator (DRY). On a thrown exception the vehicle is
+    /// left entirely unchanged (validation runs before any property is reassigned).
+    /// <paramref name="timeProvider"/> defaults to <see cref="TimeProvider.System"/> so tests can
+    /// inject a fixed clock for the Year plausible-range check.
+    /// </summary>
+    public void Update(
+        string registrationNumber,
+        string make,
+        string model,
+        int year,
+        decimal dailyRate,
+        TimeProvider? timeProvider = null)
+    {
+        timeProvider ??= TimeProvider.System;
+
+        ValidateInvariants(registrationNumber, make, model, year, dailyRate, timeProvider);
+
+        RegistrationNumber = registrationNumber;
+        Make = make;
+        Model = model;
+        Year = year;
+        DailyRate = dailyRate;
+    }
+
+    /// <summary>Marks the vehicle deleted. Idempotent: calling it again is a no-op, not an error.</summary>
+    public void SoftDelete()
+    {
+        IsDeleted = true;
+    }
+
+    /// <summary>
+    /// The single shared source of every Vehicle invariant, called by both <see cref="Create"/> and
+    /// <see cref="Update"/> (DRY -- previously these four checks lived duplicated inline in each).
+    /// Throws <see cref="DomainRuleViolationException"/> on the first violated invariant; never
+    /// mutates any Vehicle instance itself.
+    /// </summary>
+    private static void ValidateInvariants(
+        string registrationNumber,
+        string make,
+        string model,
+        int year,
+        decimal dailyRate,
+        TimeProvider timeProvider)
+    {
         if (string.IsNullOrWhiteSpace(registrationNumber))
         {
             throw new DomainRuleViolationException(
@@ -98,20 +157,5 @@ public class Vehicle
             throw new DomainRuleViolationException(
                 nameof(Vehicle), nameof(Year), $"Year must be between {EarliestPlausibleYear} and {nextCalendarYear}.");
         }
-
-        return new Vehicle(
-            Guid.CreateVersion7(),
-            registrationNumber,
-            make,
-            model,
-            year,
-            dailyRate,
-            timeProvider.GetUtcNow().UtcDateTime);
-    }
-
-    /// <summary>Marks the vehicle deleted. Idempotent: calling it again is a no-op, not an error.</summary>
-    public void SoftDelete()
-    {
-        IsDeleted = true;
     }
 }

@@ -126,6 +126,148 @@ public class VehicleTests
         Assert.Equal(fixedNow.Year + 1, vehicle.Year);
     }
 
+    private const string UpdatedRegistrationNumber = "CA654321";
+    private const string UpdatedMake = "Honda";
+    private const string UpdatedModel = "Civic";
+    private const int UpdatedYear = 2024;
+    private const decimal UpdatedDailyRate = 400m;
+
+    [Fact]
+    public void Update_WithValidInput_ChangesPropertiesAndLeavesIdCreatedDateAndIsDeletedUnchanged()
+    {
+        var fixedNow = new DateTimeOffset(2026, 9, 2, 10, 30, 0, TimeSpan.Zero);
+        var timeProvider = new FixedTimeProvider(fixedNow);
+        var vehicle = CreateValidVehicle(timeProvider);
+        var originalId = vehicle.Id;
+        var originalCreatedDate = vehicle.CreatedDate;
+
+        vehicle.Update(UpdatedRegistrationNumber, UpdatedMake, UpdatedModel, UpdatedYear, UpdatedDailyRate, timeProvider);
+
+        Assert.Equal(UpdatedRegistrationNumber, vehicle.RegistrationNumber);
+        Assert.Equal(UpdatedMake, vehicle.Make);
+        Assert.Equal(UpdatedModel, vehicle.Model);
+        Assert.Equal(UpdatedYear, vehicle.Year);
+        Assert.Equal(UpdatedDailyRate, vehicle.DailyRate);
+        Assert.Equal(originalId, vehicle.Id);
+        Assert.Equal(originalCreatedDate, vehicle.CreatedDate);
+        Assert.False(vehicle.IsDeleted);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void Update_WithBlankRegistrationNumber_ThrowsDomainRuleViolationException_AndLeavesVehicleUnchanged(string blank)
+    {
+        var vehicle = CreateValidVehicle();
+
+        var act = () => vehicle.Update(blank, UpdatedMake, UpdatedModel, UpdatedYear, UpdatedDailyRate);
+
+        Assert.Throws<DomainRuleViolationException>(act);
+        Assert.Equal(ValidRegistrationNumber, vehicle.RegistrationNumber);
+        Assert.Equal(ValidMake, vehicle.Make);
+        Assert.Equal(ValidModel, vehicle.Model);
+        Assert.Equal(ValidYear, vehicle.Year);
+        Assert.Equal(ValidDailyRate, vehicle.DailyRate);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void Update_WithBlankMake_ThrowsDomainRuleViolationException_AndLeavesVehicleUnchanged(string blank)
+    {
+        var vehicle = CreateValidVehicle();
+
+        var act = () => vehicle.Update(UpdatedRegistrationNumber, blank, UpdatedModel, UpdatedYear, UpdatedDailyRate);
+
+        Assert.Throws<DomainRuleViolationException>(act);
+        Assert.Equal(ValidRegistrationNumber, vehicle.RegistrationNumber);
+        Assert.Equal(ValidMake, vehicle.Make);
+        Assert.Equal(ValidModel, vehicle.Model);
+        Assert.Equal(ValidYear, vehicle.Year);
+        Assert.Equal(ValidDailyRate, vehicle.DailyRate);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void Update_WithBlankModel_ThrowsDomainRuleViolationException_AndLeavesVehicleUnchanged(string blank)
+    {
+        var vehicle = CreateValidVehicle();
+
+        var act = () => vehicle.Update(UpdatedRegistrationNumber, UpdatedMake, blank, UpdatedYear, UpdatedDailyRate);
+
+        Assert.Throws<DomainRuleViolationException>(act);
+        Assert.Equal(ValidRegistrationNumber, vehicle.RegistrationNumber);
+        Assert.Equal(ValidMake, vehicle.Make);
+        Assert.Equal(ValidModel, vehicle.Model);
+        Assert.Equal(ValidYear, vehicle.Year);
+        Assert.Equal(ValidDailyRate, vehicle.DailyRate);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    [InlineData(-350.50)]
+    public void Update_WithNonPositiveDailyRate_ThrowsDomainRuleViolationException_AndLeavesVehicleUnchanged(decimal nonPositiveRate)
+    {
+        var vehicle = CreateValidVehicle();
+
+        var act = () => vehicle.Update(UpdatedRegistrationNumber, UpdatedMake, UpdatedModel, UpdatedYear, nonPositiveRate);
+
+        Assert.Throws<DomainRuleViolationException>(act);
+        Assert.Equal(ValidRegistrationNumber, vehicle.RegistrationNumber);
+        Assert.Equal(ValidMake, vehicle.Make);
+        Assert.Equal(ValidModel, vehicle.Model);
+        Assert.Equal(ValidYear, vehicle.Year);
+        Assert.Equal(ValidDailyRate, vehicle.DailyRate);
+    }
+
+    [Fact]
+    public void Update_WithYearBefore1900_ThrowsDomainRuleViolationException_AndLeavesVehicleUnchanged()
+    {
+        var vehicle = CreateValidVehicle();
+
+        var act = () => vehicle.Update(UpdatedRegistrationNumber, UpdatedMake, UpdatedModel, 1899, UpdatedDailyRate);
+
+        Assert.Throws<DomainRuleViolationException>(act);
+        Assert.Equal(ValidRegistrationNumber, vehicle.RegistrationNumber);
+        Assert.Equal(ValidMake, vehicle.Make);
+        Assert.Equal(ValidModel, vehicle.Model);
+        Assert.Equal(ValidYear, vehicle.Year);
+        Assert.Equal(ValidDailyRate, vehicle.DailyRate);
+    }
+
+    [Fact]
+    public void Update_WithYearTwoYearsFromNow_ThrowsDomainRuleViolationException_AndLeavesVehicleUnchanged()
+    {
+        var fixedNow = new DateTimeOffset(2026, 9, 2, 10, 30, 0, TimeSpan.Zero);
+        var timeProvider = new FixedTimeProvider(fixedNow);
+        var vehicle = CreateValidVehicle(timeProvider);
+
+        var act = () => vehicle.Update(
+            UpdatedRegistrationNumber, UpdatedMake, UpdatedModel, fixedNow.Year + 2, UpdatedDailyRate, timeProvider);
+
+        Assert.Throws<DomainRuleViolationException>(act);
+        Assert.Equal(ValidRegistrationNumber, vehicle.RegistrationNumber);
+        Assert.Equal(ValidMake, vehicle.Make);
+        Assert.Equal(ValidModel, vehicle.Model);
+        Assert.Equal(ValidYear, vehicle.Year);
+        Assert.Equal(ValidDailyRate, vehicle.DailyRate);
+    }
+
+    [Fact]
+    public void Update_WithYearEqualToNextCalendarYear_Succeeds()
+    {
+        var fixedNow = new DateTimeOffset(2026, 9, 2, 10, 30, 0, TimeSpan.Zero);
+        var timeProvider = new FixedTimeProvider(fixedNow);
+        var vehicle = CreateValidVehicle(timeProvider);
+
+        vehicle.Update(
+            UpdatedRegistrationNumber, UpdatedMake, UpdatedModel, fixedNow.Year + 1, UpdatedDailyRate, timeProvider);
+
+        Assert.Equal(fixedNow.Year + 1, vehicle.Year);
+    }
+
     [Fact]
     public void SoftDelete_MarksVehicleAsDeleted()
     {

@@ -3,9 +3,9 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { debounceTime, distinctUntilChanged } from 'rxjs';
 
 import { Button } from '../../shared/button/button';
-import { ColumnDef, DataTable } from '../../shared/data-table/data-table';
-import { CreateVehicleModal } from './create-vehicle-modal';
+import { ColumnDef, DataTable, RowAction } from '../../shared/data-table/data-table';
 import { Vehicle, toVehicle } from './models/vehicle';
+import { VehicleFormModal } from './vehicle-form-modal';
 import { useVehiclesQuery } from './vehicles.service';
 
 const PAGE_SIZE = 20;
@@ -31,13 +31,14 @@ const dateFormatter = new Intl.DateTimeFormat('en-ZA', {
  */
 @Component({
   selector: 'app-vehicles-page',
-  imports: [DataTable, Button, CreateVehicleModal],
+  imports: [DataTable, Button, VehicleFormModal],
   templateUrl: './vehicles-page.html',
 })
 export class VehiclesPage {
   protected readonly searchInput = signal('');
   protected readonly pageSize = PAGE_SIZE;
-  protected readonly isCreateModalOpen = signal(false);
+  protected readonly isFormModalOpen = signal(false);
+  protected readonly editingVehicle = signal<Vehicle | null>(null);
 
   protected readonly debouncedSearch = toSignal(
     toObservable(this.searchInput).pipe(debounceTime(SEARCH_DEBOUNCE_MS), distinctUntilChanged()),
@@ -73,6 +74,10 @@ export class VehiclesPage {
     { header: 'Created', cell: (vehicle) => dateFormatter.format(vehicle.createdDate) },
   ];
 
+  protected readonly actions: RowAction<Vehicle>[] = [
+    { label: 'Edit', onClick: (vehicle) => this.openEditModal(vehicle) },
+  ];
+
   protected readonly vehicles = computed<Vehicle[]>(() => {
     const data = this.query.data();
     return data ? data.items.map(toVehicle) : [];
@@ -105,10 +110,16 @@ export class VehiclesPage {
   }
 
   protected openCreateModal(): void {
-    this.isCreateModalOpen.set(true);
+    this.editingVehicle.set(null);
+    this.isFormModalOpen.set(true);
   }
 
-  protected onCreateModalClose(): void {
-    this.isCreateModalOpen.set(false);
+  protected openEditModal(vehicle: Vehicle): void {
+    this.editingVehicle.set(vehicle);
+    this.isFormModalOpen.set(true);
+  }
+
+  protected onFormModalClose(): void {
+    this.isFormModalOpen.set(false);
   }
 }

@@ -1,6 +1,6 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 
-import { ColumnDef, DataTable } from './data-table';
+import { ColumnDef, DataTable, RowAction } from './data-table';
 
 interface Row {
   id: number;
@@ -132,5 +132,54 @@ describe('DataTable', () => {
     expect(fixture.nativeElement.textContent).toContain('21');
     expect(fixture.nativeElement.textContent).toContain('40');
     expect(fixture.nativeElement.textContent).toContain('45');
+  });
+
+  it('does not render an actions column when no actions are provided', () => {
+    fixture.detectChanges();
+
+    const headers = Array.from(fixture.nativeElement.querySelectorAll('thead th'));
+    expect(headers.length).toBe(columns.length);
+    expect(tableRows()[0].querySelectorAll('td').length).toBe(columns.length);
+  });
+
+  it('renders a trailing actions column and calls the action onClick with the correct row when clicked', () => {
+    const onClick = vi.fn();
+    const actions: RowAction<Row>[] = [{ label: 'Edit', onClick }];
+    fixture.componentRef.setInput('actions', actions);
+    fixture.detectChanges();
+
+    const headers = Array.from(fixture.nativeElement.querySelectorAll('thead th'));
+    expect(headers.length).toBe(columns.length + 1);
+    expect(tableRows()[0].querySelectorAll('td').length).toBe(columns.length + 1);
+
+    const firstRowActionButton = tableRows()[0].querySelector(
+      'td:last-child button',
+    ) as HTMLButtonElement;
+    expect(firstRowActionButton.textContent?.trim()).toBe('Edit');
+
+    firstRowActionButton.click();
+
+    expect(onClick).toHaveBeenCalledWith(rows[0]);
+    expect(onClick).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders multiple actions per row', () => {
+    const editClick = vi.fn();
+    const deactivateClick = vi.fn();
+    const actions: RowAction<Row>[] = [
+      { label: 'Edit', onClick: editClick },
+      { label: 'Deactivate', onClick: deactivateClick },
+    ];
+    fixture.componentRef.setInput('actions', actions);
+    fixture.detectChanges();
+
+    const secondRowButtons = Array.from<HTMLButtonElement>(
+      tableRows()[1].querySelectorAll('td:last-child button'),
+    );
+    expect(secondRowButtons.map((b) => b.textContent?.trim())).toEqual(['Edit', 'Deactivate']);
+
+    secondRowButtons[1].click();
+    expect(deactivateClick).toHaveBeenCalledWith(rows[1]);
+    expect(editClick).not.toHaveBeenCalled();
   });
 });

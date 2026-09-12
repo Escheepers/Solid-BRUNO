@@ -10,6 +10,11 @@
               {{ column.header }}
             </th>
           }
+          @if (actions().length > 0) {
+            <th class="py-row-y px-row-x text-section-label uppercase text-text-faint" scope="col">
+              <span class="sr-only">Actions</span>
+            </th>
+          }
         </tr>
       </thead>
       <tbody>
@@ -18,6 +23,21 @@
             @for (column of columns(); track column.header) {
               <td class="py-row-y px-row-x text-body text-text-body">
                 {{ column.cell(row) }}
+              </td>
+            }
+            @if (actions().length > 0) {
+              <td class="py-row-y px-row-x text-body">
+                <div class="flex gap-3">
+                  @for (action of actions(); track action.label) {
+                    <button
+                      type="button"
+                      class="text-button text-primary hover:underline"
+                      (click)="action.onClick(row)"
+                    >
+                      {{ action.label }}
+                    </button>
+                  }
+                </div>
               </td>
             }
           </tr>

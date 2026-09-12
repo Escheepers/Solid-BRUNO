@@ -26,7 +26,7 @@ public class CreateVehicleCommandHandlerTests
         var repository = Substitute.For<IVehicleRepository>();
         var unitOfWork = Substitute.For<IUnitOfWork>();
 
-        repository.ExistsByRegistrationNumberAsync("CA123456", Arg.Any<CancellationToken>())
+        repository.ExistsByRegistrationNumberAsync("CA123456", Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
             .Returns(false);
 
         Vehicle? addedVehicle = null;
@@ -55,7 +55,7 @@ public class CreateVehicleCommandHandlerTests
         var repository = Substitute.For<IVehicleRepository>();
         var unitOfWork = Substitute.For<IUnitOfWork>();
 
-        repository.ExistsByRegistrationNumberAsync("CA123456", Arg.Any<CancellationToken>())
+        repository.ExistsByRegistrationNumberAsync("CA123456", Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
             .Returns(true);
 
         var handler = new CreateVehicleCommandHandler(repository, unitOfWork);

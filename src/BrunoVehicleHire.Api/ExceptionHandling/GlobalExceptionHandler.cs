@@ -1,3 +1,4 @@
+using BrunoVehicleHire.Application.Common;
 using BrunoVehicleHire.Domain.Exceptions;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Http;
@@ -12,7 +13,8 @@ namespace BrunoVehicleHire.Api.ExceptionHandling;
 /// <see cref="ProblemTypeUris"/> helper), a <see cref="ValidationException"/> thrown by the
 /// <c>ValidationBehavior&lt;TRequest,TResponse&gt;</c> MediatR pipeline stage (Application layer) to
 /// a <c>400 Bad Request</c> <see cref="ValidationProblemDetails"/> response (field-level messages
-/// grouped into its <c>Errors</c> dictionary), and every other unhandled exception to a fixed,
+/// grouped into its <c>Errors</c> dictionary), a <see cref="NotFoundException"/> to a
+/// <c>404 Not Found</c> ProblemDetails response, and every other unhandled exception to a fixed,
 /// generic <c>500 Internal Server Error</c> ProblemDetails response -- the original exception's
 /// message and stack trace are never echoed to the client, only ever passed to
 /// <see cref="IProblemDetailsService"/> for server-side diagnostics via the
@@ -57,6 +59,13 @@ public class GlobalExceptionHandler(IProblemDetailsService problemDetailsService
                 // business-rule response) -- for validation failures the field-level detail lives
                 // in Errors, so this is a fixed summary line, not per-field prose.
                 Detail = "One or more fields failed validation. See the errors property for details.",
+            },
+            NotFoundException notFound => new ProblemDetails
+            {
+                Status = StatusCodes.Status404NotFound,
+                Title = "The requested resource was not found.",
+                Type = ProblemTypeUris.NotFound,
+                Detail = notFound.Message,
             },
             _ => new ProblemDetails
             {

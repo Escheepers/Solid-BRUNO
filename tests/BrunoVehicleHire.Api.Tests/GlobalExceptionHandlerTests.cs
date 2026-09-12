@@ -1,4 +1,5 @@
 using BrunoVehicleHire.Api.ExceptionHandling;
+using BrunoVehicleHire.Application.Common;
 using BrunoVehicleHire.Domain.Exceptions;
 using FluentAssertions;
 using FluentValidation.Results;
@@ -116,6 +117,40 @@ public class GlobalExceptionHandlerTests
         context.ProblemDetails.Status.Should().Be(StatusCodes.Status500InternalServerError);
         context.ProblemDetails.Type.Should().Be(ProblemTypeUris.UnexpectedError);
         context.ProblemDetails.Detail.Should().NotContain(exception.Message);
+    }
+
+    [Fact]
+    public async Task TryHandleAsync_NotFoundException_Returns404WithProblemDetails()
+    {
+        var (handler, problemDetailsService) = CreateHandler();
+        var httpContext = new DefaultHttpContext();
+        var vehicleId = Guid.NewGuid();
+        var exception = new NotFoundException("Vehicle", vehicleId);
+
+        var handled = await handler.TryHandleAsync(httpContext, exception, CancellationToken.None);
+
+        handled.Should().BeTrue();
+        httpContext.Response.StatusCode.Should().Be(StatusCodes.Status404NotFound);
+
+        var context = GetWrittenContext(problemDetailsService);
+        context.HttpContext.Should().BeSameAs(httpContext);
+        context.Exception.Should().BeSameAs(exception);
+        context.ProblemDetails.Status.Should().Be(StatusCodes.Status404NotFound);
+        context.ProblemDetails.Type.Should().Be(ProblemTypeUris.NotFound);
+        context.ProblemDetails.Detail.Should().Be(exception.Message);
+    }
+
+    [Fact]
+    public async Task TryHandleAsync_NotFoundException_PopulatesDetail_SoFrontendNormalizationRecognizesIt()
+    {
+        var (handler, problemDetailsService) = CreateHandler();
+        var httpContext = new DefaultHttpContext();
+        var exception = new NotFoundException("Vehicle", Guid.NewGuid());
+
+        await handler.TryHandleAsync(httpContext, exception, CancellationToken.None);
+
+        var context = GetWrittenContext(problemDetailsService);
+        context.ProblemDetails.Detail.Should().NotBeNullOrWhiteSpace();
     }
 
     [Fact]
@@ -254,5 +289,11 @@ public class ProblemTypeUrisTests
     public void UnexpectedError_IsTheFixedServerErrorUri()
     {
         ProblemTypeUris.UnexpectedError.Should().Be("urn:bruno:server:unexpected-error");
+    }
+
+    [Fact]
+    public void NotFound_IsTheFixedNotFoundUri()
+    {
+        ProblemTypeUris.NotFound.Should().Be("urn:bruno:server:not-found");
     }
 }
