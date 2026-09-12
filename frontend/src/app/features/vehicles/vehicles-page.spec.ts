@@ -201,4 +201,20 @@ describe('VehiclesPage', () => {
     expect(req.request.params.get('page')).toBe('1');
     req.flush(pagedResult([vehicleDto()]));
   });
+
+  it('opens the Create Vehicle modal when "+ New Vehicle" is clicked', async () => {
+    await settle();
+    expectVehiclesRequest('').flush(pagedResult([]));
+    await settle();
+
+    expect(fixture.nativeElement.querySelector('[role="dialog"]')).toBeNull();
+
+    const newVehicleButton = Array.from<HTMLButtonElement>(
+      fixture.nativeElement.querySelectorAll('button'),
+    ).find((b) => b.textContent?.trim() === '+ New Vehicle');
+    newVehicleButton!.click();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('[role="dialog"]')).not.toBeNull();
+  });
 });

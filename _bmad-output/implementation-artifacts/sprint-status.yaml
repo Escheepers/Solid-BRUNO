@@ -45,8 +45,8 @@ development_status:
   1-7-vehicle-list-the-walking-skeleton-proof: done
   epic-1-retrospective: optional
 
-  epic-2: backlog
-  2-1-create-a-vehicle: backlog
+  epic-2: in-progress
+  2-1-create-a-vehicle: done
   2-2-edit-a-vehicle: backlog
   2-3-soft-delete-a-vehicle: backlog
   2-4-restore-a-soft-deleted-vehicle: backlog

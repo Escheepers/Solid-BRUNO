@@ -1,0 +1,32 @@
+<app-modal [open]="open()" title="New Vehicle" (closeRequest)="onModalCloseRequest()">
+  <form [formGroup]="form" (ngSubmit)="onSubmit()" class="flex flex-col gap-4">
+    @if (serverErrorMessage()) {
+      <div
+        role="alert"
+        aria-live="polite"
+        class="rounded-md bg-danger-bg px-3 py-2 text-caption text-danger-text"
+      >
+        {{ serverErrorMessage() }}
+      </div>
+    }
+
+    <app-input
+      formControlName="registrationNumber"
+      label="Registration Number"
+      [error]="registrationNumberError()"
+    />
+    <app-input formControlName="make" label="Make" [error]="makeError()" />
+    <app-input formControlName="model" label="Model" [error]="modelError()" />
+    <app-input type="number" formControlName="year" label="Year" [error]="yearError()" />
+    <app-input
+      type="number"
+      formControlName="dailyRate"
+      label="Daily Rate"
+      [error]="dailyRateError()"
+    />
+
+    <div class="flex justify-end gap-4 pt-2">
+      <app-button type="submit" [loading]="mutation.isPending()">Create Vehicle</app-button>
+    </div>
+  </form>
+</app-modal>

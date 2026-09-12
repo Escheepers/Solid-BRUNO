@@ -2,7 +2,9 @@ import { Component, computed, linkedSignal, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { debounceTime, distinctUntilChanged } from 'rxjs';
 
+import { Button } from '../../shared/button/button';
 import { ColumnDef, DataTable } from '../../shared/data-table/data-table';
+import { CreateVehicleModal } from './create-vehicle-modal';
 import { Vehicle, toVehicle } from './models/vehicle';
 import { useVehiclesQuery } from './vehicles.service';
 
@@ -29,12 +31,13 @@ const dateFormatter = new Intl.DateTimeFormat('en-ZA', {
  */
 @Component({
   selector: 'app-vehicles-page',
-  imports: [DataTable],
+  imports: [DataTable, Button, CreateVehicleModal],
   templateUrl: './vehicles-page.html',
 })
 export class VehiclesPage {
   protected readonly searchInput = signal('');
   protected readonly pageSize = PAGE_SIZE;
+  protected readonly isCreateModalOpen = signal(false);
 
   protected readonly debouncedSearch = toSignal(
     toObservable(this.searchInput).pipe(debounceTime(SEARCH_DEBOUNCE_MS), distinctUntilChanged()),
@@ -99,5 +102,13 @@ export class VehiclesPage {
 
   protected clearFilters(): void {
     this.searchInput.set('');
+  }
+
+  protected openCreateModal(): void {
+    this.isCreateModalOpen.set(true);
+  }
+
+  protected onCreateModalClose(): void {
+    this.isCreateModalOpen.set(false);
   }
 }

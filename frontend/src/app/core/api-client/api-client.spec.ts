@@ -148,5 +148,54 @@ describe('ApiClient', () => {
       const error = captured as ServerError;
       expect(error.kind).toBe('server-error');
     });
+
+    it('populates errors from a 400 ValidationProblemDetails body carrying a field errors dictionary', () => {
+      let captured: unknown;
+      apiClient.get<unknown>('vehicles').subscribe({ error: (err: unknown) => (captured = err) });
+
+      const req = httpMock.expectOne('/api/vehicles');
+      req.flush(
+        {
+          ...problemDetails,
+          status: 400,
+          errors: { Make: ['Make must not be empty.'], DailyRate: ['Daily rate must be positive.'] },
+        },
+        { status: 400, statusText: 'Bad Request' },
+      );
+
+      const error = captured as BusinessRuleError;
+      expect(error.kind).toBe('business-rule');
+      expect(error.errors).toEqual({
+        Make: ['Make must not be empty.'],
+        DailyRate: ['Daily rate must be positive.'],
+      });
+    });
+
+    it('leaves errors undefined on a 409 body with no errors dictionary', () => {
+      let captured: unknown;
+      apiClient.get<unknown>('vehicles').subscribe({ error: (err: unknown) => (captured = err) });
+
+      const req = httpMock.expectOne('/api/vehicles');
+      req.flush(problemDetails, { status: 409, statusText: 'Conflict' });
+
+      const error = captured as BusinessRuleError;
+      expect(error.kind).toBe('business-rule');
+      expect(error.errors).toBeUndefined();
+    });
+
+    it('leaves errors undefined on a 500 ServerError', () => {
+      let captured: unknown;
+      apiClient.get<unknown>('vehicles').subscribe({ error: (err: unknown) => (captured = err) });
+
+      const req = httpMock.expectOne('/api/vehicles');
+      req.flush(
+        { type: 'about:blank', title: 'An unexpected error occurred.', status: 500, detail: 'boom' },
+        { status: 500, statusText: 'Internal Server Error' },
+      );
+
+      const error = captured as ServerError;
+      expect(error.kind).toBe('server-error');
+      expect((error as unknown as BusinessRuleError).errors).toBeUndefined();
+    });
   });
 });

@@ -1,0 +1,19 @@
+<div class="pointer-events-none fixed inset-x-0 bottom-6 z-[60] flex flex-col items-center gap-2">
+  @for (toast of toastService.toasts(); track toast.id) {
+    <div
+      role="status"
+      aria-live="polite"
+      class="pointer-events-auto flex items-center gap-3 rounded-md bg-text px-4 py-3 text-body text-surface shadow-2xl"
+    >
+      <span>{{ toast.message }}</span>
+      <button
+        type="button"
+        aria-label="Dismiss"
+        class="text-surface/70 hover:text-surface"
+        (click)="dismiss(toast.id)"
+      >
+        &times;
+      </button>
+    </div>
+  }
+</div>

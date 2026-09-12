@@ -27,6 +27,24 @@ function isProblemDetails(body: unknown): body is ProblemDetails {
   );
 }
 
+/**
+ * Extracts a FluentValidation-style `errors` dictionary from a response body, when
+ * present and shaped like one (an object, not an array or `null`). Every 400 from
+ * `ValidationBehavior` carries this; a 409 domain-rule violation never does.
+ */
+function extractFieldErrors(body: unknown): Record<string, string[]> | undefined {
+  if (typeof body !== 'object' || body === null) {
+    return undefined;
+  }
+
+  const candidate = (body as Record<string, unknown>)['errors'];
+  if (typeof candidate !== 'object' || candidate === null || Array.isArray(candidate)) {
+    return undefined;
+  }
+
+  return candidate as Record<string, string[]>;
+}
+
 function normalize(error: unknown): NormalizedApiError {
   if (!(error instanceof HttpErrorResponse)) {
     return { kind: 'server-error', message: GENERIC_SERVER_ERROR_MESSAGE };
@@ -42,6 +60,7 @@ function normalize(error: unknown): NormalizedApiError {
       title: problem.title,
       detail: problem.detail,
       type: problem.type,
+      errors: extractFieldErrors(error.error),
     };
   }
 

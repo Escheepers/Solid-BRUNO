@@ -43,4 +43,22 @@ public class VehicleRepository(AppDbContext dbContext) : IVehicleRepository
 
         return (items, totalCount);
     }
+
+    /// <summary>
+    /// Deliberately calls <see cref="EntityFrameworkQueryableExtensions.IgnoreQueryFilters{TEntity}"/>
+    /// -- the DB's unique index on RegistrationNumber (see <c>AppDbContext</c>) is itself unfiltered,
+    /// so this pre-check must match that same unfiltered scope. Every other read in this repository
+    /// relies on the global soft-delete query filter (AD-13); this is the one deliberate exception.
+    /// </summary>
+    public async Task<bool> ExistsByRegistrationNumberAsync(string registrationNumber, CancellationToken cancellationToken)
+    {
+        return await dbContext.Vehicles
+            .IgnoreQueryFilters()
+            .AnyAsync(v => v.RegistrationNumber == registrationNumber, cancellationToken);
+    }
+
+    public async Task AddAsync(Vehicle vehicle, CancellationToken cancellationToken)
+    {
+        await dbContext.Vehicles.AddAsync(vehicle, cancellationToken);
+    }
 }

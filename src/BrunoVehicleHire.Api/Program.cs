@@ -54,6 +54,7 @@ builder.Services.AddMediatR(cfg =>
 builder.Services.AddValidatorsFromAssembly(typeof(GetVehiclesQuery).Assembly);
 
 builder.Services.AddScoped<IVehicleRepository, VehicleRepository>();
+builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 
 // Swashbuckle: declares the ApiKey header security scheme + a global security requirement so
 // Swagger UI's "Authorize" dialog exercises the real enforcement pipeline (AD-11).

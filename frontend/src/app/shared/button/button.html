@@ -1,0 +1,15 @@
+<button
+  [type]="type()"
+  [disabled]="isDisabled()"
+  class="inline-flex items-center justify-center gap-2 rounded-md bg-primary px-[18px] py-[9px] text-button text-primary-foreground hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-70"
+>
+  @if (loading()) {
+    <span
+      class="h-4 w-4 animate-spin rounded-full border-2 border-primary-foreground border-t-transparent"
+      aria-hidden="true"
+    ></span>
+    <span class="sr-only">Loading</span>
+  } @else {
+    <ng-content />
+  }
+</button>

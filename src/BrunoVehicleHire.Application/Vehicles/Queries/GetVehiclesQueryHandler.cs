@@ -19,7 +19,7 @@ public class GetVehiclesQueryHandler(IVehicleRepository repository)
             request.Page, request.PageSize, request.Search, cancellationToken);
 
         var dtos = items
-            .Select(v => new VehicleDto(v.Id, v.RegistrationNumber, v.Make, v.Model, v.Year, v.DailyRate, v.CreatedDate))
+            .Select(VehicleDto.FromDomain)
             .ToList();
 
         return new PagedResult<VehicleDto>(dtos, totalCount, request.Page, request.PageSize);
