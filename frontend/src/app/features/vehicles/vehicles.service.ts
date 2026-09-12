@@ -1,8 +1,9 @@
 import { inject } from '@angular/core';
-import { injectQuery } from '@tanstack/angular-query-experimental';
+import { QueryClient, injectMutation, injectQuery } from '@tanstack/angular-query-experimental';
 import { firstValueFrom } from 'rxjs';
 
 import { ApiClient } from '../../core/api-client/api-client';
+import { NormalizedApiError } from '../../core/api-client/normalized-api-error';
 import { PagedResult } from '../../core/models/paged-result';
 import { VehicleDto } from '../../core/models/vehicle-dto';
 
@@ -11,6 +12,9 @@ export interface VehiclesQueryParams {
   pageSize: number;
   search: string;
 }
+
+/** Matches `useVehiclesQuery`'s query-key convention (AD-3) exactly, minus the params. */
+const VEHICLES_LIST_QUERY_KEY = ['vehicles', 'list'] as const;
 
 /**
  * Wraps `injectQuery` over `ApiClient.get<PagedResult<VehicleDto>>('vehicles', ...)`.
@@ -33,4 +37,23 @@ export function useVehiclesQuery(params: () => VehiclesQueryParams) {
         ),
     };
   });
+}
+
+/**
+ * Wraps `injectMutation` over `ApiClient.post('vehicles/{id}/deactivate', ...)` -- mirrors the
+ * `injectMutation` pattern `VehicleFormModal`'s create/update mutation already established.
+ * `ApiClient.post<T, B>` requires a body argument, so `undefined` is passed explicitly for this
+ * body-less action. On success, invalidates `['vehicles', 'list']` (AD-3) so the list re-fetches
+ * and the deactivated vehicle disappears via the existing soft-delete query filter -- no new
+ * frontend filtering logic needed.
+ */
+export function useDeactivateVehicleMutation() {
+  const apiClient = inject(ApiClient);
+  const queryClient = inject(QueryClient);
+
+  return injectMutation<void, NormalizedApiError, string>(() => ({
+    mutationFn: (vehicleId: string) =>
+      firstValueFrom(apiClient.post<void, undefined>(`vehicles/${vehicleId}/deactivate`, undefined)),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: VEHICLES_LIST_QUERY_KEY }),
+  }));
 }

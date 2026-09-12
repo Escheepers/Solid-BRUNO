@@ -7,6 +7,7 @@ import { apiKeyInterceptor } from '../../core/api-client/api-key.interceptor';
 import { errorNormalizationInterceptor } from '../../core/api-client/error-normalization.interceptor';
 import { PagedResult } from '../../core/models/paged-result';
 import { VehicleDto } from '../../core/models/vehicle-dto';
+import { ToastService } from '../../shared/toast/toast.service';
 import { VehiclesPage } from './vehicles-page';
 
 function vehicleDto(overrides: Partial<VehicleDto> = {}): VehicleDto {
@@ -42,19 +43,26 @@ function flushMicrotasks(): Promise<void> {
 describe('VehiclesPage', () => {
   let fixture: ComponentFixture<VehiclesPage>;
   let httpMock: HttpTestingController;
+  let queryClient: QueryClient;
+  let toastService: ToastService;
 
   beforeEach(async () => {
+    queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+
     await TestBed.configureTestingModule({
       imports: [VehiclesPage],
       providers: [
         provideHttpClient(withInterceptors([apiKeyInterceptor, errorNormalizationInterceptor])),
         provideHttpClientTesting(),
-        provideTanStackQuery(new QueryClient({ defaultOptions: { queries: { retry: false } } })),
+        provideTanStackQuery(queryClient),
       ],
     }).compileComponents();
 
     fixture = TestBed.createComponent(VehiclesPage);
     httpMock = TestBed.inject(HttpTestingController);
+    toastService = TestBed.inject(ToastService);
   });
 
   afterEach(() => {
@@ -241,5 +249,113 @@ describe('VehiclesPage', () => {
       'app-input input',
     );
     expect(registrationInput.value).toBe('CA777777');
+  });
+
+  describe('deactivate row action', () => {
+    function alertDialog(): HTMLElement | null {
+      return fixture.nativeElement.querySelector('[role="alertdialog"]');
+    }
+
+    async function seedOneRowAndOpenDeactivateDialog(): Promise<void> {
+      await settle();
+      expectVehiclesRequest('').flush(
+        pagedResult([vehicleDto({ id: 'v9', registrationNumber: 'CA999000' })]),
+      );
+      await settle();
+
+      const deactivateButton = Array.from<HTMLButtonElement>(
+        fixture.nativeElement.querySelectorAll('tbody button'),
+      ).find((b) => b.textContent?.trim() === 'Deactivate');
+      expect(deactivateButton).toBeTruthy();
+
+      deactivateButton!.click();
+      fixture.detectChanges();
+    }
+
+    it('clicking "Deactivate" on a row opens the ConfirmDialog for that vehicle', async () => {
+      await seedOneRowAndOpenDeactivateDialog();
+
+      const dialog = alertDialog();
+      expect(dialog).not.toBeNull();
+      expect(dialog!.textContent).toContain('Deactivate this vehicle?');
+    });
+
+    it('cancelling closes the dialog and never calls the mutation', async () => {
+      await seedOneRowAndOpenDeactivateDialog();
+
+      const cancelButton = Array.from<HTMLButtonElement>(
+        fixture.nativeElement.querySelectorAll('[role="alertdialog"] button'),
+      ).find((b) => b.textContent?.trim() === 'Keep active');
+      cancelButton!.click();
+      fixture.detectChanges();
+
+      expect(alertDialog()).toBeNull();
+      httpMock.expectNone((req) => req.url === '/api/vehicles/v9/deactivate');
+    });
+
+    it('confirming calls the mutation and, on success, closes the dialog, toasts, and invalidates the list', async () => {
+      await seedOneRowAndOpenDeactivateDialog();
+
+      const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+      const toastSpy = vi.spyOn(toastService, 'success');
+
+      const confirmButton = Array.from<HTMLButtonElement>(
+        fixture.nativeElement.querySelectorAll('[role="alertdialog"] button'),
+      ).find((b) => b.textContent?.trim() === 'Deactivate');
+      confirmButton!.click();
+      await settle();
+
+      const req = httpMock.expectOne('/api/vehicles/v9/deactivate');
+      expect(req.request.method).toBe('POST');
+      req.flush(null, { status: 204, statusText: 'No Content' });
+      await settle();
+
+      /**
+       * `invalidateQueries()` (called from `useDeactivateVehicleMutation`'s own
+       * `onSuccess`) awaits the active list query's refetch before it resolves --
+       * and `Mutation.execute()` awaits that same `onSuccess` call before dispatching
+       * its own 'success' state. So the refetch this triggers must be flushed BEFORE
+       * the mutation's per-call `onSuccess` (which closes the dialog/toasts) can run,
+       * not afterwards.
+       */
+      expectVehiclesRequest().flush(pagedResult([]));
+      await settle();
+
+      expect(alertDialog()).toBeNull();
+      expect(toastSpy).toHaveBeenCalledWith('Vehicle deactivated.');
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['vehicles', 'list'] });
+    });
+
+    it('a failed deactivate keeps the dialog open and shows an error message instead of the normal one', async () => {
+      await seedOneRowAndOpenDeactivateDialog();
+
+      const confirmButton = Array.from<HTMLButtonElement>(
+        fixture.nativeElement.querySelectorAll('[role="alertdialog"] button'),
+      ).find((b) => b.textContent?.trim() === 'Deactivate');
+      confirmButton!.click();
+      await settle();
+
+      const req = httpMock.expectOne('/api/vehicles/v9/deactivate');
+      req.flush(
+        {
+          type: 'https://bruno-vehicle-hire/problems/not-found',
+          title: 'Not Found',
+          status: 404,
+          detail: "Vehicle 'v9' was not found.",
+        },
+        { status: 404, statusText: 'Not Found' },
+      );
+      await settle();
+
+      const dialog = alertDialog();
+      expect(dialog).not.toBeNull();
+      expect(dialog!.textContent).not.toContain(
+        'This vehicle will disappear from availability searches',
+      );
+      // A 404 normalizes to a generic ServerError (errorNormalizationInterceptor only treats
+      // 400/409 as business-rule shaped) -- the dialog shows that generic message rather than
+      // deeply classifying the error, per the spec's Design Notes.
+      expect(dialog!.textContent).toContain('An unexpected error occurred');
+    });
   });
 });

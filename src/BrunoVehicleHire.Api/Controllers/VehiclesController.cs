@@ -55,4 +55,17 @@ public class VehiclesController(ISender sender) : ControllerBase
 
         return Ok(dto);
     }
+
+    /// <summary>
+    /// Soft-deletes ("deactivates") the vehicle -- a distinct action-named route rather than
+    /// overloading <c>DELETE</c>, since this app never pairs Vehicle's soft-delete with a true
+    /// hard-delete endpoint (see spec-2-3's Design Notes).
+    /// </summary>
+    [HttpPost("{id:guid}/deactivate")]
+    public async Task<IActionResult> Deactivate(Guid id, CancellationToken cancellationToken)
+    {
+        await sender.Send(new SoftDeleteVehicleCommand(id), cancellationToken);
+
+        return NoContent();
+    }
 }

@@ -103,6 +103,13 @@ public class VehiclesEndpointTests : IAsyncLifetime
         return request;
     }
 
+    private HttpRequestMessage AuthenticatedPost(string path)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, path);
+        request.Headers.Add(ApiKeyDefaults.HeaderName, ConfiguredKey);
+        return request;
+    }
+
     private async Task SeedVehiclesAsync(params Vehicle[] vehicles)
     {
         using var scope = _factory.Services.CreateScope();
@@ -489,5 +496,62 @@ public class VehiclesEndpointTests : IAsyncLifetime
         using var document = JsonDocument.Parse(json);
 
         document.RootElement.GetProperty("errors").TryGetProperty("Make", out _).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Deactivate_ActiveVehicle_Returns204_AndVehicleDisappearsFromDefaultList()
+    {
+        var vehicle = Vehicle.Create("CA111213", "Toyota", "Hilux", 2022, 450m);
+        await SeedVehiclesAsync(vehicle);
+
+        using var request = AuthenticatedPost($"/api/vehicles/{vehicle.Id}/deactivate");
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        // Prove the write really committed -- a subsequent GET must no longer see it.
+        using var getRequest = AuthenticatedGet("/api/vehicles?page=1&pageSize=20&search=CA111213");
+        var getResponse = await _client.SendAsync(getRequest);
+
+        var getJson = await getResponse.Content.ReadAsStringAsync();
+        using var getDocument = JsonDocument.Parse(getJson);
+
+        getDocument.RootElement.GetProperty("totalCount").GetInt32().Should().Be(0);
+        getDocument.RootElement.GetProperty("items").GetArrayLength().Should().Be(0);
+
+        using var verifyScope = _factory.Services.CreateScope();
+        var dbContext = verifyScope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var isDeleted = await dbContext.Vehicles
+            .IgnoreQueryFilters()
+            .Where(v => v.Id == vehicle.Id)
+            .Select(v => v.IsDeleted)
+            .SingleAsync();
+        isDeleted.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Deactivate_NonexistentVehicleId_Returns404()
+    {
+        var missingId = Guid.NewGuid();
+
+        using var request = AuthenticatedPost($"/api/vehicles/{missingId}/deactivate");
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task Deactivate_AlreadyDeactivatedVehicle_Returns404NotSilent204()
+    {
+        // Idempotency-adjacent: the query filter already excludes a soft-deleted vehicle, so a
+        // second deactivate attempt on the same vehicle must 404, not silently succeed again.
+        var vehicle = Vehicle.Create("CA141516", "Ford", "Ranger", 2021, 500m);
+        vehicle.SoftDelete();
+        await SeedVehiclesAsync(vehicle);
+
+        using var request = AuthenticatedPost($"/api/vehicles/{vehicle.Id}/deactivate");
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 }

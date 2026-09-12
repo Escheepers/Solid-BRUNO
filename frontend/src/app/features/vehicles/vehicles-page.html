@@ -40,4 +40,14 @@
     [vehicle]="editingVehicle()"
     (closeRequest)="onFormModalClose()"
   />
+
+  <app-confirm-dialog
+    [open]="deactivatingVehicle() !== null"
+    title="Deactivate this vehicle?"
+    [message]="deactivateDialogMessage()"
+    confirmLabel="Deactivate"
+    cancelLabel="Keep active"
+    (confirm)="onConfirmDeactivate()"
+    (cancel)="onCancelDeactivate()"
+  />
 </div>

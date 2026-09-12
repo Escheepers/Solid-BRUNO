@@ -1,12 +1,18 @@
-import { Component, computed, linkedSignal, signal } from '@angular/core';
+import { Component, computed, inject, linkedSignal, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { debounceTime, distinctUntilChanged } from 'rxjs';
 
+import { NormalizedApiError } from '../../core/api-client/normalized-api-error';
 import { Button } from '../../shared/button/button';
 import { ColumnDef, DataTable, RowAction } from '../../shared/data-table/data-table';
+import { ConfirmDialog } from '../../shared/confirm-dialog/confirm-dialog';
+import { ToastService } from '../../shared/toast/toast.service';
 import { Vehicle, toVehicle } from './models/vehicle';
 import { VehicleFormModal } from './vehicle-form-modal';
-import { useVehiclesQuery } from './vehicles.service';
+import { useDeactivateVehicleMutation, useVehiclesQuery } from './vehicles.service';
+
+const DEFAULT_DEACTIVATE_MESSAGE =
+  'This vehicle will disappear from availability searches. This is reversible — you can restore it later.';
 
 const PAGE_SIZE = 20;
 const SEARCH_DEBOUNCE_MS = 300;
@@ -31,14 +37,19 @@ const dateFormatter = new Intl.DateTimeFormat('en-ZA', {
  */
 @Component({
   selector: 'app-vehicles-page',
-  imports: [DataTable, Button, VehicleFormModal],
+  imports: [DataTable, Button, VehicleFormModal, ConfirmDialog],
   templateUrl: './vehicles-page.html',
 })
 export class VehiclesPage {
+  private readonly toastService = inject(ToastService);
+  private readonly deactivateMutation = useDeactivateVehicleMutation();
+
   protected readonly searchInput = signal('');
   protected readonly pageSize = PAGE_SIZE;
   protected readonly isFormModalOpen = signal(false);
   protected readonly editingVehicle = signal<Vehicle | null>(null);
+  protected readonly deactivatingVehicle = signal<Vehicle | null>(null);
+  protected readonly deactivateErrorMessage = signal<string | null>(null);
 
   protected readonly debouncedSearch = toSignal(
     toObservable(this.searchInput).pipe(debounceTime(SEARCH_DEBOUNCE_MS), distinctUntilChanged()),
@@ -76,7 +87,12 @@ export class VehiclesPage {
 
   protected readonly actions: RowAction<Vehicle>[] = [
     { label: 'Edit', onClick: (vehicle) => this.openEditModal(vehicle) },
+    { label: 'Deactivate', onClick: (vehicle) => this.openDeactivateDialog(vehicle) },
   ];
+
+  protected readonly deactivateDialogMessage = computed(
+    () => this.deactivateErrorMessage() ?? DEFAULT_DEACTIVATE_MESSAGE,
+  );
 
   protected readonly vehicles = computed<Vehicle[]>(() => {
     const data = this.query.data();
@@ -121,5 +137,42 @@ export class VehiclesPage {
 
   protected onFormModalClose(): void {
     this.isFormModalOpen.set(false);
+  }
+
+  protected openDeactivateDialog(vehicle: Vehicle): void {
+    this.deactivateErrorMessage.set(null);
+    this.deactivatingVehicle.set(vehicle);
+  }
+
+  protected onCancelDeactivate(): void {
+    this.deactivatingVehicle.set(null);
+    this.deactivateErrorMessage.set(null);
+  }
+
+  protected onConfirmDeactivate(): void {
+    const vehicle = this.deactivatingVehicle();
+    if (!vehicle) {
+      return;
+    }
+
+    this.deactivateMutation.mutate(vehicle.id, {
+      onSuccess: () => {
+        this.deactivatingVehicle.set(null);
+        this.deactivateErrorMessage.set(null);
+        this.toastService.success('Vehicle deactivated.');
+      },
+      onError: (error) => {
+        this.deactivateErrorMessage.set(this.toErrorMessage(error));
+      },
+    });
+  }
+
+  /**
+   * A deliberately shallow mapping (per the spec's Design Notes: "do NOT try to
+   * parse/classify the NormalizedApiError deeply here") -- just enough to show a
+   * plain string in the `ConfirmDialog`'s message area in place of its normal copy.
+   */
+  private toErrorMessage(error: NormalizedApiError): string {
+    return error.kind === 'server-error' ? error.message : error.detail;
   }
 }
