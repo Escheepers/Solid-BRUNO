@@ -59,4 +59,18 @@ public class BookingRepository(AppDbContext dbContext) : IBookingRepository
     {
         await dbContext.Bookings.AddAsync(booking, cancellationToken);
     }
+
+    /// <summary>
+    /// Backs <see cref="IBookingRepository.GetNonCancelledForVehicleAsync"/>: every Booking row for
+    /// <paramref name="vehicleId"/> whose <c>Status</c> is not <c>Cancelled</c>, no ordering guarantee
+    /// needed since the caller (<c>CreateBookingCommandHandler</c>) only ever looks for the first
+    /// overlap, not a stable page.
+    /// </summary>
+    public async Task<IReadOnlyList<Booking>> GetNonCancelledForVehicleAsync(
+        Guid vehicleId, CancellationToken cancellationToken)
+    {
+        return await dbContext.Bookings
+            .Where(b => b.VehicleId == vehicleId && b.Status != BookingStatus.Cancelled)
+            .ToListAsync(cancellationToken);
+    }
 }

@@ -38,4 +38,16 @@ public interface IBookingRepository
     /// <c>IVehicleRepository.AddAsync</c>/<c>ICustomerRepository.AddAsync</c>'s exact shape.
     /// </summary>
     Task AddAsync(Booking booking, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Every Booking for <paramref name="vehicleId"/> whose <c>Status</c> is not
+    /// <see cref="BookingStatus.Cancelled"/> (spec-4-2): a Cancelled booking's date range never
+    /// blocks a new booking, but a Completed one's historical range still does (AD-7's own clause),
+    /// so this deliberately does not filter down to only <see cref="BookingStatus.Active"/>.
+    /// <see cref="Commands.CreateBookingCommandHandler"/> is the sole caller -- it reads this small
+    /// result set into memory and runs the real <see cref="DateRange.Overlaps"/> on each row in plain
+    /// C# (spec-4-2's Scope decision 2), rather than this method returning a SQL-translated overlap
+    /// predicate.
+    /// </summary>
+    Task<IReadOnlyList<Booking>> GetNonCancelledForVehicleAsync(Guid vehicleId, CancellationToken cancellationToken);
 }

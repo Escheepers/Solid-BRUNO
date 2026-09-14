@@ -14,6 +14,15 @@
     <PackageReference Include="MediatR" Version="14.2.0" />
     <PackageReference Include="FluentValidation" Version="12.1.1" />
     <PackageReference Include="FluentValidation.DependencyInjectionExtensions" Version="12.1.1" />
+    <!-- spec-4-2: CreateBookingCommandHandler catches the specific Postgres exclusion-violation
+         (DbUpdateException whose InnerException is a Npgsql.PostgresException with SqlState
+         "23P01") to translate the database-level overlap backstop into the same 409 shape as the
+         application-level check, pinned to the exact versions BrunoVehicleHire.Infrastructure
+         already resolves (Microsoft.EntityFrameworkCore defines DbUpdateException;
+         Npgsql.EntityFrameworkCore.PostgreSQL 10.0.3 resolves Npgsql 10.0.3), so no version gets
+         unified upward at restore time. -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.11" />
+    <PackageReference Include="Npgsql" Version="10.0.3" />
   </ItemGroup>
 
 </Project>

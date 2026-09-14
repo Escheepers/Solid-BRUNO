@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Npgsql;
 using Testcontainers.PostgreSql;
 
 namespace BrunoVehicleHire.Integration.Tests;
@@ -141,15 +142,46 @@ public class BookingsEndpointTests : IAsyncLifetime
         return customer;
     }
 
-    private async Task<Booking> SeedBookingAsync(Vehicle vehicle, Customer customer)
+    private async Task<Booking> SeedBookingAsync(
+        Vehicle vehicle,
+        Customer customer,
+        DateOnly? startDate = null,
+        DateOnly? endDate = null)
     {
         var booking = Booking.Create(
-            vehicle.Id, customer.Id, new DateOnly(2026, 10, 1), new DateOnly(2026, 10, 5), 1400m);
+            vehicle.Id,
+            customer.Id,
+            startDate ?? new DateOnly(2026, 10, 1),
+            endDate ?? new DateOnly(2026, 10, 5),
+            1400m);
 
         using var scope = _factory.Services.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         dbContext.Bookings.Add(booking);
         await dbContext.SaveChangesAsync();
+
+        return booking;
+    }
+
+    /// <summary>
+    /// Booking has no public Cancel()/Complete() transition yet (out of this story's scope -- see
+    /// domain-model.md/Booking.cs) -- flips the "Status" column directly via raw SQL after a normal
+    /// (always-Active) seed, exactly as a future Cancel/Complete feature eventually would, so
+    /// spec-4-2's Completed-blocks/Cancelled-doesn't-block I/O-matrix rows can be proven through the
+    /// real API.
+    /// </summary>
+    private async Task<Booking> SeedBookingWithStatusAsync(
+        Vehicle vehicle, Customer customer, DateOnly startDate, DateOnly endDate, BookingStatus status)
+    {
+        var booking = await SeedBookingAsync(vehicle, customer, startDate, endDate);
+
+        await using var connection = new NpgsqlConnection(_postgres.GetConnectionString());
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """UPDATE "Bookings" SET "Status" = @status WHERE "Id" = @id""";
+        command.Parameters.AddWithValue("status", status.ToString());
+        command.Parameters.AddWithValue("id", booking.Id);
+        await command.ExecuteNonQueryAsync();
 
         return booking;
     }
@@ -418,5 +450,105 @@ public class BookingsEndpointTests : IAsyncLifetime
         var response = await _client.SendAsync(request);
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task Post_OverlapsAnExistingActiveBooking_Returns409WithExactDetailMessage()
+    {
+        var vehicle = await SeedActiveVehicleAsync();
+        var customer = await SeedActiveCustomerAsync();
+        // Existing Active booking: 2 Sep - 4 Sep (matches the AC's own example verbatim).
+        await SeedBookingAsync(vehicle, customer, new DateOnly(2026, 9, 2), new DateOnly(2026, 9, 4));
+
+        var otherCustomer = await SeedActiveCustomerAsync();
+        using var request = AuthenticatedPost("/api/bookings", new
+        {
+            vehicleId = vehicle.Id,
+            customerId = otherCustomer.Id,
+            startDate = "2026-09-03",
+            endDate = "2026-09-06",
+        });
+
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+
+        var json = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(json);
+
+        document.RootElement.GetProperty("detail").GetString()
+            .Should().Be("This vehicle is already booked 2 Sep – 4 Sep");
+    }
+
+    [Fact]
+    public async Task Post_StartDateEqualsExistingBookingsEndDate_SameDayTurnover_Returns201()
+    {
+        var vehicle = await SeedActiveVehicleAsync();
+        var customer = await SeedActiveCustomerAsync();
+        // Existing booking ends exactly on 5 Oct -- the new request starts exactly there too.
+        await SeedBookingAsync(vehicle, customer, new DateOnly(2026, 10, 1), new DateOnly(2026, 10, 5));
+
+        var otherCustomer = await SeedActiveCustomerAsync();
+        using var request = AuthenticatedPost("/api/bookings", new
+        {
+            vehicleId = vehicle.Id,
+            customerId = otherCustomer.Id,
+            startDate = "2026-10-05",
+            endDate = "2026-10-09",
+        });
+
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+    }
+
+    [Fact]
+    public async Task Post_OverlapsAnExistingCompletedBooking_Returns409WithSameMessageShape()
+    {
+        var vehicle = await SeedActiveVehicleAsync();
+        var customer = await SeedActiveCustomerAsync();
+        await SeedBookingWithStatusAsync(
+            vehicle, customer, new DateOnly(2026, 9, 2), new DateOnly(2026, 9, 4), BookingStatus.Completed);
+
+        var otherCustomer = await SeedActiveCustomerAsync();
+        using var request = AuthenticatedPost("/api/bookings", new
+        {
+            vehicleId = vehicle.Id,
+            customerId = otherCustomer.Id,
+            startDate = "2026-09-03",
+            endDate = "2026-09-06",
+        });
+
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+
+        var json = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(json);
+
+        document.RootElement.GetProperty("detail").GetString()
+            .Should().Be("This vehicle is already booked 2 Sep – 4 Sep");
+    }
+
+    [Fact]
+    public async Task Post_OverlapsAnExistingCancelledBooking_Returns201_CancelledNeverBlocks()
+    {
+        var vehicle = await SeedActiveVehicleAsync();
+        var customer = await SeedActiveCustomerAsync();
+        await SeedBookingWithStatusAsync(
+            vehicle, customer, new DateOnly(2026, 9, 2), new DateOnly(2026, 9, 4), BookingStatus.Cancelled);
+
+        var otherCustomer = await SeedActiveCustomerAsync();
+        using var request = AuthenticatedPost("/api/bookings", new
+        {
+            vehicleId = vehicle.Id,
+            customerId = otherCustomer.Id,
+            startDate = "2026-09-03",
+            endDate = "2026-09-06",
+        });
+
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
     }
 }
