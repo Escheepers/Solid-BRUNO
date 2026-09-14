@@ -1,2 +1,40 @@
-<h1 class="text-page-title text-text">Customers</h1>
-<p class="text-body text-text-muted">Coming soon.</p>
+<div class="flex flex-col gap-6 p-8">
+  <div class="flex items-center justify-between">
+    <h1 class="text-page-title text-text">Customers</h1>
+    <app-button (click)="openCreateModal()">+ New Customer</app-button>
+  </div>
+
+  <div class="flex items-center gap-4">
+    <input
+      type="search"
+      placeholder="Search customers..."
+      aria-label="Search customers"
+      class="w-full max-w-sm rounded-md border border-input-border bg-input-bg px-4 py-2 text-body text-text-body placeholder:text-text-faint"
+      [value]="searchInput()"
+      (input)="onSearchInput($any($event.target).value)"
+    />
+  </div>
+
+  @if (isGenuinelyEmpty()) {
+    <p class="text-body text-text-muted">No customers yet &mdash; create one.</p>
+  } @else if (isFilteredEmpty()) {
+    <div class="flex flex-col items-start gap-2">
+      <p class="text-body text-text-muted">No customers match these filters.</p>
+      <button type="button" class="text-button text-primary" (click)="clearFilters()">
+        Clear all filters
+      </button>
+    </div>
+  } @else {
+    <app-data-table
+      [columns]="columns"
+      [rows]="customers()"
+      [loading]="query.isPending()"
+      [page]="page()"
+      [pageSize]="pageSize"
+      [totalCount]="totalCount()"
+      (pageChange)="onPageChange($event)"
+    />
+  }
+
+  <app-create-customer-modal [open]="isCreateModalOpen()" (closeRequest)="onCreateModalClose()" />
+</div>

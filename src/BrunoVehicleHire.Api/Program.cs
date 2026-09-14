@@ -1,6 +1,7 @@
 using BrunoVehicleHire.Api.Auth;
 using BrunoVehicleHire.Api.ExceptionHandling;
 using BrunoVehicleHire.Application.Common;
+using BrunoVehicleHire.Application.Customers;
 using BrunoVehicleHire.Application.Vehicles;
 using BrunoVehicleHire.Application.Vehicles.Queries;
 using BrunoVehicleHire.Domain.Exceptions;
@@ -54,6 +55,7 @@ builder.Services.AddMediatR(cfg =>
 builder.Services.AddValidatorsFromAssembly(typeof(GetVehiclesQuery).Assembly);
 
 builder.Services.AddScoped<IVehicleRepository, VehicleRepository>();
+builder.Services.AddScoped<ICustomerRepository, CustomerRepository>();
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 
 // Swashbuckle: declares the ApiKey header security scheme + a global security requirement so
@@ -74,11 +76,17 @@ builder.Services.AddSwaggerGen(options =>
     });
 });
 
-var connectionString = builder.Configuration.GetConnectionString("Postgres")
-    ?? throw new InvalidOperationException("Connection string 'Postgres' is not configured.");
-
+// Deliberately NOT captured into a local variable read eagerly here: builder.Configuration is
+// Microsoft.Extensions.Configuration's ConfigurationManager, a live/mutable instance, and this
+// options delegate isn't invoked until AppDbContext is actually resolved from DI (post-Build()).
+// Reading it inside the delegate means it reflects the FULLY composed configuration -- including
+// any source WebApplicationFactory.WithWebHostBuilder's ConfigureAppConfiguration layers on for
+// integration tests. Capturing it into a variable evaluated at this point in top-level Program.cs
+// (before Build()) would silently freeze in appsettings.json's value, invisible to any later
+// config override -- exactly the ApiKey:Key option below avoids by binding lazily via IOptions.
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseNpgsql(connectionString));
+    options.UseNpgsql(builder.Configuration.GetConnectionString("Postgres")
+        ?? throw new InvalidOperationException("Connection string 'Postgres' is not configured.")));
 
 // Data Protection keys are persisted to a file system path backed by the docker-compose-mounted
 // volume, not the ephemeral in-container default, so encrypted data (Epic 3's PII value

@@ -7,6 +7,13 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- The full implementation package (not just .Abstractions): the AppDbContext runtime
+         consumer needs IDataProtector/IDataProtectionProvider's actual implementation. -->
+    <PackageReference Include="Microsoft.AspNetCore.DataProtection" Version="10.0.12" />
+    <!-- .Extensions ships the concrete DataProtectionProvider convenience class (static
+         Create(DirectoryInfo) etc.) that AppDbContextFactory's design-time-only construction
+         needs; the base package only exposes the DI-builder-based registration path. -->
+    <PackageReference Include="Microsoft.AspNetCore.DataProtection.Extensions" Version="10.0.12" />
     <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.11" />
     <!-- Pinned explicitly (not just pulled in transitively via Design, which is PrivateAssets)
          so downstream projects (Api, Integration.Tests) resolve the same Relational version

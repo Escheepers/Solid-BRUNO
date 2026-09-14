@@ -9,12 +9,13 @@ using Testcontainers.PostgreSql;
 namespace BrunoVehicleHire.Integration.Tests;
 
 /// <summary>
-/// Proves the EF Core migration against a real, ephemeral Postgres container -- not manual
-/// inspection: the "Vehicles" table is created with the exact domain-model.md schema, a second
-/// migrate is a no-op, and the unique constraint on RegistrationNumber is enforced at the
-/// database level (matching the I/O matrix in the story spec).
+/// Proves the AddCustomersTable EF Core migration against a real, ephemeral Postgres container --
+/// not manual inspection: the "Customers" table is created with the exact domain-model.md schema
+/// (including the EmailHash shadow column), a second migrate is a no-op, and the unique constraint
+/// on EmailHash is enforced at the database level. Mirrors <c>VehicleMigrationTests</c>'s exact
+/// pattern.
 /// </summary>
-public class VehicleMigrationTests : IAsyncLifetime
+public class CustomerMigrationTests : IAsyncLifetime
 {
     private readonly PostgreSqlContainer _postgres = new PostgreSqlBuilder("postgres:18")
         .Build();
@@ -29,13 +30,11 @@ public class VehicleMigrationTests : IAsyncLifetime
             .UseNpgsql(_postgres.GetConnectionString())
             .Options;
 
-        // An ephemeral provider is fine here -- this class exercises the Vehicle schema only, never
-        // Customer's PII columns, so no key persistence across instances is needed.
         return new AppDbContext(options, new EphemeralDataProtectionProvider());
     }
 
     [Fact]
-    public async Task Migrate_CreatesVehiclesTable_WithExpectedSchema()
+    public async Task Migrate_CreatesCustomersTable_WithExpectedSchema()
     {
         await using var dbContext = CreateDbContext();
 
@@ -48,7 +47,7 @@ public class VehicleMigrationTests : IAsyncLifetime
         command.CommandText = """
             SELECT column_name
             FROM information_schema.columns
-            WHERE table_schema = 'public' AND table_name = 'Vehicles'
+            WHERE table_schema = 'public' AND table_name = 'Customers'
             """;
 
         var columns = new List<string>();
@@ -61,11 +60,11 @@ public class VehicleMigrationTests : IAsyncLifetime
         }
 
         columns.Should().BeEquivalentTo(
-            ["Id", "RegistrationNumber", "Make", "Model", "Year", "DailyRate", "IsDeleted", "CreatedDate"]);
+            ["Id", "FirstName", "LastName", "Email", "PhoneNumber", "EmailHash", "CreatedDate", "IsDeleted", "IsAnonymized"]);
     }
 
     [Fact]
-    public async Task Migrate_HasUniqueIndex_OnRegistrationNumber()
+    public async Task Migrate_HasUniqueIndex_OnEmailHash()
     {
         await using var dbContext = CreateDbContext();
 
@@ -78,7 +77,7 @@ public class VehicleMigrationTests : IAsyncLifetime
         command.CommandText = """
             SELECT indexdef
             FROM pg_indexes
-            WHERE schemaname = 'public' AND tablename = 'Vehicles' AND indexdef ILIKE '%RegistrationNumber%'
+            WHERE schemaname = 'public' AND tablename = 'Customers' AND indexdef ILIKE '%EmailHash%'
             """;
 
         await using var reader = await command.ExecuteReaderAsync();
@@ -91,7 +90,7 @@ public class VehicleMigrationTests : IAsyncLifetime
             }
         }
 
-        found.Should().BeTrue("RegistrationNumber must have a unique index/constraint at the database level");
+        found.Should().BeTrue("EmailHash must have a unique index/constraint at the database level");
     }
 
     [Fact]
@@ -100,33 +99,35 @@ public class VehicleMigrationTests : IAsyncLifetime
         await using var dbContext = CreateDbContext();
         await dbContext.Database.MigrateAsync();
 
-        // Second startup against an already-migrated database must succeed unchanged.
         var act = () => dbContext.Database.MigrateAsync();
 
         await act.Should().NotThrowAsync();
     }
 
     [Fact]
-    public async Task Vehicles_RejectsDuplicateRegistrationNumber_AtTheDatabaseLevel()
+    public async Task Customers_RejectsDuplicateNormalizedEmail_AtTheDatabaseLevel()
     {
-        await using var seedContext = CreateDbContext();
+        var sharedProtectionProvider = new EphemeralDataProtectionProvider();
+
+        AppDbContext CreateContextSharingKeys()
+        {
+            var options = new DbContextOptionsBuilder<AppDbContext>()
+                .UseNpgsql(_postgres.GetConnectionString())
+                .Options;
+            return new AppDbContext(options, sharedProtectionProvider);
+        }
+
+        await using var seedContext = CreateContextSharingKeys();
         await seedContext.Database.MigrateAsync();
 
-        seedContext.Vehicles.Add(Vehicle.Create(
-            registrationNumber: "CA123456",
-            make: "Toyota",
-            model: "Corolla",
-            year: 2023,
-            dailyRate: 350m));
+        seedContext.Customers.Add(Customer.Create(
+            "Jane", "Doe", "duplicate@example.com", "0821234567"));
         await seedContext.SaveChangesAsync();
 
-        await using var duplicateContext = CreateDbContext();
-        duplicateContext.Vehicles.Add(Vehicle.Create(
-            registrationNumber: "CA123456",
-            make: "Honda",
-            model: "Civic",
-            year: 2024,
-            dailyRate: 400m));
+        await using var duplicateContext = CreateContextSharingKeys();
+        // Different case/whitespace -- still the same normalized email, so still a DB-level clash.
+        duplicateContext.Customers.Add(Customer.Create(
+            "John", "Smith", " Duplicate@Example.com ", "0827654321"));
 
         var act = () => duplicateContext.SaveChangesAsync();
 

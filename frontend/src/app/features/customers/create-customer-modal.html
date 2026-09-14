@@ -1,0 +1,22 @@
+<app-modal [open]="open()" title="+ New Customer" (closeRequest)="onModalCloseRequest()">
+  <form [formGroup]="form" (ngSubmit)="onSubmit()" class="flex flex-col gap-4">
+    @if (serverErrorMessage()) {
+      <div
+        role="alert"
+        aria-live="polite"
+        class="rounded-md bg-danger-bg px-3 py-2 text-caption text-danger-text"
+      >
+        {{ serverErrorMessage() }}
+      </div>
+    }
+
+    <app-input formControlName="firstName" label="First Name" [error]="firstNameError()" />
+    <app-input formControlName="lastName" label="Last Name" [error]="lastNameError()" />
+    <app-input type="email" formControlName="email" label="Email" [error]="emailError()" />
+    <app-input formControlName="phoneNumber" label="Phone Number" [error]="phoneNumberError()" />
+
+    <div class="flex justify-end gap-4 pt-2">
+      <app-button type="submit" [loading]="mutation.isPending()">Create Customer</app-button>
+    </div>
+  </form>
+</app-modal>
