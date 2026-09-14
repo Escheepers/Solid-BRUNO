@@ -58,3 +58,34 @@ export function toBooking(dto: BookingDto): Booking {
     createdDate: new Date(dto.createdDate),
   };
 }
+
+/**
+ * Local midnight for "today" -- matches `toBooking`'s own `parseDateOnly` convention
+ * (local midnight, not UTC midnight) so `booking.endDate >= startOfToday()` compares
+ * two Dates anchored to the same wall-clock day, never off by a timezone offset.
+ *
+ * Moved here from `bookings-page.ts` (spec-4-5's Scope decision 3) -- a pure
+ * relocation, not a behavior change -- so `BookingDetailPage` can reuse the exact
+ * same "today" definition `isCancellable` depends on.
+ */
+export function startOfToday(): Date {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+}
+
+/**
+ * True only for a booking the backend would actually accept a Cancel request for
+ * right now (spec-4-3's Boundaries: "never offering an action the backend would
+ * always reject") -- Active status and a not-yet-past EndDate. Completed, Cancelled,
+ * and past-EndDate-still-Active bookings all get no Cancel action at all; the 409
+ * paths those states would hit are proven at the API/integration level as defensive
+ * backstops for a stale UI/race, never exercised by clicking through this app.
+ *
+ * Moved here from `bookings-page.ts` and exported (spec-4-5's Scope decision 3) so
+ * `BookingDetailPage` reuses this exact eligibility check rather than a second copy
+ * of the same date comparison (DRY) -- its Cancel action must always agree with the
+ * list's.
+ */
+export function isCancellable(booking: Booking): boolean {
+  return booking.status === 'Active' && booking.endDate >= startOfToday();
+}

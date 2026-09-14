@@ -1,4 +1,5 @@
 import { Component, OnInit, TemplateRef, ViewChild, computed, inject, signal } from '@angular/core';
+import { Router } from '@angular/router';
 
 import { NormalizedApiError } from '../../core/api-client/normalized-api-error';
 import { Badge } from '../../shared/badge/badge';
@@ -10,7 +11,7 @@ import { ToastService } from '../../shared/toast/toast.service';
 import { BookingFormModal } from './booking-form-modal';
 import { currencyFormatter, dateFormatter } from './booking-formatters';
 import { useBookingsQuery, useCancelBookingMutation } from './bookings.service';
-import { Booking, toBooking } from './models/booking';
+import { Booking, isCancellable, toBooking } from './models/booking';
 
 const PAGE_SIZE = 20;
 
@@ -21,28 +22,6 @@ const ANONYMIZED_CELL_CLASS = 'italic text-anonymized-text';
 
 const DEFAULT_CANCEL_MESSAGE =
   'This booking will stay in records as Cancelled. This is not reversible.';
-
-/**
- * Local midnight for "today" -- matches `toBooking`'s own `parseDateOnly` convention
- * (local midnight, not UTC midnight) so `booking.endDate >= startOfToday()` compares
- * two Dates anchored to the same wall-clock day, never off by a timezone offset.
- */
-function startOfToday(): Date {
-  const now = new Date();
-  return new Date(now.getFullYear(), now.getMonth(), now.getDate());
-}
-
-/**
- * True only for a booking the backend would actually accept a Cancel request for
- * right now (spec-4-3's Boundaries: "never offering an action the backend would
- * always reject") -- Active status and a not-yet-past EndDate. Completed, Cancelled,
- * and past-EndDate-still-Active bookings all get no Cancel action at all; the 409
- * paths those states would hit are proven at the API/integration level as defensive
- * backstops for a stale UI/race, never exercised by clicking through this app.
- */
-function isCancellable(booking: Booking): boolean {
-  return booking.status === 'Active' && booking.endDate >= startOfToday();
-}
 
 /**
  * Story 4.1's real Bookings feature (extended by spec-4-3's Cancel action), replacing
@@ -63,8 +42,11 @@ function isCancellable(booking: Booking): boolean {
  * Cancel (spec-4-3) is `createConfirmableAction`'s fourth consumer (after Delete/
  * Deactivate/Erase in `CustomersPage`) -- exactly the cross-feature reuse the
  * extraction was meant to enable. `actions` is a per-row function gated by
- * `isCancellable` (module-level, Active + not-yet-past-EndDate) so an ineligible row
- * (Completed, Cancelled, or past-EndDate-Active) never offers a Cancel link at all.
+ * `isCancellable` (now exported from `models/booking.ts`, spec-4-5's Scope decision
+ * 3) so an ineligible row (Completed, Cancelled, or past-EndDate-Active) never
+ * offers a Cancel link -- but every row, eligible or not, always gets a "View" link
+ * (spec-4-5), navigating to this booking's own `BookingDetailPage` -- mirrors
+ * `VehiclesPage`'s own always-present "View" action exactly.
  */
 @Component({
   selector: 'app-bookings-page',
@@ -76,6 +58,7 @@ export class BookingsPage implements OnInit {
   private readonly statusCellRef!: TemplateRef<{ $implicit: Booking }>;
 
   private readonly toastService = inject(ToastService);
+  private readonly router = inject(Router);
   private readonly cancelMutation = useCancelBookingMutation();
 
   protected readonly pageSize = PAGE_SIZE;
@@ -97,8 +80,10 @@ export class BookingsPage implements OnInit {
     onSuccess: () => this.toastService.success('Booking cancelled.'),
   });
 
-  protected readonly actions = (booking: Booking): RowAction<Booking>[] =>
-    isCancellable(booking) ? [{ label: 'Cancel', onClick: (b) => this.cancelAction.open(b) }] : [];
+  protected readonly actions = (booking: Booking): RowAction<Booking>[] => [
+    { label: 'View', onClick: (b) => this.onViewClick(b) },
+    ...(isCancellable(booking) ? [{ label: 'Cancel', onClick: (b: Booking) => this.cancelAction.open(b) }] : []),
+  ];
 
   protected columns: ColumnDef<Booking>[] = [];
 
@@ -143,6 +128,10 @@ export class BookingsPage implements OnInit {
 
   protected onPageChange(page: number): void {
     this.page.set(page);
+  }
+
+  protected onViewClick(booking: Booking): void {
+    this.router.navigate(['/bookings', booking.id]);
   }
 
   protected openCreateModal(): void {

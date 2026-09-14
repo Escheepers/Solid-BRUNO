@@ -1,6 +1,7 @@
 import { provideHttpClient, withInterceptors } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { Router, provideRouter } from '@angular/router';
 import { QueryClient, provideTanStackQuery } from '@tanstack/angular-query-experimental';
 
 import { apiKeyInterceptor } from '../../core/api-client/api-key.interceptor';
@@ -61,6 +62,7 @@ describe('BookingsPage', () => {
         provideHttpClient(withInterceptors([apiKeyInterceptor, errorNormalizationInterceptor])),
         provideHttpClientTesting(),
         provideTanStackQuery(queryClient),
+        provideRouter([]),
       ],
     }).compileComponents();
 
@@ -133,8 +135,8 @@ describe('BookingsPage', () => {
     const headers = Array.from(fixture.nativeElement.querySelectorAll('thead th')).map((th) =>
       (th as HTMLElement).textContent?.trim(),
     );
-    // The default `bookingDto()` fixture is Active with a future EndDate (2026-10-05), so it's
-    // cancellable -- DataTable renders its trailing (sr-only-labelled) Actions column (spec-4-3).
+    // Every row always gets a "View" action (spec-4-5), so DataTable renders its trailing
+    // (sr-only-labelled) Actions column regardless of this row's own Cancel eligibility.
     expect(headers).toEqual(['Vehicle', 'Customer', 'Start', 'End', 'Total', 'Status', 'Actions']);
 
     const row = fixture.nativeElement.querySelector('tbody tr');
@@ -157,31 +159,67 @@ describe('BookingsPage', () => {
     expect(cancelButton).toBeTruthy();
   });
 
-  it('offers no row action at all for a Completed booking', async () => {
+  /**
+   * spec-4-5 adds an always-present "View" action to every row (regardless of Cancel
+   * eligibility), so these three cases -- previously "no row action at all" -- now
+   * assert "View, but never Cancel" instead. The eligibility rule itself
+   * (`isCancellable`, moved to `models/booking.ts` by this same story) is unchanged;
+   * only the row's total action set grew.
+   */
+  it('offers View but never Cancel for a Completed booking', async () => {
     await settle();
     expectBookingsRequest().flush(pagedResult([bookingDto({ status: 'Completed' })]));
     flushPickerQueries();
     await settle();
 
-    expect(fixture.nativeElement.querySelectorAll('tbody button').length).toBe(0);
+    const buttons = Array.from<HTMLButtonElement>(
+      fixture.nativeElement.querySelectorAll('tbody button'),
+    ).map((b) => b.textContent?.trim());
+    expect(buttons).toEqual(['View']);
   });
 
-  it('offers no row action at all for a Cancelled booking', async () => {
+  it('offers View but never Cancel for a Cancelled booking', async () => {
     await settle();
     expectBookingsRequest().flush(pagedResult([bookingDto({ status: 'Cancelled' })]));
     flushPickerQueries();
     await settle();
 
-    expect(fixture.nativeElement.querySelectorAll('tbody button').length).toBe(0);
+    const buttons = Array.from<HTMLButtonElement>(
+      fixture.nativeElement.querySelectorAll('tbody button'),
+    ).map((b) => b.textContent?.trim());
+    expect(buttons).toEqual(['View']);
   });
 
-  it('offers no row action at all for a still-Active booking whose EndDate is already in the past', async () => {
+  it('offers View but never Cancel for a still-Active booking whose EndDate is already in the past', async () => {
     await settle();
     expectBookingsRequest().flush(pagedResult([bookingDto({ status: 'Active', endDate: '2020-01-05' })]));
     flushPickerQueries();
     await settle();
 
-    expect(fixture.nativeElement.querySelectorAll('tbody button').length).toBe(0);
+    const buttons = Array.from<HTMLButtonElement>(
+      fixture.nativeElement.querySelectorAll('tbody button'),
+    ).map((b) => b.textContent?.trim());
+    expect(buttons).toEqual(['View']);
+  });
+
+  it('clicking "View" on a row navigates to that booking\'s detail route', async () => {
+    await settle();
+    expectBookingsRequest().flush(pagedResult([bookingDto({ id: 'b7' })]));
+    flushPickerQueries();
+    await settle();
+
+    const router = TestBed.inject(Router);
+    const navigateSpy = vi.spyOn(router, 'navigate');
+
+    const viewButton = Array.from<HTMLButtonElement>(
+      fixture.nativeElement.querySelectorAll('tbody button'),
+    ).find((b) => b.textContent?.trim() === 'View');
+    expect(viewButton).toBeTruthy();
+
+    viewButton!.click();
+    fixture.detectChanges();
+
+    expect(navigateSpy).toHaveBeenCalledWith(['/bookings', 'b7']);
   });
 
   it('renders a real Badge component for the Status column', async () => {

@@ -1,5 +1,5 @@
 import { BookingDto } from '../../../core/models/booking-dto';
-import { toBooking } from './booking';
+import { Booking, isCancellable, toBooking } from './booking';
 
 describe('toBooking', () => {
   const dto: BookingDto = {
@@ -53,5 +53,49 @@ describe('toBooking', () => {
     expect(booking.endDate.getFullYear()).toBe(2026);
     expect(booking.endDate.getMonth()).toBe(9);
     expect(booking.endDate.getDate()).toBe(5);
+  });
+});
+
+/**
+ * Moved here from `bookings-page.spec.ts` (spec-4-5's Scope decision 3 -- the
+ * `isCancellable`/`startOfToday` extraction). A pure relocation of the same
+ * assertions that exercised this logic while it lived in `bookings-page.ts`,
+ * proving the move changed nothing about the eligibility rule itself.
+ */
+describe('isCancellable', () => {
+  function booking(overrides: Partial<Booking> = {}): Booking {
+    return {
+      id: 'b1',
+      vehicleId: 'v1',
+      vehicleMake: 'Toyota',
+      vehicleModel: 'Corolla',
+      vehicleRegistrationNumber: 'CA123456',
+      customerId: 'c1',
+      customerFirstName: 'Thabo',
+      customerLastName: 'Nkosi',
+      customerIsAnonymized: false,
+      startDate: new Date('2026-10-01'),
+      endDate: new Date('2099-01-05'),
+      totalPrice: 1400,
+      status: 'Active',
+      createdDate: new Date('2026-09-20T10:30:00Z'),
+      ...overrides,
+    };
+  }
+
+  it('is true for an Active booking with a future EndDate', () => {
+    expect(isCancellable(booking({ status: 'Active', endDate: new Date('2099-01-05') }))).toBe(true);
+  });
+
+  it('is false for a Completed booking', () => {
+    expect(isCancellable(booking({ status: 'Completed' }))).toBe(false);
+  });
+
+  it('is false for a Cancelled booking', () => {
+    expect(isCancellable(booking({ status: 'Cancelled' }))).toBe(false);
+  });
+
+  it('is false for a still-Active booking whose EndDate is already in the past', () => {
+    expect(isCancellable(booking({ status: 'Active', endDate: new Date('2020-01-05') }))).toBe(false);
   });
 });

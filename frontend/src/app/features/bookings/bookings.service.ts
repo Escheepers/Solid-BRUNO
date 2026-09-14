@@ -10,6 +10,14 @@ import { PagedResult } from '../../core/models/paged-result';
 export interface BookingsQueryParams {
   page: number;
   pageSize: number;
+  /**
+   * Optional Vehicle filter (spec-4-5's Scope decision 1) -- additive and
+   * backward-compatible with every pre-existing caller (`BookingsPage` never
+   * supplies it, so its own unfiltered list request is unaffected). Reused by both
+   * the unfiltered Bookings list and Vehicle Detail's booking-history section,
+   * rather than a second, near-duplicate query (DRY).
+   */
+  vehicleId?: string;
 }
 
 /**
@@ -36,21 +44,56 @@ export const BOOKINGS_LIST_QUERY_KEY = ['bookings', 'list'] as const;
  * Wraps `injectQuery` over `ApiClient.get<PagedResult<BookingDto>>('bookings', ...)`,
  * mirroring `useVehiclesQuery`/`useCustomersQuery`'s exact shape -- minus `search`/
  * `showInactive` (spec-4-1's Scope decision 3: no free-text search or inactive
- * filter for this story's list; `GetBookingsQuery` takes only `page`/`pageSize`).
- * Query-key convention (AD-3): `['bookings', 'list', { page, pageSize }]`. `params`
- * is a function (not a plain object) so `injectQuery`'s reactive context re-runs the
- * query whenever any Signal it reads (page/pageSize) changes.
+ * filter for this story's list; `GetBookingsQuery` takes only `page`/`pageSize`/
+ * `vehicleId`). Query-key convention (AD-3):
+ * `['bookings', 'list', { page, pageSize, vehicleId }]`. `params` is a function (not
+ * a plain object) so `injectQuery`'s reactive context re-runs the query whenever any
+ * Signal it reads (page/pageSize/vehicleId) changes.
+ *
+ * `vehicleId` (spec-4-5's Scope decision 1) is omitted from the actual HTTP request
+ * entirely when absent -- rather than sent as the literal string `"undefined"` --
+ * so `BookingsPage`'s own unfiltered call (which never supplies it) keeps issuing
+ * the exact same `?page=&pageSize=` request it always has. Vehicle Detail's
+ * booking-history section (spec-4-5) is the first caller to supply it.
  */
 export function useBookingsQuery(params: () => BookingsQueryParams) {
   const apiClient = inject(ApiClient);
 
   return injectQuery(() => {
-    const { page, pageSize } = params();
+    const { page, pageSize, vehicleId } = params();
 
     return {
-      queryKey: ['bookings', 'list', { page, pageSize }] as const,
+      queryKey: ['bookings', 'list', { page, pageSize, vehicleId }] as const,
       queryFn: () =>
-        firstValueFrom(apiClient.get<PagedResult<BookingDto>>('bookings', { page, pageSize })),
+        firstValueFrom(
+          apiClient.get<PagedResult<BookingDto>>(
+            'bookings',
+            vehicleId ? { page, pageSize, vehicleId } : { page, pageSize },
+          ),
+        ),
+    };
+  });
+}
+
+/**
+ * Wraps `injectQuery` over `ApiClient.get<BookingDto>('bookings/{id}')` for a single
+ * booking's detail (spec-4-5), mirroring `useVehicleQuery`'s exact shape. Query-key
+ * convention (AD-3): `['bookings', 'detail', id]`. `id` is a function (mirroring
+ * `useBookingsQuery`'s own `params`) so the query reactively re-runs if the route's
+ * `id` param changes without remounting `BookingDetailPage`. `enabled` is guarded on
+ * a defined id so no request fires for an as-yet-unresolved route param --
+ * `firstValueFrom` would otherwise be called with `bookings/undefined` in the URL.
+ */
+export function useBookingQuery(id: () => string | undefined) {
+  const apiClient = inject(ApiClient);
+
+  return injectQuery<BookingDto, NormalizedApiError>(() => {
+    const bookingId = id();
+
+    return {
+      queryKey: ['bookings', 'detail', bookingId] as const,
+      queryFn: () => firstValueFrom(apiClient.get<BookingDto>(`bookings/${bookingId}`)),
+      enabled: !!bookingId,
     };
   });
 }

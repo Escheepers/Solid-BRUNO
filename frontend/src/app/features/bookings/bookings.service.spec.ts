@@ -6,7 +6,12 @@ import { QueryClient, provideTanStackQuery } from '@tanstack/angular-query-exper
 import { apiKeyInterceptor } from '../../core/api-client/api-key.interceptor';
 import { errorNormalizationInterceptor } from '../../core/api-client/error-normalization.interceptor';
 import { BookingDto } from '../../core/models/booking-dto';
-import { useBookingsQuery, useCancelBookingMutation, useCreateBookingMutation } from './bookings.service';
+import {
+  useBookingQuery,
+  useBookingsQuery,
+  useCancelBookingMutation,
+  useCreateBookingMutation,
+} from './bookings.service';
 
 /** Matches the macrotask-flush pattern used elsewhere for TanStack Query's Angular reactivity. */
 function flushMicrotasks(): Promise<void> {
@@ -80,6 +85,91 @@ describe('useBookingsQuery', () => {
     await flushMicrotasks();
 
     expect(query.data()?.items[0].vehicleMake).toBe('Ford');
+  });
+
+  it('includes vehicleId in the request when supplied (spec-4-5\'s Scope decision 1)', async () => {
+    TestBed.runInInjectionContext(() =>
+      useBookingsQuery(() => ({ page: 1, pageSize: 100, vehicleId: 'v1' })),
+    );
+    await flushMicrotasks();
+
+    const req = httpMock.expectOne(
+      (r) => r.url === '/api/bookings' && r.params.get('vehicleId') === 'v1',
+    );
+    expect(req.request.params.keys().sort()).toEqual(['page', 'pageSize', 'vehicleId']);
+    req.flush({ items: [], totalCount: 0, page: 1, pageSize: 100 });
+  });
+});
+
+describe('useBookingQuery', () => {
+  let httpMock: HttpTestingController;
+  let queryClient: QueryClient;
+
+  beforeEach(() => {
+    queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+
+    TestBed.configureTestingModule({
+      providers: [
+        provideHttpClient(withInterceptors([apiKeyInterceptor, errorNormalizationInterceptor])),
+        provideHttpClientTesting(),
+        provideTanStackQuery(queryClient),
+      ],
+    });
+
+    httpMock = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => {
+    httpMock.verify();
+    TestBed.resetTestingModule();
+  });
+
+  it('GETs bookings/{id} for a defined id', async () => {
+    TestBed.runInInjectionContext(() => useBookingQuery(() => 'b1'));
+    await flushMicrotasks();
+
+    const req = httpMock.expectOne('/api/bookings/b1');
+    expect(req.request.method).toBe('GET');
+    req.flush(bookingDto());
+  });
+
+  it('issues no request while id is undefined', async () => {
+    TestBed.runInInjectionContext(() => useBookingQuery(() => undefined));
+    await flushMicrotasks();
+
+    httpMock.expectNone(() => true);
+  });
+
+  it('resolves with the fetched BookingDto on success', async () => {
+    const query = TestBed.runInInjectionContext(() => useBookingQuery(() => 'b1'));
+    await flushMicrotasks();
+
+    httpMock.expectOne('/api/bookings/b1').flush(bookingDto({ vehicleMake: 'Ford' }));
+    await flushMicrotasks();
+
+    expect(query.data()?.vehicleMake).toBe('Ford');
+  });
+
+  it('normalizes a 404 into a NotFoundError on the query', async () => {
+    const query = TestBed.runInInjectionContext(() => useBookingQuery(() => 'missing-id'));
+    await flushMicrotasks();
+
+    const req = httpMock.expectOne('/api/bookings/missing-id');
+    req.flush(
+      {
+        type: 'https://bruno-vehicle-hire/problems/not-found',
+        title: 'Not Found',
+        status: 404,
+        detail: "Booking 'missing-id' was not found.",
+      },
+      { status: 404, statusText: 'Not Found' },
+    );
+    await flushMicrotasks();
+
+    expect(query.isError()).toBe(true);
+    expect(query.error()?.kind).toBe('not-found');
   });
 });
 

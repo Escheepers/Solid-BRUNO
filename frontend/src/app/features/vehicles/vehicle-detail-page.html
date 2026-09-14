@@ -1,3 +1,7 @@
+<ng-template #statusCell let-booking>
+  <app-badge [status]="booking.status" />
+</ng-template>
+
 <div class="flex flex-col gap-6 p-8">
   @if (query.isPending()) {
     <div class="rounded-xl border border-border bg-surface p-8">
@@ -44,6 +48,22 @@
           </dd>
         </div>
       </dl>
+    </div>
+
+    <div class="flex flex-col gap-4">
+      <h2 class="text-section-label uppercase tracking-wide text-text-faint">Booking History</h2>
+      @if (hasNoBookings()) {
+        <p class="text-body text-text-muted">No bookings yet for this vehicle.</p>
+      } @else {
+        <app-data-table
+          [columns]="bookingColumns"
+          [rows]="bookings()"
+          [loading]="bookingsQuery.isPending()"
+          [pageSize]="bookingHistoryPageSize"
+          [totalCount]="bookingsTotalCount()"
+          [rowKey]="bookingRowKey"
+        />
+      }
     </div>
   } @else {
     <p class="text-body text-text-body">Something went wrong. Please try again.</p>

@@ -102,9 +102,9 @@ public class BookingsEndpointTests : IAsyncLifetime
         return request;
     }
 
-    private async Task<Vehicle> SeedActiveVehicleAsync(decimal dailyRate = 350m)
+    private async Task<Vehicle> SeedActiveVehicleAsync(decimal dailyRate = 350m, string registrationNumber = "CA123456")
     {
-        var vehicle = Vehicle.Create("CA123456", "Toyota", "Corolla", 2023, dailyRate);
+        var vehicle = Vehicle.Create(registrationNumber, "Toyota", "Corolla", 2023, dailyRate);
 
         using var scope = _factory.Services.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -298,6 +298,53 @@ public class BookingsEndpointTests : IAsyncLifetime
         var response = await _client.GetAsync("/api/bookings");
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    /// <summary>
+    /// Proves the additive <c>vehicleId</c> filter (spec-4-5's Scope decision 1) only returns
+    /// bookings for that vehicle, leaving the unfiltered list's own behavior untouched -- backs
+    /// Vehicle Detail's booking-history section.
+    /// </summary>
+    [Fact]
+    public async Task Get_FilteredByVehicleId_ReturnsOnlyThatVehiclesBookings()
+    {
+        var vehicleOne = await SeedActiveVehicleAsync(registrationNumber: "CA111111");
+        var vehicleTwo = await SeedActiveVehicleAsync(registrationNumber: "CA222222");
+        var customer = await SeedActiveCustomerAsync();
+        var bookingForVehicleOne = await SeedBookingAsync(vehicleOne, customer);
+        await SeedBookingAsync(vehicleTwo, customer, new DateOnly(2026, 11, 1), new DateOnly(2026, 11, 3));
+
+        using var request = AuthenticatedGet($"/api/bookings?page=1&pageSize=20&vehicleId={vehicleOne.Id}");
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var json = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(json);
+
+        document.RootElement.GetProperty("totalCount").GetInt32().Should().Be(1);
+        document.RootElement.GetProperty("items")[0].GetProperty("id").GetGuid()
+            .Should().Be(bookingForVehicleOne.Id);
+    }
+
+    [Fact]
+    public async Task Get_VehicleIdOmitted_ReturnsEveryBookingUnfiltered()
+    {
+        var vehicleOne = await SeedActiveVehicleAsync(registrationNumber: "CA111111");
+        var vehicleTwo = await SeedActiveVehicleAsync(registrationNumber: "CA222222");
+        var customer = await SeedActiveCustomerAsync();
+        await SeedBookingAsync(vehicleOne, customer);
+        await SeedBookingAsync(vehicleTwo, customer, new DateOnly(2026, 11, 1), new DateOnly(2026, 11, 3));
+
+        using var request = AuthenticatedGet("/api/bookings?page=1&pageSize=20");
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var json = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(json);
+
+        document.RootElement.GetProperty("totalCount").GetInt32().Should().Be(2);
     }
 
     [Fact]
@@ -656,6 +703,93 @@ public class BookingsEndpointTests : IAsyncLifetime
     public async Task Cancel_NonexistentBookingId_Returns404()
     {
         using var request = AuthenticatedPost($"/api/bookings/{Guid.NewGuid()}/cancel");
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    /// <summary>
+    /// Covers spec-4-5's own I/O &amp; Edge-Case Matrix through the real API: a valid booking id
+    /// resolves the full detail shape (vehicle, customer, dates, TotalPrice, Status); a booking whose
+    /// customer has since been anonymized still resolves with <c>customerIsAnonymized</c> true, the
+    /// exact same dual-<c>IgnoreQueryFilters()</c> join the list already proves; a booking whose
+    /// vehicle has since been soft-deleted still resolves; a stale/invalid id returns 404.
+    /// </summary>
+    [Fact]
+    public async Task GetById_BookingExists_Returns200WithFullDtoShape()
+    {
+        var vehicle = await SeedActiveVehicleAsync(dailyRate: 350m);
+        var customer = await SeedActiveCustomerAsync();
+        var booking = await SeedBookingAsync(vehicle, customer);
+
+        using var request = AuthenticatedGet($"/api/bookings/{booking.Id}");
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var json = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(json);
+
+        document.RootElement.GetProperty("id").GetGuid().Should().Be(booking.Id);
+        document.RootElement.GetProperty("vehicleMake").GetString().Should().Be("Toyota");
+        document.RootElement.GetProperty("vehicleModel").GetString().Should().Be("Corolla");
+        document.RootElement.GetProperty("vehicleRegistrationNumber").GetString().Should().Be("CA123456");
+        document.RootElement.GetProperty("customerFirstName").GetString().Should().Be("Jane");
+        document.RootElement.GetProperty("customerLastName").GetString().Should().Be("Doe");
+        document.RootElement.GetProperty("customerIsAnonymized").GetBoolean().Should().BeFalse();
+        document.RootElement.GetProperty("status").GetString().Should().Be("Active");
+        document.RootElement.GetProperty("totalPrice").GetDecimal().Should().Be(1400m);
+    }
+
+    [Fact]
+    public async Task GetById_BookingsCustomerIsNowAnonymized_Returns200WithCustomerIsAnonymizedTrue()
+    {
+        var vehicle = await SeedActiveVehicleAsync();
+        var customer = await SeedActiveCustomerAsync();
+        var booking = await SeedBookingAsync(vehicle, customer);
+
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var trackedCustomer = await dbContext.Customers.IgnoreQueryFilters()
+                .SingleAsync(c => c.Id == customer.Id);
+            trackedCustomer.Anonymize();
+            await dbContext.SaveChangesAsync();
+        }
+
+        using var request = AuthenticatedGet($"/api/bookings/{booking.Id}");
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var json = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(json);
+
+        document.RootElement.GetProperty("customerIsAnonymized").GetBoolean().Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task GetById_BookingsVehicleIsNowSoftDeleted_Returns200Regardless()
+    {
+        var vehicle = await SeedSoftDeletedVehicleAsync();
+        var customer = await SeedActiveCustomerAsync();
+        var booking = await SeedBookingAsync(vehicle, customer);
+
+        using var request = AuthenticatedGet($"/api/bookings/{booking.Id}");
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var json = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(json);
+
+        document.RootElement.GetProperty("vehicleRegistrationNumber").GetString().Should().Be("CA654321");
+    }
+
+    [Fact]
+    public async Task GetById_NonexistentBookingId_Returns404()
+    {
+        using var request = AuthenticatedGet($"/api/bookings/{Guid.NewGuid()}");
         var response = await _client.SendAsync(request);
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);

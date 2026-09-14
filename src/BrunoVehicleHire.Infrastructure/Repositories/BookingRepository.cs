@@ -26,20 +26,29 @@ public class BookingRepository(AppDbContext dbContext) : IBookingRepository
     /// -- so a booking referencing an already-soft-deleted vehicle or an already-soft-deleted/
     /// anonymized customer still renders correctly in this list today, rather than silently dropping
     /// the row via EF Core's global query filter on the join. The total count is taken from the
-    /// <c>Bookings</c> table alone (never the join): the FK constraints on VehicleId/CustomerId
-    /// (<c>AppDbContext</c>, <c>DeleteBehavior.Restrict</c>) guarantee every Booking row always has a
-    /// matching Vehicle/Customer row to join to, soft-deleted or not, so the inner join can never
-    /// drop a row -- computing the count from the join instead would just be a slower, equivalent
-    /// query. Ordered by <c>CreatedDate</c> then <c>Id</c> for a stable page boundary across
-    /// requests, mirroring <c>VehicleRepository</c>/<c>CustomerRepository</c>'s exact ordering.
+    /// <c>Bookings</c> table alone, filtered by <paramref name="vehicleId"/> when set (never the
+    /// join): the FK constraints on VehicleId/CustomerId (<c>AppDbContext</c>,
+    /// <c>DeleteBehavior.Restrict</c>) guarantee every Booking row always has a matching
+    /// Vehicle/Customer row to join to, soft-deleted or not, so the inner join can never drop a row
+    /// -- computing the count from the join instead would just be a slower, equivalent query.
+    /// <paramref name="vehicleId"/> is <c>null</c> for the unfiltered Bookings list, or set for
+    /// Vehicle Detail's booking-history section (spec-4-5's Scope decision 1). Ordered by
+    /// <c>CreatedDate</c> then <c>Id</c> for a stable page boundary across requests, mirroring
+    /// <c>VehicleRepository</c>/<c>CustomerRepository</c>'s exact ordering.
     /// </summary>
     public async Task<(IReadOnlyList<(Booking Booking, Vehicle Vehicle, Customer Customer)> Items, int TotalCount)>
-        GetPagedAsync(int page, int pageSize, CancellationToken cancellationToken)
+        GetPagedAsync(int page, int pageSize, Guid? vehicleId, CancellationToken cancellationToken)
     {
-        var totalCount = await dbContext.Bookings.CountAsync(cancellationToken);
+        var bookingsQuery = dbContext.Bookings.AsQueryable();
+        if (vehicleId is not null)
+        {
+            bookingsQuery = bookingsQuery.Where(b => b.VehicleId == vehicleId);
+        }
+
+        var totalCount = await bookingsQuery.CountAsync(cancellationToken);
 
         var rows = await (
-                from booking in dbContext.Bookings
+                from booking in bookingsQuery
                 join vehicle in dbContext.Vehicles.IgnoreQueryFilters() on booking.VehicleId equals vehicle.Id
                 join customer in dbContext.Customers.IgnoreQueryFilters() on booking.CustomerId equals customer.Id
                 orderby booking.CreatedDate, booking.Id
@@ -53,6 +62,27 @@ public class BookingRepository(AppDbContext dbContext) : IBookingRepository
             .ToList();
 
         return (items, totalCount);
+    }
+
+    /// <summary>
+    /// Backs <see cref="IBookingRepository.GetByIdWithVehicleAndCustomerAsync"/>: the same dual-
+    /// <c>IgnoreQueryFilters()</c> join <see cref="GetPagedAsync"/> implements, narrowed to a single
+    /// <paramref name="id"/> instead of a page (spec-4-5's Scope decision 2) -- so a booking
+    /// referencing an already-soft-deleted vehicle or an already-soft-deleted/anonymized customer
+    /// still resolves correctly for the detail view, exactly as it already does in the list.
+    /// </summary>
+    public async Task<(Booking Booking, Vehicle Vehicle, Customer Customer)?> GetByIdWithVehicleAndCustomerAsync(
+        Guid id, CancellationToken cancellationToken)
+    {
+        var row = await (
+                from booking in dbContext.Bookings
+                join vehicle in dbContext.Vehicles.IgnoreQueryFilters() on booking.VehicleId equals vehicle.Id
+                join customer in dbContext.Customers.IgnoreQueryFilters() on booking.CustomerId equals customer.Id
+                where booking.Id == id
+                select new { booking, vehicle, customer })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        return row is null ? null : (row.booking, row.vehicle, row.customer);
     }
 
     public async Task AddAsync(Booking booking, CancellationToken cancellationToken)

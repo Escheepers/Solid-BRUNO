@@ -26,10 +26,28 @@ public interface IBookingRepository
     /// <c>search</c>/<c>includeInactive</c> parameter, unlike <c>IVehicleRepository</c>/
     /// <c>ICustomerRepository</c>'s <c>GetPagedAsync</c> (Scope decision 3) -- every booking is
     /// always returned regardless of its Vehicle/Customer's active state (Scope decision 4).
+    /// <paramref name="vehicleId"/> is an additive, optional filter (spec-4-5's Scope decision 1):
+    /// when <c>null</c>, every booking is returned exactly as before; when set, only bookings for
+    /// that vehicle are returned -- backs both the unfiltered Bookings list and Vehicle Detail's
+    /// booking-history section.
     /// </summary>
     Task<(IReadOnlyList<(Booking Booking, Vehicle Vehicle, Customer Customer)> Items, int TotalCount)> GetPagedAsync(
         int page,
         int pageSize,
+        Guid? vehicleId,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// A single Booking joined with its referenced <see cref="Vehicle"/>/<see cref="Customer"/> row,
+    /// via the exact same dual-<c>IgnoreQueryFilters()</c> join <see cref="GetPagedAsync"/> already
+    /// implements (AD-13/spec-4-1's Scope decision 4) -- so a booking referencing an
+    /// already-soft-deleted vehicle or an already-soft-deleted/anonymized customer still resolves
+    /// correctly for the detail view (spec-4-5's Scope decision 2), rather than re-deriving that
+    /// resolution logic a second time. Returns <c>null</c> when no Booking row exists for
+    /// <paramref name="id"/> at all -- callers map that to a <c>NotFoundException</c>.
+    /// </summary>
+    Task<(Booking Booking, Vehicle Vehicle, Customer Customer)?> GetByIdWithVehicleAndCustomerAsync(
+        Guid id,
         CancellationToken cancellationToken);
 
     /// <summary>

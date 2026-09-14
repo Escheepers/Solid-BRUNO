@@ -7,13 +7,13 @@ namespace BrunoVehicleHire.Api.Controllers;
 
 /// <summary>
 /// The Booking aggregate's HTTP entry point: sends <see cref="GetBookingsQuery"/>/
-/// <see cref="CreateBookingCommand"/>/<see cref="CancelBookingCommand"/> via <see cref="ISender"/> and
-/// returns each result directly. Mirrors <see cref="VehiclesController"/>'s shape. Deliberately
-/// carries no Edit/View/Deactivate routes yet (spec-4-1's Never section: those belong to later Epic 4
-/// stories still not built). Deliberately carries no [Authorize]/[AllowAnonymous] attribute --
-/// protection comes entirely from the global FallbackPolicy registered in Program.cs (Story 1.4).
-/// Validation of every request shape happens entirely in each request's own validator via the shared
-/// MediatR pipeline (AD-10) -- never here.
+/// <see cref="GetBookingByIdQuery"/>/<see cref="CreateBookingCommand"/>/<see cref="CancelBookingCommand"/>
+/// via <see cref="ISender"/> and returns each result directly. Mirrors <see cref="VehiclesController"/>'s
+/// shape. Deliberately carries no Edit route (still out of this project's scope -- see spec-4-5's
+/// Never section). Deliberately carries no [Authorize]/[AllowAnonymous] attribute -- protection comes
+/// entirely from the global FallbackPolicy registered in Program.cs (Story 1.4). Validation of every
+/// request shape happens entirely in each request's own validator via the shared MediatR pipeline
+/// (AD-10) -- never here.
 /// </summary>
 [ApiController]
 [Route("api/[controller]")]
@@ -23,11 +23,26 @@ public class BookingsController(ISender sender) : ControllerBase
     public async Task<IActionResult> Get(
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
+        [FromQuery] Guid? vehicleId = null,
         CancellationToken cancellationToken = default)
     {
-        var result = await sender.Send(new GetBookingsQuery(page, pageSize), cancellationToken);
+        var result = await sender.Send(new GetBookingsQuery(page, pageSize, vehicleId), cancellationToken);
 
         return Ok(result);
+    }
+
+    /// <summary>
+    /// The Booking detail view's sole endpoint (spec-4-5), mirroring
+    /// <see cref="VehiclesController.GetById"/>'s exact shape. A stale/invalid id surfaces as a 404
+    /// via <see cref="ExceptionHandling.GlobalExceptionHandler"/>'s <c>NotFoundException</c> branch --
+    /// never checked here.
+    /// </summary>
+    [HttpGet("{id:guid}")]
+    public async Task<IActionResult> GetById(Guid id, CancellationToken cancellationToken)
+    {
+        var dto = await sender.Send(new GetBookingByIdQuery(id), cancellationToken);
+
+        return Ok(dto);
     }
 
     [HttpPost]

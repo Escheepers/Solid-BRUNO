@@ -11,6 +11,10 @@ namespace BrunoVehicleHire.Application.Bookings.Queries;
 /// of its referenced Vehicle/Customer's active state (Scope decision 4). Validated by
 /// <see cref="GetBookingsQueryValidator"/> through the shared
 /// <c>ValidationBehavior&lt;TRequest,TResponse&gt;</c> MediatR pipeline -- never validated manually
-/// in the handler.
+/// in the handler. <c>VehicleId</c> is an additive, optional filter (spec-4-5's Scope decision 1),
+/// mirroring the established optional-query-param pattern (<c>IncludeInactive</c> etc.): when
+/// <c>null</c> (the default), every booking is returned exactly as before; when set, only bookings
+/// referencing that vehicle are returned. Reused unfiltered by the Bookings list and filtered by
+/// Vehicle Detail's booking-history section, rather than a second, near-duplicate query.
 /// </summary>
-public record GetBookingsQuery(int Page, int PageSize) : IRequest<PagedResult<BookingDto>>;
+public record GetBookingsQuery(int Page, int PageSize, Guid? VehicleId = null) : IRequest<PagedResult<BookingDto>>;

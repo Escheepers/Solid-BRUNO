@@ -7,6 +7,7 @@ import { BehaviorSubject } from 'rxjs';
 
 import { apiKeyInterceptor } from '../../core/api-client/api-key.interceptor';
 import { errorNormalizationInterceptor } from '../../core/api-client/error-normalization.interceptor';
+import { BookingDto } from '../../core/models/booking-dto';
 import { VehicleDto } from '../../core/models/vehicle-dto';
 import { currencyFormatter, dateFormatter } from './vehicle-formatters';
 import { VehicleDetailPage } from './vehicle-detail-page';
@@ -21,6 +22,26 @@ function vehicleDto(overrides: Partial<VehicleDto> = {}): VehicleDto {
     dailyRate: 350,
     createdDate: '2026-01-15T10:30:00Z',
     isDeleted: false,
+    ...overrides,
+  };
+}
+
+function bookingDto(overrides: Partial<BookingDto> = {}): BookingDto {
+  return {
+    id: 'b1',
+    vehicleId: 'v1',
+    vehicleMake: 'Toyota',
+    vehicleModel: 'Corolla',
+    vehicleRegistrationNumber: 'CA123456',
+    customerId: 'c1',
+    customerFirstName: 'Thabo',
+    customerLastName: 'Nkosi',
+    customerIsAnonymized: false,
+    startDate: '2026-10-01',
+    endDate: '2026-10-05',
+    totalPrice: 1400,
+    status: 'Active',
+    createdDate: '2026-09-20T10:30:00Z',
     ...overrides,
   };
 }
@@ -69,6 +90,20 @@ describe('VehicleDetailPage', () => {
     fixture.detectChanges();
   }
 
+  /**
+   * spec-4-5's booking-history section is an unconditional class field (`bookingsQuery`),
+   * so it fires immediately alongside the vehicle's own detail request regardless of which
+   * template branch (loading/not-found/found) ends up rendered -- mirrors
+   * `BookingFormModal`'s own always-mounted picker queries (see `bookings-page.spec.ts`'s
+   * `flushPickerQueries`). Flushed here in every test so `httpMock.verify()` doesn't fail
+   * on an unhandled request for tests that don't care about it.
+   */
+  function flushBookingHistoryRequest(items: BookingDto[] = []): void {
+    httpMock
+      .expectOne((r) => r.url === '/api/bookings')
+      .flush({ items, totalCount: items.length, page: 1, pageSize: 100 });
+  }
+
   it('renders Skeleton in a card container while the request is in flight, not a table', async () => {
     createComponent('v1');
     await settle();
@@ -77,6 +112,7 @@ describe('VehicleDetailPage', () => {
     expect(fixture.nativeElement.querySelector('table')).toBeNull();
 
     httpMock.expectOne('/api/vehicles/v1').flush(vehicleDto());
+    flushBookingHistoryRequest();
   });
 
   it('renders "This vehicle no longer exists" and a working link back to the list on a 404', async () => {
@@ -93,6 +129,7 @@ describe('VehicleDetailPage', () => {
       },
       { status: 404, statusText: 'Not Found' },
     );
+    flushBookingHistoryRequest();
     await settle();
 
     expect(fixture.nativeElement.textContent).toContain('This vehicle no longer exists');
@@ -118,6 +155,7 @@ describe('VehicleDetailPage', () => {
         isDeleted: false,
       }),
     );
+    flushBookingHistoryRequest();
     await settle();
 
     const text = fixture.nativeElement.textContent;
@@ -138,6 +176,7 @@ describe('VehicleDetailPage', () => {
     httpMock
       .expectOne('/api/vehicles/v2')
       .flush(vehicleDto({ id: 'v2', registrationNumber: 'CA222222', isDeleted: true }));
+    flushBookingHistoryRequest();
     await settle();
 
     expect(fixture.nativeElement.textContent).toContain('Inactive');
@@ -157,9 +196,84 @@ describe('VehicleDetailPage', () => {
       status: 500,
       statusText: 'Internal Server Error',
     });
+    flushBookingHistoryRequest();
     await settle();
 
     expect(fixture.nativeElement.textContent?.trim().length).toBeGreaterThan(0);
     expect(fixture.nativeElement.textContent).not.toContain('This vehicle no longer exists');
+  });
+
+  describe('booking-history section (spec-4-5)', () => {
+    it('requests bookings filtered by this vehicle\'s id, with a generously large pageSize', async () => {
+      createComponent('v1');
+      await settle();
+
+      httpMock.expectOne('/api/vehicles/v1').flush(vehicleDto());
+      const req = httpMock.expectOne(
+        (r) => r.url === '/api/bookings' && r.params.get('vehicleId') === 'v1',
+      );
+      expect(req.request.params.get('pageSize')).toBe('100');
+      req.flush({ items: [], totalCount: 0, page: 1, pageSize: 100 });
+      await settle();
+    });
+
+    it('shows "No bookings yet for this vehicle" when the vehicle has none', async () => {
+      createComponent('v1');
+      await settle();
+
+      httpMock.expectOne('/api/vehicles/v1').flush(vehicleDto());
+      flushBookingHistoryRequest([]);
+      await settle();
+
+      expect(fixture.nativeElement.textContent).toContain('No bookings yet for this vehicle');
+      expect(fixture.nativeElement.querySelector('table')).toBeNull();
+    });
+
+    it('lists real bookings for this vehicle, reusing DataTable/Badge exactly as BookingsPage does', async () => {
+      createComponent('v1');
+      await settle();
+
+      httpMock.expectOne('/api/vehicles/v1').flush(vehicleDto());
+      flushBookingHistoryRequest([bookingDto(), bookingDto({ id: 'b2', status: 'Completed' })]);
+      await settle();
+
+      const headers = Array.from(fixture.nativeElement.querySelectorAll('thead th')).map((th) =>
+        (th as HTMLElement).textContent?.trim(),
+      );
+      expect(headers).toEqual(['Customer', 'Start', 'End', 'Total', 'Status']);
+
+      const rows = fixture.nativeElement.querySelectorAll('tbody tr');
+      expect(rows.length).toBe(2);
+      expect(rows[0].textContent).toContain('Thabo Nkosi');
+      expect(rows[0].textContent).toContain(currencyFormatter.format(1400));
+
+      const badges = fixture.nativeElement.querySelectorAll('tbody tr app-badge');
+      expect(badges.length).toBe(2);
+      expect(badges[0].textContent).toContain('Active');
+      expect(badges[1].textContent).toContain('Completed');
+    });
+
+    it('renders no row actions in the booking-history table (Never section: view-only)', async () => {
+      createComponent('v1');
+      await settle();
+
+      httpMock.expectOne('/api/vehicles/v1').flush(vehicleDto());
+      flushBookingHistoryRequest([bookingDto()]);
+      await settle();
+
+      expect(fixture.nativeElement.querySelectorAll('tbody button').length).toBe(0);
+    });
+
+    it('renders the anonymized-customer placeholder for a booking whose customer is anonymized', async () => {
+      createComponent('v1');
+      await settle();
+
+      httpMock.expectOne('/api/vehicles/v1').flush(vehicleDto());
+      flushBookingHistoryRequest([bookingDto({ customerIsAnonymized: true })]);
+      await settle();
+
+      const row = fixture.nativeElement.querySelector('tbody tr');
+      expect(row.textContent).toContain('Customer (anonymized)');
+    });
   });
 });

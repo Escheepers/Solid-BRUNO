@@ -1,0 +1,67 @@
+<div class="flex flex-col gap-6 p-8">
+  @if (query.isPending()) {
+    <div class="rounded-xl border border-border bg-surface p-8">
+      <app-skeleton [rows]="6" />
+    </div>
+  } @else if (isNotFound()) {
+    <div class="flex flex-col items-start gap-3">
+      <p class="text-body text-text-body">This booking no longer exists.</p>
+      <a routerLink="/bookings" class="text-button text-primary">Back to Bookings</a>
+    </div>
+  } @else if (booking(); as b) {
+    <div class="flex items-center justify-between">
+      <h1 class="text-page-title text-text">{{ vehicleDisplayName() }}</h1>
+      <app-badge [status]="b.status" />
+    </div>
+
+    <div class="rounded-xl border border-border bg-surface p-8">
+      <dl class="grid grid-cols-2 gap-x-8 gap-y-5">
+        <div>
+          <dt class="text-section-label text-text-muted">Vehicle</dt>
+          <dd class="text-body text-text-body">{{ vehicleDisplayName() }}</dd>
+        </div>
+        <div>
+          <dt class="text-section-label text-text-muted">Customer</dt>
+          <dd
+            class="text-body"
+            [class.italic]="b.customerIsAnonymized"
+            [class.text-anonymized-text]="b.customerIsAnonymized"
+            [class.text-text-body]="!b.customerIsAnonymized"
+          >
+            {{ customerDisplayName() }}
+          </dd>
+        </div>
+        <div>
+          <dt class="text-section-label text-text-muted">Start Date</dt>
+          <dd class="text-body text-text-body">{{ formattedStartDate() }}</dd>
+        </div>
+        <div>
+          <dt class="text-section-label text-text-muted">End Date</dt>
+          <dd class="text-body text-text-body">{{ formattedEndDate() }}</dd>
+        </div>
+        <div>
+          <dt class="text-section-label text-text-muted">Total Price</dt>
+          <dd class="text-body text-text-body">{{ formattedTotalPrice() }}</dd>
+        </div>
+      </dl>
+    </div>
+
+    @if (cancellable()) {
+      <div>
+        <app-button (click)="openCancelDialog()">Cancel Booking</app-button>
+      </div>
+    }
+  } @else {
+    <p class="text-body text-text-body">Something went wrong. Please try again.</p>
+  }
+
+  <app-confirm-dialog
+    [open]="cancelAction.current() !== null"
+    title="Cancel this booking?"
+    [message]="cancelAction.dialogMessage()"
+    confirmLabel="Cancel booking"
+    cancelLabel="Keep booking"
+    (confirm)="cancelAction.confirm()"
+    (cancel)="cancelAction.cancel()"
+  />
+</div>
