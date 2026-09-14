@@ -13,6 +13,16 @@ import { FocusTrap } from '../a11y/focus-trap';
  * capture/focus-return mechanics themselves live in the shared `FocusTrap` helper
  * (spec-2-2's Scope decision 4 — extracted so `ConfirmDialog` can reuse the exact
  * same behavior without duplicating it).
+ *
+ * `onKeydown` stops every keydown from bubbling further (spec-4-1) — needed once
+ * this component becomes nestable inside its own projected content for the first
+ * time (`BookingFormModal`'s "+ New Customer" opens `CustomerFormModal`, itself a
+ * `Modal`, while the Booking modal stays open underneath). Without this, an inner
+ * Modal's Escape/Tab would bubble to the outer Modal's own listener and close (or
+ * Tab-trap) both at once. Mirrors `ConfirmDialog.onKeydown`'s exact reasoning and
+ * `stopPropagation()` call — that component already nests inside an open `Modal`
+ * for the discard-guard flow, so this fix simply extends the same precedent to
+ * `Modal`-in-`Modal` nesting.
  */
 @Component({
   selector: 'app-modal',
@@ -52,6 +62,8 @@ export class Modal implements AfterViewChecked {
   }
 
   protected onKeydown(event: KeyboardEvent): void {
+    event.stopPropagation();
+
     if (event.key === 'Escape') {
       event.preventDefault();
       this.requestClose();

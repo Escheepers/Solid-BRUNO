@@ -1,3 +1,4 @@
+import { Component, TemplateRef, ViewChild } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 
 import { ColumnDef, DataTable, RowAction } from './data-table';
@@ -262,6 +263,65 @@ describe('DataTable', () => {
       for (const row of tableRows()) {
         expect(row.className).not.toContain('bg-error-row-bg');
       }
+    });
+  });
+
+  describe('cellTemplate', () => {
+    @Component({
+      selector: 'app-data-table-template-host',
+      imports: [DataTable],
+      template: `
+        <ng-template #nameCell let-row>
+          <strong data-testid="template-cell">{{ row.name }}!!!</strong>
+        </ng-template>
+        <app-data-table
+          [columns]="columns"
+          [rows]="rows"
+          [page]="1"
+          [pageSize]="20"
+          [totalCount]="rows.length"
+        />
+      `,
+    })
+    class TemplateHost {
+      @ViewChild('nameCell', { static: true })
+      private readonly nameCellRef!: TemplateRef<{ $implicit: Row }>;
+
+      readonly rows: Row[] = rows;
+      columns!: ColumnDef<Row>[];
+
+      ngOnInit(): void {
+        this.columns = [
+          { header: 'ID', cell: (row) => String(row.id) },
+          { header: 'Name', cell: (row) => row.name, cellTemplate: this.nameCellRef },
+        ];
+      }
+    }
+
+    it("renders a column's cellTemplate instead of its plain-text cell() when provided", async () => {
+      TestBed.resetTestingModule();
+      await TestBed.configureTestingModule({ imports: [TemplateHost] }).compileComponents();
+      const hostFixture = TestBed.createComponent(TemplateHost);
+      hostFixture.detectChanges();
+
+      const templateCells = Array.from<HTMLElement>(
+        hostFixture.nativeElement.querySelectorAll('[data-testid="template-cell"]'),
+      );
+      expect(templateCells.length).toBe(rows.length);
+      expect(templateCells[0].textContent).toContain('alpha!!!');
+
+      // The ID column has no cellTemplate -- it keeps rendering via cell() untouched.
+      const firstRowCells = hostFixture.nativeElement.querySelectorAll('tbody tr')[0]
+        .querySelectorAll('td');
+      expect(firstRowCells[0].textContent?.trim()).toBe('1');
+    });
+
+    it('every pre-existing column without cellTemplate still renders via cell() unchanged', () => {
+      fixture.detectChanges();
+
+      const firstRowCells = tableRows()[0].querySelectorAll('td');
+      expect(firstRowCells[0].textContent?.trim()).toBe('1');
+      expect(firstRowCells[1].textContent?.trim()).toBe('ALPHA');
     });
   });
 

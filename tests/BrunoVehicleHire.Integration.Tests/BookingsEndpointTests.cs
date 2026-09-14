@@ -1,0 +1,422 @@
+using System.Net;
+using System.Net.Http.Json;
+using System.Text.Json;
+using BrunoVehicleHire.Api.Auth;
+using BrunoVehicleHire.Domain;
+using BrunoVehicleHire.Infrastructure.Persistence;
+using FluentAssertions;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Testcontainers.PostgreSql;
+
+namespace BrunoVehicleHire.Integration.Tests;
+
+/// <summary>
+/// End-to-end proof of Story 4.1's List/Create Booking slice against a real ASP.NET Core pipeline
+/// via <see cref="WebApplicationFactory{TEntryPoint}"/> -- not a mock -- backed by its own ephemeral
+/// Testcontainers Postgres instance (mirrors <see cref="VehiclesEndpointTests"/>'s exact pattern):
+/// ApiClient -> API-key auth -> <c>GetBookingsQuery</c>/<c>CreateBookingCommand</c> ->
+/// <c>IBookingRepository</c>/<c>IVehicleRepository</c>/<c>ICustomerRepository</c> -> PostgreSQL -> a
+/// real <c>PagedResult&lt;BookingDto&gt;</c>/<c>BookingDto</c> response. Covers every row of
+/// spec-4-1's I/O &amp; Edge-Case Matrix.
+/// </summary>
+public class BookingsEndpointTests : IAsyncLifetime
+{
+    private const string ConfiguredKey = "bookings-endpoint-test-key";
+
+    private readonly PostgreSqlContainer _postgres = new PostgreSqlBuilder("postgres:18")
+        .Build();
+
+    private WebApplicationFactory<Program> _factory = null!;
+    private HttpClient _client = null!;
+
+    public async Task InitializeAsync()
+    {
+        await _postgres.StartAsync();
+
+        _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Development");
+
+            builder.ConfigureAppConfiguration((_, configBuilder) =>
+            {
+                configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["ConnectionStrings:Postgres"] = _postgres.GetConnectionString(),
+                    ["ApiKey:Key"] = ConfiguredKey,
+                });
+            });
+        });
+
+        _client = _factory.CreateClient();
+
+        using var scope = _factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        await dbContext.Database.MigrateAsync();
+
+        // Start every test from a clean slate regardless of Testcontainers container reuse across
+        // test method instances, mirroring VehiclesEndpointTests's exact reasoning.
+        // IgnoreQueryFilters() clears any already-soft-deleted/anonymized rows left over too. Delete
+        // Bookings first -- its FK constraints (Restrict) would otherwise reject deleting a
+        // referenced Vehicle/Customer row.
+        await dbContext.Bookings.ExecuteDeleteAsync();
+        await dbContext.Vehicles.IgnoreQueryFilters().ExecuteDeleteAsync();
+        await dbContext.Customers.IgnoreQueryFilters().ExecuteDeleteAsync();
+    }
+
+    public async Task DisposeAsync()
+    {
+        _client.Dispose();
+        await _factory.DisposeAsync();
+        await _postgres.DisposeAsync();
+    }
+
+    private HttpRequestMessage AuthenticatedGet(string path)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Get, path);
+        request.Headers.Add(ApiKeyDefaults.HeaderName, ConfiguredKey);
+        return request;
+    }
+
+    private HttpRequestMessage AuthenticatedPost(string path, object body)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, path)
+        {
+            Content = JsonContent.Create(body),
+        };
+        request.Headers.Add(ApiKeyDefaults.HeaderName, ConfiguredKey);
+        return request;
+    }
+
+    private async Task<Vehicle> SeedActiveVehicleAsync(decimal dailyRate = 350m)
+    {
+        var vehicle = Vehicle.Create("CA123456", "Toyota", "Corolla", 2023, dailyRate);
+
+        using var scope = _factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        dbContext.Vehicles.Add(vehicle);
+        await dbContext.SaveChangesAsync();
+
+        return vehicle;
+    }
+
+    private async Task<Vehicle> SeedSoftDeletedVehicleAsync()
+    {
+        var vehicle = Vehicle.Create("CA654321", "Honda", "Civic", 2022, 300m);
+        vehicle.SoftDelete();
+
+        using var scope = _factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        dbContext.Vehicles.Add(vehicle);
+        await dbContext.SaveChangesAsync();
+
+        return vehicle;
+    }
+
+    private async Task<Customer> SeedActiveCustomerAsync()
+    {
+        var customer = Customer.Create("Jane", "Doe", $"jane.{Guid.NewGuid()}@example.com", "0821234567");
+
+        using var scope = _factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        dbContext.Customers.Add(customer);
+        await dbContext.SaveChangesAsync();
+
+        return customer;
+    }
+
+    private async Task<Customer> SeedSoftDeletedCustomerAsync()
+    {
+        var customer = Customer.Create("John", "Smith", $"john.{Guid.NewGuid()}@example.com", "0827654321");
+        customer.SoftDelete();
+
+        using var scope = _factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        dbContext.Customers.Add(customer);
+        await dbContext.SaveChangesAsync();
+
+        return customer;
+    }
+
+    private async Task<Booking> SeedBookingAsync(Vehicle vehicle, Customer customer)
+    {
+        var booking = Booking.Create(
+            vehicle.Id, customer.Id, new DateOnly(2026, 10, 1), new DateOnly(2026, 10, 5), 1400m);
+
+        using var scope = _factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        dbContext.Bookings.Add(booking);
+        await dbContext.SaveChangesAsync();
+
+        return booking;
+    }
+
+    [Fact]
+    public async Task Get_BookingsExist_ReturnsPagedResultShapeWithVehicleAndCustomerFields()
+    {
+        var vehicle = await SeedActiveVehicleAsync();
+        var customer = await SeedActiveCustomerAsync();
+        await SeedBookingAsync(vehicle, customer);
+
+        using var request = AuthenticatedGet("/api/bookings?page=1&pageSize=20");
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var json = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(json);
+
+        document.RootElement.GetProperty("totalCount").GetInt32().Should().Be(1);
+        var item = document.RootElement.GetProperty("items")[0];
+
+        item.GetProperty("vehicleMake").GetString().Should().Be("Toyota");
+        item.GetProperty("vehicleModel").GetString().Should().Be("Corolla");
+        item.GetProperty("vehicleRegistrationNumber").GetString().Should().Be("CA123456");
+        item.GetProperty("customerFirstName").GetString().Should().Be("Jane");
+        item.GetProperty("customerLastName").GetString().Should().Be("Doe");
+        item.GetProperty("customerIsAnonymized").GetBoolean().Should().BeFalse();
+        item.GetProperty("status").GetString().Should().Be("Active");
+        item.GetProperty("totalPrice").GetDecimal().Should().Be(1400m);
+    }
+
+    [Fact]
+    public async Task Get_BookingWhoseVehicleIsNowSoftDeleted_StillAppearsInList()
+    {
+        var vehicle = await SeedSoftDeletedVehicleAsync();
+        var customer = await SeedActiveCustomerAsync();
+        await SeedBookingAsync(vehicle, customer);
+
+        using var request = AuthenticatedGet("/api/bookings?page=1&pageSize=20");
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var json = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(json);
+
+        document.RootElement.GetProperty("totalCount").GetInt32().Should().Be(1);
+        document.RootElement.GetProperty("items")[0].GetProperty("vehicleRegistrationNumber").GetString()
+            .Should().Be("CA654321");
+    }
+
+    [Fact]
+    public async Task Get_BookingWhoseCustomerIsNowAnonymized_StillAppearsInListWithIsAnonymizedTrue()
+    {
+        var vehicle = await SeedActiveVehicleAsync();
+        var customer = await SeedActiveCustomerAsync();
+        await SeedBookingAsync(vehicle, customer);
+
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var trackedCustomer = await dbContext.Customers.IgnoreQueryFilters()
+                .SingleAsync(c => c.Id == customer.Id);
+            trackedCustomer.Anonymize();
+            await dbContext.SaveChangesAsync();
+        }
+
+        using var request = AuthenticatedGet("/api/bookings?page=1&pageSize=20");
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var json = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(json);
+
+        document.RootElement.GetProperty("totalCount").GetInt32().Should().Be(1);
+        document.RootElement.GetProperty("items")[0].GetProperty("customerIsAnonymized").GetBoolean()
+            .Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData("page=0&pageSize=20")]
+    [InlineData("page=1&pageSize=500")]
+    public async Task Get_InvalidPagingParameters_Returns400WithFieldNamedInErrors(string queryString)
+    {
+        using var request = AuthenticatedGet($"/api/bookings?{queryString}");
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        var json = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(json);
+
+        document.RootElement.GetProperty("status").GetInt32().Should().Be(400);
+        document.RootElement.TryGetProperty("errors", out var errors).Should().BeTrue();
+        errors.EnumerateObject().Should().NotBeEmpty();
+    }
+
+    [Fact]
+    public async Task Get_MissingApiKey_Returns401_FallbackPolicyStillApplies()
+    {
+        var response = await _client.GetAsync("/api/bookings");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task Post_ValidVehicleCustomerAndDateRange_Returns201WithActiveStatusAndCorrectTotalPrice_AndAppearsInList()
+    {
+        var vehicle = await SeedActiveVehicleAsync(dailyRate: 350m);
+        var customer = await SeedActiveCustomerAsync();
+
+        using var request = AuthenticatedPost("/api/bookings", new
+        {
+            vehicleId = vehicle.Id,
+            customerId = customer.Id,
+            startDate = "2026-10-01",
+            endDate = "2026-10-05",
+        });
+
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var json = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(json);
+
+        document.RootElement.GetProperty("status").GetString().Should().Be("Active");
+        // 4 days x 350 = 1400.
+        document.RootElement.GetProperty("totalPrice").GetDecimal().Should().Be(1400m);
+        document.RootElement.TryGetProperty("id", out var idProperty).Should().BeTrue();
+
+        var createdId = idProperty.GetGuid();
+        response.Headers.Location!.OriginalString.Should().Be($"/api/bookings/{createdId}");
+
+        // Prove the write really committed -- a subsequent GET must see it, not merely that the
+        // POST response body looked right.
+        using var getRequest = AuthenticatedGet("/api/bookings?page=1&pageSize=20");
+        var getResponse = await _client.SendAsync(getRequest);
+
+        var getJson = await getResponse.Content.ReadAsStringAsync();
+        using var getDocument = JsonDocument.Parse(getJson);
+
+        getDocument.RootElement.GetProperty("totalCount").GetInt32().Should().Be(1);
+        getDocument.RootElement.GetProperty("items")[0].GetProperty("id").GetGuid().Should().Be(createdId);
+    }
+
+    [Fact]
+    public async Task Post_EndDateEqualToStartDate_Returns400()
+    {
+        var vehicle = await SeedActiveVehicleAsync();
+        var customer = await SeedActiveCustomerAsync();
+
+        using var request = AuthenticatedPost("/api/bookings", new
+        {
+            vehicleId = vehicle.Id,
+            customerId = customer.Id,
+            startDate = "2026-10-01",
+            endDate = "2026-10-01",
+        });
+
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        var json = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(json);
+
+        document.RootElement.GetProperty("errors").TryGetProperty("EndDate", out _).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Post_EndDateBeforeStartDate_Returns400()
+    {
+        var vehicle = await SeedActiveVehicleAsync();
+        var customer = await SeedActiveCustomerAsync();
+
+        using var request = AuthenticatedPost("/api/bookings", new
+        {
+            vehicleId = vehicle.Id,
+            customerId = customer.Id,
+            startDate = "2026-10-05",
+            endDate = "2026-10-01",
+        });
+
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task Post_SoftDeletedVehicleSelected_Returns409WithExactDetailMessage()
+    {
+        var vehicle = await SeedSoftDeletedVehicleAsync();
+        var customer = await SeedActiveCustomerAsync();
+
+        using var request = AuthenticatedPost("/api/bookings", new
+        {
+            vehicleId = vehicle.Id,
+            customerId = customer.Id,
+            startDate = "2026-10-01",
+            endDate = "2026-10-05",
+        });
+
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+
+        var json = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(json);
+
+        document.RootElement.GetProperty("detail").GetString().Should().Be("This vehicle is not available.");
+    }
+
+    [Fact]
+    public async Task Post_NonexistentVehicleId_Returns404()
+    {
+        var customer = await SeedActiveCustomerAsync();
+
+        using var request = AuthenticatedPost("/api/bookings", new
+        {
+            vehicleId = Guid.NewGuid(),
+            customerId = customer.Id,
+            startDate = "2026-10-01",
+            endDate = "2026-10-05",
+        });
+
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task Post_NonexistentCustomerId_Returns404()
+    {
+        var vehicle = await SeedActiveVehicleAsync();
+
+        using var request = AuthenticatedPost("/api/bookings", new
+        {
+            vehicleId = vehicle.Id,
+            customerId = Guid.NewGuid(),
+            startDate = "2026-10-01",
+            endDate = "2026-10-05",
+        });
+
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task Post_InactiveSoftDeletedCustomerSelected_Returns404()
+    {
+        var vehicle = await SeedActiveVehicleAsync();
+        var customer = await SeedSoftDeletedCustomerAsync();
+
+        using var request = AuthenticatedPost("/api/bookings", new
+        {
+            vehicleId = vehicle.Id,
+            customerId = customer.Id,
+            startDate = "2026-10-01",
+            endDate = "2026-10-05",
+        });
+
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+}

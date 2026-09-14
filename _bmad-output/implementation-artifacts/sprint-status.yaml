@@ -61,8 +61,8 @@ development_status:
   3-5-erase-anonymize-a-customer-s-personal-data: done
   epic-3-retrospective: optional
 
-  epic-4: backlog
-  4-1-list-create-bookings: backlog
+  epic-4: in-progress
+  4-1-list-create-bookings: done
   4-2-booking-overlap-prevention-application-database: backlog
   4-3-cancel-a-booking: backlog
   4-4-automatic-booking-completion: backlog

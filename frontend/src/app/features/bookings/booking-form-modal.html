@@ -1,0 +1,117 @@
+<app-modal [open]="open()" title="+ New Booking" (closeRequest)="onModalCloseRequest()">
+  <form [formGroup]="form" (ngSubmit)="onSubmit()" class="flex flex-col gap-4">
+    @if (serverErrorMessage()) {
+      <div
+        role="alert"
+        aria-live="polite"
+        class="rounded-md bg-danger-bg px-3 py-2 text-caption text-danger-text"
+      >
+        {{ serverErrorMessage() }}
+      </div>
+    }
+
+    <div class="flex flex-col gap-1">
+      <label
+        for="booking-vehicle"
+        class="text-section-label uppercase tracking-wide text-text-faint"
+        >Vehicle</label
+      >
+      <select
+        id="booking-vehicle"
+        formControlName="vehicleId"
+        [attr.aria-invalid]="vehicleIdError() ? 'true' : null"
+        [attr.aria-describedby]="'booking-vehicle-error'"
+        class="w-full rounded-md border border-input-border bg-input-bg px-3 py-2 text-body text-text-body focus:outline-none focus:ring-2 focus:ring-primary"
+      >
+        <option value="" disabled>Select a vehicle&hellip;</option>
+        @for (vehicle of vehicles(); track vehicle.id) {
+          <option [value]="vehicle.id">{{ vehicleLabel(vehicle) }}</option>
+        }
+      </select>
+      <div id="booking-vehicle-error" aria-live="polite" class="text-caption text-danger-text">
+        @if (vehicleIdError()) {
+          {{ vehicleIdError() }}
+        }
+      </div>
+    </div>
+
+    <div class="flex flex-col gap-1">
+      <div class="flex items-baseline justify-between">
+        <label
+          for="booking-customer"
+          class="text-section-label uppercase tracking-wide text-text-faint"
+          >Customer</label
+        >
+        <button
+          type="button"
+          class="text-button text-primary hover:underline"
+          (click)="openNewCustomerModal()"
+        >
+          + New Customer
+        </button>
+      </div>
+      <select
+        id="booking-customer"
+        formControlName="customerId"
+        [attr.aria-invalid]="customerIdError() ? 'true' : null"
+        [attr.aria-describedby]="'booking-customer-error'"
+        class="w-full rounded-md border border-input-border bg-input-bg px-3 py-2 text-body text-text-body focus:outline-none focus:ring-2 focus:ring-primary"
+      >
+        <option value="" disabled>Select a customer&hellip;</option>
+        @for (customer of customers(); track customer.id) {
+          <option [value]="customer.id">{{ customerLabel(customer) }}</option>
+        }
+      </select>
+      <div id="booking-customer-error" aria-live="polite" class="text-caption text-danger-text">
+        @if (customerIdError()) {
+          {{ customerIdError() }}
+        }
+      </div>
+    </div>
+
+    <div class="flex gap-4">
+      <app-input
+        type="date"
+        formControlName="startDate"
+        label="Start Date"
+        [error]="startDateError()"
+      />
+      <app-input type="date" formControlName="endDate" label="End Date" [error]="endDateError()" />
+    </div>
+
+    <div class="flex flex-col gap-1">
+      <label class="text-section-label uppercase tracking-wide text-text-faint">Total Price</label>
+      <div
+        data-testid="total-price"
+        aria-live="polite"
+        class="rounded-md border border-border bg-surface-alt px-3 py-2 text-body text-text-body"
+      >
+        @if (totalPriceDisplay(); as display) {
+          {{ display }}
+        } @else {
+          <span class="text-text-faint">Select a vehicle and valid dates</span>
+        }
+      </div>
+    </div>
+
+    <div class="flex justify-end gap-4 pt-2">
+      <app-button type="submit" [loading]="isSubmitting()">Create Booking</app-button>
+    </div>
+  </form>
+
+  <app-customer-form-modal
+    [open]="isCustomerModalOpen()"
+    (closeRequest)="onCustomerModalClose()"
+    (created)="onCustomerCreated($event)"
+  />
+
+  <app-confirm-dialog
+    [open]="showDiscardConfirm()"
+    title="Discard changes?"
+    message="You have unsaved changes to this booking. Discard them?"
+    confirmLabel="Discard"
+    cancelLabel="Keep editing"
+    (confirm)="onConfirmDiscard()"
+    (cancel)="onCancelDiscard()"
+  />
+</app-modal>

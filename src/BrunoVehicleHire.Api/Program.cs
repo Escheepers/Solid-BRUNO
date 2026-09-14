@@ -37,7 +37,13 @@ builder.Services.AddAuthorization(options =>
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 
-builder.Services.AddControllers();
+// BookingDto.Status (BookingStatus) is the first enum ever exposed on this API's wire shape --
+// serialize it by name ("Active"), not its numeric ordinal, so it round-trips human-readably and
+// stays insertion-order-independent if the enum's members are ever reordered, mirroring how
+// AppDbContext.OnModelCreating already stores it (HasConversion<string>()) at the persistence layer.
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+        options.JsonSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter()));
 
 // The first real CQRS slice (Story 1.7): MediatR pipeline with the shared ValidationBehavior
 // (AD-10) registered as an open behavior so every current and future request gets its registered

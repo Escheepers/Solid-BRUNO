@@ -27,7 +27,11 @@
                 [class.text-text-disabled]="isRowMuted(row) && !cellClass(column, row)"
                 [class]="cellClass(column, row)"
               >
-                {{ column.cell(row) }}
+                @if (column.cellTemplate) {
+                  <ng-container *ngTemplateOutlet="column.cellTemplate; context: { $implicit: row }" />
+                } @else {
+                  {{ column.cell(row) }}
+                }
               </td>
             }
             @if (hasAnyRowActions()) {

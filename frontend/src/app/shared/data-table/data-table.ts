@@ -1,4 +1,5 @@
-import { Component, computed, input, output } from '@angular/core';
+import { NgTemplateOutlet } from '@angular/common';
+import { Component, TemplateRef, computed, input, output } from '@angular/core';
 
 import { Skeleton } from '../skeleton/skeleton';
 
@@ -20,6 +21,17 @@ export interface ColumnDef<T> {
    * it (avoids two conflicting Tailwind text-color utilities on the same element).
    */
   cellClass?: (row: T) => string;
+  /**
+   * Optional Angular template rendered in place of the plain-text `cell()` output
+   * (spec-4-1's Scope decision 6/`ColumnDef.cell`'s own "see spec-1-7's Design
+   * Notes for when this should be revisited" trigger) -- first needed by Bookings'
+   * Status column, which renders a real `Badge` component per row rather than a
+   * string. `cell` stays required regardless (a plain-text fallback always exists,
+   * no special-casing needed), and `cellTemplate` is additive-only: every
+   * pre-existing caller (Vehicles/Customers, no `cellTemplate`) renders exactly as
+   * before via the `cell()` branch.
+   */
+  cellTemplate?: TemplateRef<{ $implicit: T }>;
 }
 
 /**
@@ -52,7 +64,7 @@ export interface RowAction<T> {
  */
 @Component({
   selector: 'app-data-table',
-  imports: [Skeleton],
+  imports: [Skeleton, NgTemplateOutlet],
   templateUrl: './data-table.html',
 })
 export class DataTable<T> {

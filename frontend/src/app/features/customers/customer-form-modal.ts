@@ -9,7 +9,7 @@ import { Input } from '../../shared/input/input';
 import { Modal } from '../../shared/modal/modal';
 import { ToastService } from '../../shared/toast/toast.service';
 import { useCreateCustomerMutation, useUpdateCustomerMutation } from './customers.service';
-import { Customer } from './models/customer';
+import { Customer, toCustomer } from './models/customer';
 
 type CustomerFormFieldName = 'firstName' | 'lastName' | 'email' | 'phoneNumber';
 
@@ -40,6 +40,13 @@ const BLANK_FORM_VALUE = {
  * required, Email required + email-shaped) — the only place field-shape rules are
  * duplicated on the frontend, per the DRY requirement.
  *
+ * `created` (spec-4-1's Scope decision 7) emits the newly-created `Customer` on a
+ * successful create only -- never on update, and never subscribed to by this
+ * component's own pre-existing consumer (`CustomersPage`, which has no reason to
+ * care) -- a minimal, backward-compatible addition so `BookingFormModal` can open
+ * this component nested inside its own Modal and auto-select the customer it just
+ * created, without this component needing to know anything about Bookings (SRP).
+ *
  * Create and update each go through their own service-level mutation
  * (`useCreateCustomerMutation`/`useUpdateCustomerMutation`, both already owning their
  * own list-invalidation) rather than one `mutationFn` branching internally the way
@@ -65,6 +72,7 @@ export class CustomerFormModal {
   readonly open = input.required<boolean>();
   readonly customer = input<Customer | null>(null);
   readonly closeRequest = output<void>();
+  readonly created = output<Customer>();
 
   private readonly toastService = inject(ToastService);
   private readonly fb = inject(FormBuilder);
@@ -138,19 +146,29 @@ export class CustomerFormModal {
     };
 
     const customer = this.customer();
-    const callbacks = {
-      onSuccess: () => {
-        this.toastService.success(customer ? 'Customer updated.' : 'Customer created.');
+
+    if (customer) {
+      this.updateMutation.mutate(
+        { customerId: customer.id, payload },
+        {
+          onSuccess: () => {
+            this.toastService.success('Customer updated.');
+            this.resetAndClose();
+          },
+          onError: (error: NormalizedApiError) => this.applyError(error),
+        },
+      );
+      return;
+    }
+
+    this.createMutation.mutate(payload, {
+      onSuccess: (dto) => {
+        this.toastService.success('Customer created.');
+        this.created.emit(toCustomer(dto));
         this.resetAndClose();
       },
       onError: (error: NormalizedApiError) => this.applyError(error),
-    };
-
-    if (customer) {
-      this.updateMutation.mutate({ customerId: customer.id, payload }, callbacks);
-    } else {
-      this.createMutation.mutate(payload, callbacks);
-    }
+    });
   }
 
   /**

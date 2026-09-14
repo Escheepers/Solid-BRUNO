@@ -178,6 +178,39 @@ describe('CustomerFormModal', () => {
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['customers', 'list'] });
     });
 
+    it('emits created with the mapped Customer on a successful create', async () => {
+      await settle();
+
+      const createdSpy = vi.fn();
+      fixture.componentInstance.created.subscribe(createdSpy);
+
+      fillValidForm();
+      await submitForm();
+
+      const req = httpMock.expectOne('/api/customers');
+      req.flush(customerDto({ id: 'c99' }), { status: 201, statusText: 'Created' });
+      await settle();
+
+      expect(createdSpy).toHaveBeenCalledWith(customer({ id: 'c99' }));
+      expect(createdSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not emit created when create fails', async () => {
+      await settle();
+
+      const createdSpy = vi.fn();
+      fixture.componentInstance.created.subscribe(createdSpy);
+
+      fillValidForm();
+      await submitForm();
+
+      const req = httpMock.expectOne('/api/customers');
+      req.flush('boom', { status: 500, statusText: 'Internal Server Error' });
+      await settle();
+
+      expect(createdSpy).not.toHaveBeenCalled();
+    });
+
     it('shows the submit Button as loading while the mutation is pending', async () => {
       await settle();
       fillValidForm();
@@ -313,6 +346,26 @@ describe('CustomerFormModal', () => {
       expect(closeSpy).toHaveBeenCalled();
       expect(toastSpy).toHaveBeenCalledWith('Customer updated.');
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['customers', 'list'] });
+    });
+
+    it('does not emit created on a successful update', async () => {
+      fixture.componentRef.setInput('customer', customer({ id: 'c42' }));
+      await settle();
+
+      const createdSpy = vi.fn();
+      fixture.componentInstance.created.subscribe(createdSpy);
+
+      const [, , , phoneNumber] = fields();
+      setValue(phoneNumber, '0839999999');
+      fixture.detectChanges();
+
+      await submitForm();
+
+      const req = httpMock.expectOne('/api/customers/c42');
+      req.flush(customerDto({ id: 'c42', phoneNumber: '0839999999' }));
+      await settle();
+
+      expect(createdSpy).not.toHaveBeenCalled();
     });
 
     it('a 409 against a different customer’s email still renders inline on email in edit mode', async () => {

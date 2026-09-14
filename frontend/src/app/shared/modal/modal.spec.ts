@@ -18,6 +18,29 @@ class TestHost {
   open = false;
 }
 
+/**
+ * Mirrors spec-4-1's real nested case (`BookingFormModal`'s "+ New Customer" opens
+ * `CustomerFormModal` -- itself a `Modal` -- on top of the still-open Booking
+ * `Modal`): a second `Modal` nested inside the first one's projected content,
+ * both open at once.
+ */
+@Component({
+  selector: 'app-modal-nested-test-host',
+  imports: [Modal],
+  template: `
+    <app-modal [open]="outerOpen" title="Outer" (closeRequest)="outerOpen = false">
+      <p>Outer content</p>
+      <app-modal [open]="innerOpen" title="Inner" (closeRequest)="innerOpen = false">
+        <input data-testid="inner-field" placeholder="Inner field" />
+      </app-modal>
+    </app-modal>
+  `,
+})
+class NestedTestHost {
+  outerOpen = false;
+  innerOpen = false;
+}
+
 describe('Modal', () => {
   let fixture: ComponentFixture<TestHost>;
   let host: TestHost;
@@ -147,5 +170,40 @@ describe('Modal', () => {
     dialog()!.dispatchEvent(event);
 
     expect(document.activeElement).toBe(focusable[focusable.length - 1]);
+  });
+
+  describe('nested Modal-over-Modal', () => {
+    let nestedFixture: ComponentFixture<NestedTestHost>;
+    let nestedHost: NestedTestHost;
+
+    beforeEach(async () => {
+      TestBed.resetTestingModule();
+      await TestBed.configureTestingModule({ imports: [NestedTestHost] }).compileComponents();
+      nestedFixture = TestBed.createComponent(NestedTestHost);
+      nestedHost = nestedFixture.componentInstance;
+    });
+
+    function dialogs(): HTMLElement[] {
+      return Array.from(nestedFixture.nativeElement.querySelectorAll('[role="dialog"]'));
+    }
+
+    it('Escape on the inner Modal closes only the inner Modal, not the outer one underneath', () => {
+      nestedHost.outerOpen = true;
+      nestedHost.innerOpen = true;
+      nestedFixture.detectChanges();
+
+      expect(dialogs().length).toBe(2);
+
+      const innerField = nestedFixture.nativeElement.querySelector(
+        '[data-testid="inner-field"]',
+      ) as HTMLElement;
+      innerField.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }),
+      );
+      nestedFixture.detectChanges();
+
+      expect(dialogs().length).toBe(1);
+      expect(nestedFixture.nativeElement.textContent).toContain('Outer content');
+    });
   });
 });
