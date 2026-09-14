@@ -10,6 +10,11 @@
   <ItemGroup>
     <PackageReference Include="coverlet.collector" Version="6.0.4" />
     <PackageReference Include="FluentAssertions" Version="7.2.2" />
+    <!-- spec-4-4: BookingCompletionSweepServiceTests builds its own minimal DI container (MediatR +
+         the real IBookingRepository/IUnitOfWork) rather than WebApplicationFactory<Program>, so the
+         Api's own real, system-clock BookingCompletionSweepService hosted service is never started
+         and never races the test's own fixed-TimeProvider sweep against the same Postgres container. -->
+    <PackageReference Include="MediatR" Version="14.2.0" />
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.11" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageReference Include="Microsoft.OpenApi" Version="2.7.5" />

@@ -168,4 +168,84 @@ public class BookingTests
             Assert.Equal("Cannot cancel — booking already completed.", exception.Message);
         }
     }
+
+    /// <summary>
+    /// Covers spec-4-4's Booking coverage row: <see cref="Booking.Complete"/>'s success cases
+    /// (EndDate today/past), the already-Completed idempotent no-op, the already-Cancelled throw, and
+    /// the still-eligible-future-EndDate defense-in-depth throw. Written test-first: every one of
+    /// these failed ("type/member does not exist" at compile time) before <c>Booking.Complete</c> was
+    /// implemented.
+    /// </summary>
+    public class Complete
+    {
+        private static readonly DateOnly PastStartDate = new(2026, 9, 1);
+        private static readonly DateOnly PastEndDate = new(2026, 9, 5);
+
+        /// <summary>Fixes "today" at 2026-09-10 so PastStartDate/PastEndDate are both already over.</summary>
+        private static readonly FixedTimeProvider TodayAfterBooking =
+            new(new DateTimeOffset(2026, 9, 10, 8, 0, 0, TimeSpan.Zero));
+
+        private static Booking ActivePastBooking() =>
+            Booking.Create(ValidVehicleId, ValidCustomerId, PastStartDate, PastEndDate, ValidTotalPrice);
+
+        [Fact]
+        public void Complete_ActiveBookingWithPastEndDate_SetsStatusToCompleted()
+        {
+            var booking = ActivePastBooking();
+
+            booking.Complete(TodayAfterBooking);
+
+            Assert.Equal(BookingStatus.Completed, booking.Status);
+        }
+
+        [Fact]
+        public void Complete_ActiveBookingWhoseEndDateIsExactlyToday_SetsStatusToCompleted()
+        {
+            var booking = ActivePastBooking();
+            var onEndDate = new FixedTimeProvider(new DateTimeOffset(2026, 9, 5, 8, 0, 0, TimeSpan.Zero));
+
+            booking.Complete(onEndDate);
+
+            Assert.Equal(BookingStatus.Completed, booking.Status);
+        }
+
+        [Fact]
+        public void Complete_AlreadyCompletedBooking_IsANoOp()
+        {
+            var booking = ActivePastBooking();
+            booking.Complete(TodayAfterBooking);
+
+            var act = () => booking.Complete(TodayAfterBooking);
+
+            Assert.Null(Record.Exception(act));
+            Assert.Equal(BookingStatus.Completed, booking.Status);
+        }
+
+        [Fact]
+        public void Complete_AlreadyCancelledBooking_ThrowsWithExactMessage()
+        {
+            var booking = ActivePastBooking();
+            typeof(Booking).GetProperty(nameof(Booking.Status))!
+                .SetValue(booking, BookingStatus.Cancelled);
+
+            var act = () => booking.Complete(TodayAfterBooking);
+
+            var exception = Assert.Throws<DomainRuleViolationException>(act);
+            Assert.Equal("Cannot complete — booking already cancelled.", exception.Message);
+        }
+
+        [Fact]
+        public void Complete_StillActiveBookingWithFutureEndDate_ThrowsDefenseInDepth()
+        {
+            // EndDate hasn't passed yet -- Complete() must refuse even if somehow called, mirroring
+            // Cancel()'s own defense-in-depth guard but on the complementary boundary.
+            var booking = Booking.Create(
+                ValidVehicleId, ValidCustomerId, new DateOnly(2026, 10, 1), new DateOnly(2026, 10, 5), ValidTotalPrice);
+
+            var act = () => booking.Complete(TodayAfterBooking);
+
+            var exception = Assert.Throws<DomainRuleViolationException>(act);
+            Assert.Equal("Cannot complete — booking has not ended yet.", exception.Message);
+        }
+    }
 }

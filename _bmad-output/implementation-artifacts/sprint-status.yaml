@@ -65,7 +65,7 @@ development_status:
   4-1-list-create-bookings: done
   4-2-booking-overlap-prevention-application-database: done
   4-3-cancel-a-booking: done
-  4-4-automatic-booking-completion: backlog
+  4-4-automatic-booking-completion: done
   4-5-booking-detail-view: backlog
   epic-4-retrospective: optional
 

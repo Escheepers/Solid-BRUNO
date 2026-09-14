@@ -84,4 +84,17 @@ public class BookingRepository(AppDbContext dbContext) : IBookingRepository
     {
         return await dbContext.Bookings.FirstOrDefaultAsync(b => b.Id == id, cancellationToken);
     }
+
+    /// <summary>
+    /// Backs <see cref="IBookingRepository.GetActivePastEndDateAsync"/>: every <c>Active</c> Booking
+    /// whose <c>EndDate</c> is on or before <paramref name="asOf"/> -- no ordering guarantee needed,
+    /// mirroring <see cref="GetNonCancelledForVehicleAsync"/>'s own rationale (the caller dispatches
+    /// every row in the result, not just the first).
+    /// </summary>
+    public async Task<IReadOnlyList<Booking>> GetActivePastEndDateAsync(DateOnly asOf, CancellationToken cancellationToken)
+    {
+        return await dbContext.Bookings
+            .Where(b => b.Status == BookingStatus.Active && b.EndDate <= asOf)
+            .ToListAsync(cancellationToken);
+    }
 }

@@ -58,4 +58,15 @@ public interface IBookingRepository
     /// unfiltered lookup -- no <c>IgnoreQueryFilters()</c> consideration applies here.
     /// </summary>
     Task<Booking?> GetByIdAsync(Guid id, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Every Booking whose <c>Status</c> is <see cref="BookingStatus.Active"/> and whose
+    /// <see cref="Booking.EndDate"/> is on or before <paramref name="asOf"/> -- the sweep-eligible set
+    /// (spec-4-4), mirroring <see cref="Booking.Cancel"/>'s own ineligibility boundary exactly (one
+    /// boundary, never redefined twice). Already-<see cref="BookingStatus.Completed"/> and
+    /// already-<see cref="BookingStatus.Cancelled"/> bookings are never selected, regardless of
+    /// <see cref="Booking.EndDate"/>. <c>BookingCompletionSweepService.RunSweepAsync</c> is the sole
+    /// caller -- no ordering guarantee needed since every eligible booking in the result is dispatched.
+    /// </summary>
+    Task<IReadOnlyList<Booking>> GetActivePastEndDateAsync(DateOnly asOf, CancellationToken cancellationToken);
 }

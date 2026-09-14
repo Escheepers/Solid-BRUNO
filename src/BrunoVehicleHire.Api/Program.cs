@@ -6,6 +6,7 @@ using BrunoVehicleHire.Application.Customers;
 using BrunoVehicleHire.Application.Vehicles;
 using BrunoVehicleHire.Application.Vehicles.Queries;
 using BrunoVehicleHire.Domain.Exceptions;
+using BrunoVehicleHire.Infrastructure.BackgroundServices;
 using BrunoVehicleHire.Infrastructure.Persistence;
 using BrunoVehicleHire.Infrastructure.Repositories;
 using FluentValidation;
@@ -65,6 +66,15 @@ builder.Services.AddScoped<IVehicleRepository, VehicleRepository>();
 builder.Services.AddScoped<ICustomerRepository, CustomerRepository>();
 builder.Services.AddScoped<IBookingRepository, BookingRepository>();
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
+
+// AD-17: BookingCompletionSweepService is a singleton BackgroundService, so its constructor-injected
+// TimeProvider must be resolvable from the root container -- registered once, here, as the real
+// system clock (tests that need a fixed clock call RunSweepAsync directly against their own instance,
+// never through this registration).
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.Configure<BookingCompletionSweepOptions>(
+    builder.Configuration.GetSection("BookingCompletionSweep"));
+builder.Services.AddHostedService<BookingCompletionSweepService>();
 
 // Swashbuckle: declares the ApiKey header security scheme + a global security requirement so
 // Swagger UI's "Authorize" dialog exercises the real enforcement pipeline (AD-11).

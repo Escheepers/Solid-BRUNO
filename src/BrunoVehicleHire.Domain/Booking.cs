@@ -17,13 +17,12 @@ public enum BookingStatus
 
 /// <summary>
 /// A genuinely minimal Booking entity (spec-3-3), grown by later Epic 4 stories: <see cref="Create"/>
-/// (spec-3-3, the one context-free invariant a Booking can honestly validate at construction time)
-/// and <see cref="Cancel"/> (spec-4-3, the Active -> Cancelled transition) are the only ways to
-/// mutate a valid instance; EF Core materializes existing rows via the private parameterless
-/// constructor, bypassing no invariant since the row was valid when it was written. No property has
-/// a public setter -- mirrors <see cref="Vehicle"/>/<see cref="Customer"/>'s exact pattern.
-/// Deliberately NOT built: any Complete transition -- still belongs to a later Epic 4 story, not
-/// this one.
+/// (spec-3-3, the one context-free invariant a Booking can honestly validate at construction time),
+/// <see cref="Cancel"/> (spec-4-3, the Active -> Cancelled transition), and <see cref="Complete"/>
+/// (spec-4-4, the Active -> Completed transition, sweep-driven only) are the only ways to mutate a
+/// valid instance; EF Core materializes existing rows via the private parameterless constructor,
+/// bypassing no invariant since the row was valid when it was written. No property has a public
+/// setter -- mirrors <see cref="Vehicle"/>/<see cref="Customer"/>'s exact pattern.
 /// </summary>
 public class Booking
 {
@@ -131,6 +130,47 @@ public class Booking
         }
 
         Status = BookingStatus.Cancelled;
+    }
+
+    /// <summary>
+    /// Transitions <see cref="Status"/> from <see cref="BookingStatus.Active"/> to
+    /// <see cref="BookingStatus.Completed"/> (spec-4-4), the sole path by which a booking is ever
+    /// marked Completed -- always dispatched via <c>CompleteBookingCommand</c> from
+    /// <c>BookingCompletionSweepService</c>, never directly reachable over HTTP (AD-17). Idempotent
+    /// if already <see cref="BookingStatus.Completed"/> (a no-op, mirroring <c>Customer.SoftDelete</c>'s
+    /// own precedent for a repeat call), but throws <see cref="DomainRuleViolationException"/> if
+    /// <see cref="BookingStatus.Cancelled"/> -- completing a cancelled booking would misrepresent it.
+    /// The eligibility boundary is the exact complement of <see cref="Cancel"/>'s own: <c>Cancel</c>
+    /// already treats <see cref="EndDate"/> on or before today as "this booking is over" and refuses
+    /// to cancel it; <see cref="Complete"/> requires that same condition to actually transition,
+    /// throwing (defense-in-depth) if <see cref="EndDate"/> is still in the future -- guarding against
+    /// the sweep (or any other caller) completing a booking prematurely. No other field changes.
+    /// <paramref name="timeProvider"/> defaults to <see cref="TimeProvider.System"/> so tests can
+    /// inject a fixed clock, mirroring <see cref="Cancel"/>'s own convention.
+    /// </summary>
+    public void Complete(TimeProvider? timeProvider = null)
+    {
+        timeProvider ??= TimeProvider.System;
+
+        if (Status == BookingStatus.Completed)
+        {
+            return;
+        }
+
+        if (Status == BookingStatus.Cancelled)
+        {
+            throw new DomainRuleViolationException(
+                nameof(Booking), nameof(Status), "Cannot complete — booking already cancelled.");
+        }
+
+        var today = DateOnly.FromDateTime(timeProvider.GetUtcNow().UtcDateTime);
+        if (EndDate > today)
+        {
+            throw new DomainRuleViolationException(
+                nameof(Booking), nameof(Status), "Cannot complete — booking has not ended yet.");
+        }
+
+        Status = BookingStatus.Completed;
     }
 
     /// <summary>

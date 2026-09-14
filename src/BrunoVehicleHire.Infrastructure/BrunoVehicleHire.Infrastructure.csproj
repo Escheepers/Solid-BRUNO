@@ -25,6 +25,16 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
+    <!-- spec-4-4: BookingCompletionSweepService is a BackgroundService (AD-17), constructor-injected
+         with IServiceScopeFactory/IOptions, pinned to the exact version already resolved
+         transitively via the EF Core/DataProtection packages above, so restore never unifies it
+         upward on its own. -->
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.12" />
+    <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.12" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.12" />
+    <!-- BookingCompletionSweepService dispatches CompleteBookingCommand via MediatR's ISender
+         directly, pinned to the exact version BrunoVehicleHire.Application already resolves. -->
+    <PackageReference Include="MediatR" Version="14.2.0" />
   </ItemGroup>
 
   <ItemGroup>
