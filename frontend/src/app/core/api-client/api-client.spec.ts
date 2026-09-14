@@ -7,7 +7,7 @@ import { ProblemDetails } from '../models/problem-details';
 import { ApiClient } from './api-client';
 import { apiKeyInterceptor } from './api-key.interceptor';
 import { errorNormalizationInterceptor } from './error-normalization.interceptor';
-import { BusinessRuleError, ServerError } from './normalized-api-error';
+import { BusinessRuleError, NotFoundError, ServerError } from './normalized-api-error';
 
 describe('ApiClient', () => {
   let apiClient: ApiClient;
@@ -196,6 +196,41 @@ describe('ApiClient', () => {
       const error = captured as ServerError;
       expect(error.kind).toBe('server-error');
       expect((error as unknown as BusinessRuleError).errors).toBeUndefined();
+    });
+
+    it('normalizes a 404 ProblemDetails response into a NotFoundError', () => {
+      let captured: unknown;
+      apiClient.get<unknown>('vehicles/does-not-exist').subscribe({
+        error: (err: unknown) => (captured = err),
+      });
+
+      const req = httpMock.expectOne('/api/vehicles/does-not-exist');
+      req.flush(
+        {
+          type: 'https://bruno-vehicle-hire/problems/not-found',
+          title: 'Not Found',
+          status: 404,
+          detail: "Vehicle 'does-not-exist' was not found.",
+        },
+        { status: 404, statusText: 'Not Found' },
+      );
+
+      const error = captured as NotFoundError;
+      expect(error.kind).toBe('not-found');
+      expect(error.detail).toBe("Vehicle 'does-not-exist' was not found.");
+    });
+
+    it('normalizes a malformed (non-ProblemDetails) 404 body into a ServerError, not a NotFoundError', () => {
+      let captured: unknown;
+      apiClient.get<unknown>('vehicles/does-not-exist').subscribe({
+        error: (err: unknown) => (captured = err),
+      });
+
+      const req = httpMock.expectOne('/api/vehicles/does-not-exist');
+      req.flush('<html>Not Found</html>', { status: 404, statusText: 'Not Found' });
+
+      const error = captured as ServerError;
+      expect(error.kind).toBe('server-error');
     });
   });
 });

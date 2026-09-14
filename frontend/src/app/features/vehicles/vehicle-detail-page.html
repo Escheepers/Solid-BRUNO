@@ -1,0 +1,51 @@
+<div class="flex flex-col gap-6 p-8">
+  @if (query.isPending()) {
+    <div class="rounded-xl border border-border bg-surface p-8">
+      <app-skeleton [rows]="6" />
+    </div>
+  } @else if (isNotFound()) {
+    <div class="flex flex-col items-start gap-3">
+      <p class="text-body text-text-body">This vehicle no longer exists.</p>
+      <a routerLink="/vehicles" class="text-button text-primary">Back to Vehicles</a>
+    </div>
+  } @else if (vehicle(); as v) {
+    <h1 class="text-page-title text-text">{{ v.registrationNumber }}</h1>
+
+    <div class="rounded-xl border border-border bg-surface p-8">
+      <dl class="grid grid-cols-2 gap-x-8 gap-y-5">
+        <div>
+          <dt class="text-section-label text-text-muted">Registration Number</dt>
+          <dd class="text-body text-text-body">{{ v.registrationNumber }}</dd>
+        </div>
+        <div>
+          <dt class="text-section-label text-text-muted">Make</dt>
+          <dd class="text-body text-text-body">{{ v.make }}</dd>
+        </div>
+        <div>
+          <dt class="text-section-label text-text-muted">Model</dt>
+          <dd class="text-body text-text-body">{{ v.model }}</dd>
+        </div>
+        <div>
+          <dt class="text-section-label text-text-muted">Year</dt>
+          <dd class="text-body text-text-body">{{ v.year }}</dd>
+        </div>
+        <div>
+          <dt class="text-section-label text-text-muted">Daily Rate</dt>
+          <dd class="text-body text-text-body">{{ formattedDailyRate() }}</dd>
+        </div>
+        <div>
+          <dt class="text-section-label text-text-muted">Created</dt>
+          <dd class="text-body text-text-body">{{ formattedCreatedDate() }}</dd>
+        </div>
+        <div>
+          <dt class="text-section-label text-text-muted">Status</dt>
+          <dd class="text-body" [class.text-text-disabled]="v.isDeleted" [class.text-text-body]="!v.isDeleted">
+            {{ v.isDeleted ? 'Inactive' : 'Active' }}
+          </dd>
+        </div>
+      </dl>
+    </div>
+  } @else {
+    <p class="text-body text-text-body">Something went wrong. Please try again.</p>
+  }
+</div>

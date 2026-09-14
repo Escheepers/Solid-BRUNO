@@ -5,12 +5,103 @@ import { QueryClient, provideTanStackQuery } from '@tanstack/angular-query-exper
 
 import { apiKeyInterceptor } from '../../core/api-client/api-key.interceptor';
 import { errorNormalizationInterceptor } from '../../core/api-client/error-normalization.interceptor';
-import { useDeactivateVehicleMutation, useRestoreVehicleMutation } from './vehicles.service';
+import { VehicleDto } from '../../core/models/vehicle-dto';
+import {
+  useDeactivateVehicleMutation,
+  useRestoreVehicleMutation,
+  useVehicleQuery,
+} from './vehicles.service';
 
 /** Matches the macrotask-flush pattern used elsewhere for TanStack Query's Angular reactivity. */
 function flushMicrotasks(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 0));
 }
+
+function vehicleDto(overrides: Partial<VehicleDto> = {}): VehicleDto {
+  return {
+    id: 'v1',
+    registrationNumber: 'CA123456',
+    make: 'Toyota',
+    model: 'Corolla',
+    year: 2022,
+    dailyRate: 350,
+    createdDate: '2026-01-15T10:30:00Z',
+    isDeleted: false,
+    ...overrides,
+  };
+}
+
+describe('useVehicleQuery', () => {
+  let httpMock: HttpTestingController;
+  let queryClient: QueryClient;
+
+  beforeEach(() => {
+    queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+
+    TestBed.configureTestingModule({
+      providers: [
+        provideHttpClient(withInterceptors([apiKeyInterceptor, errorNormalizationInterceptor])),
+        provideHttpClientTesting(),
+        provideTanStackQuery(queryClient),
+      ],
+    });
+
+    httpMock = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => {
+    httpMock.verify();
+    TestBed.resetTestingModule();
+  });
+
+  it('GETs vehicles/{id} for a defined id', async () => {
+    TestBed.runInInjectionContext(() => useVehicleQuery(() => 'v1'));
+    await flushMicrotasks();
+
+    const req = httpMock.expectOne('/api/vehicles/v1');
+    expect(req.request.method).toBe('GET');
+    req.flush(vehicleDto());
+  });
+
+  it('issues no request while id is undefined', async () => {
+    TestBed.runInInjectionContext(() => useVehicleQuery(() => undefined));
+    await flushMicrotasks();
+
+    httpMock.expectNone(() => true);
+  });
+
+  it('resolves with the fetched VehicleDto on success', async () => {
+    const query = TestBed.runInInjectionContext(() => useVehicleQuery(() => 'v1'));
+    await flushMicrotasks();
+
+    httpMock.expectOne('/api/vehicles/v1').flush(vehicleDto({ registrationNumber: 'CA999999' }));
+    await flushMicrotasks();
+
+    expect(query.data()?.registrationNumber).toBe('CA999999');
+  });
+
+  it('normalizes a 404 into a NotFoundError on the query', async () => {
+    const query = TestBed.runInInjectionContext(() => useVehicleQuery(() => 'missing-id'));
+    await flushMicrotasks();
+
+    const req = httpMock.expectOne('/api/vehicles/missing-id');
+    req.flush(
+      {
+        type: 'https://bruno-vehicle-hire/problems/not-found',
+        title: 'Not Found',
+        status: 404,
+        detail: "Vehicle 'missing-id' was not found.",
+      },
+      { status: 404, statusText: 'Not Found' },
+    );
+    await flushMicrotasks();
+
+    expect(query.isError()).toBe(true);
+    expect(query.error()?.kind).toBe('not-found');
+  });
+});
 
 describe('useDeactivateVehicleMutation', () => {
   let httpMock: HttpTestingController;

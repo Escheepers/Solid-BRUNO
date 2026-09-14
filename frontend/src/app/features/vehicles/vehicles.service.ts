@@ -46,6 +46,29 @@ export function useVehiclesQuery(params: () => VehiclesQueryParams) {
 }
 
 /**
+ * Wraps `injectQuery` over `ApiClient.get<VehicleDto>('vehicles/{id}')` for a single
+ * vehicle's detail (Story 2.5). Query-key convention (AD-3):
+ * `['vehicles', 'detail', id]`. `id` is a function (mirroring `useVehiclesQuery`'s
+ * `params`) so the query reactively re-runs if the route's `id` param changes without
+ * remounting `VehicleDetailPage`. `enabled` is guarded on a defined id so no request
+ * fires for an as-yet-unresolved route param -- `firstValueFrom` would otherwise be
+ * called with `vehicles/undefined` in the URL.
+ */
+export function useVehicleQuery(id: () => string | undefined) {
+  const apiClient = inject(ApiClient);
+
+  return injectQuery<VehicleDto, NormalizedApiError>(() => {
+    const vehicleId = id();
+
+    return {
+      queryKey: ['vehicles', 'detail', vehicleId] as const,
+      queryFn: () => firstValueFrom(apiClient.get<VehicleDto>(`vehicles/${vehicleId}`)),
+      enabled: !!vehicleId,
+    };
+  });
+}
+
+/**
  * Wraps `injectMutation` over `ApiClient.post('vehicles/{id}/deactivate', ...)` -- mirrors the
  * `injectMutation` pattern `VehicleFormModal`'s create/update mutation already established.
  * `ApiClient.post<T, B>` requires a body argument, so `undefined` is passed explicitly for this

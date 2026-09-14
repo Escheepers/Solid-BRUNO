@@ -64,6 +64,10 @@ function normalize(error: unknown): NormalizedApiError {
     };
   }
 
+  if (error.status === 404 && isProblemDetails(error.error)) {
+    return { kind: 'not-found', detail: error.error.detail };
+  }
+
   return {
     kind: 'server-error',
     status: error.status || undefined,
@@ -72,10 +76,12 @@ function normalize(error: unknown): NormalizedApiError {
 }
 
 /**
- * Normalizes every error response into exactly one of two shapes: a
- * `BusinessRuleError` (400 or 409 with a body matching the ProblemDetails shape) or
- * a `ServerError` (5xx, a network/connection failure, or any body that can't be
- * safely trusted as ProblemDetails). Never assumes `error.error` is safely readable.
+ * Normalizes every error response into exactly one of three shapes: a
+ * `BusinessRuleError` (400 or 409 with a body matching the ProblemDetails shape), a
+ * `NotFoundError` (404 with a body matching the ProblemDetails shape), or a
+ * `ServerError` (5xx, a network/connection failure, a 404 whose body can't be
+ * trusted, or any other body that can't be safely trusted as ProblemDetails). Never
+ * assumes `error.error` is safely readable.
  */
 export const errorNormalizationInterceptor: HttpInterceptorFn = (req, next) =>
   next(req).pipe(catchError((error: unknown) => throwError(() => normalize(error))));

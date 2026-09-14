@@ -32,6 +32,19 @@ public class VehiclesController(ISender sender) : ControllerBase
         return Ok(result);
     }
 
+    /// <summary>
+    /// Fetches a single vehicle's full record for the detail page (Story 2.5) -- including a
+    /// soft-deleted vehicle's, since <see cref="Queries.GetVehicleByIdQuery"/> deliberately uses the
+    /// unfiltered lookup so the detail page can show its active/soft-deleted state.
+    /// </summary>
+    [HttpGet("{id:guid}")]
+    public async Task<IActionResult> GetById(Guid id, CancellationToken cancellationToken)
+    {
+        var dto = await sender.Send(new GetVehicleByIdQuery(id), cancellationToken);
+
+        return Ok(dto);
+    }
+
     [HttpPost]
     public async Task<IActionResult> Create(
         [FromBody] CreateVehicleCommand command,

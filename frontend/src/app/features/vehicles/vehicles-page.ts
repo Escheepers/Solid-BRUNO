@@ -1,5 +1,6 @@
 import { Component, computed, inject, linkedSignal, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { Router } from '@angular/router';
 import { debounceTime, distinctUntilChanged } from 'rxjs';
 
 import { NormalizedApiError } from '../../core/api-client/normalized-api-error';
@@ -8,6 +9,7 @@ import { ColumnDef, DataTable, RowAction } from '../../shared/data-table/data-ta
 import { ConfirmDialog } from '../../shared/confirm-dialog/confirm-dialog';
 import { ToastService } from '../../shared/toast/toast.service';
 import { Vehicle, toVehicle } from './models/vehicle';
+import { currencyFormatter, dateFormatter } from './vehicle-formatters';
 import { VehicleFormModal } from './vehicle-form-modal';
 import {
   useDeactivateVehicleMutation,
@@ -20,17 +22,6 @@ const DEFAULT_DEACTIVATE_MESSAGE =
 
 const PAGE_SIZE = 20;
 const SEARCH_DEBOUNCE_MS = 300;
-
-const currencyFormatter = new Intl.NumberFormat('en-ZA', {
-  style: 'currency',
-  currency: 'ZAR',
-});
-
-const dateFormatter = new Intl.DateTimeFormat('en-ZA', {
-  year: 'numeric',
-  month: 'short',
-  day: 'numeric',
-});
 
 /**
  * The Vehicles feature (Story 1.7's walking-skeleton proof): a debounced search
@@ -46,6 +37,7 @@ const dateFormatter = new Intl.DateTimeFormat('en-ZA', {
 })
 export class VehiclesPage {
   private readonly toastService = inject(ToastService);
+  private readonly router = inject(Router);
   private readonly deactivateMutation = useDeactivateVehicleMutation();
   private readonly restoreMutation = useRestoreVehicleMutation();
 
@@ -97,12 +89,18 @@ export class VehiclesPage {
   /**
    * A per-row function (spec-2-4's `DataTable.actions` change) so an inactive
    * (soft-deleted) row shows only "Restore" *in place of* the usual Edit/Deactivate
-   * pair, per `EXPERIENCE.md`'s State Patterns row for "Soft-deleted vehicle".
+   * pair, per `EXPERIENCE.md`'s State Patterns row for "Soft-deleted vehicle". "View"
+   * (spec-2-5) is added to both branches -- viewing a soft-deleted vehicle's detail
+   * is a real, AC-required flow, not just the active case.
    */
   protected readonly actions = (vehicle: Vehicle): RowAction<Vehicle>[] =>
     vehicle.isDeleted
-      ? [{ label: 'Restore', onClick: (v) => this.onRestoreClick(v) }]
+      ? [
+          { label: 'View', onClick: (v) => this.onViewClick(v) },
+          { label: 'Restore', onClick: (v) => this.onRestoreClick(v) },
+        ]
       : [
+          { label: 'View', onClick: (v) => this.onViewClick(v) },
           { label: 'Edit', onClick: (v) => this.openEditModal(v) },
           { label: 'Deactivate', onClick: (v) => this.openDeactivateDialog(v) },
         ];
@@ -153,6 +151,10 @@ export class VehiclesPage {
 
   protected clearFilters(): void {
     this.searchInput.set('');
+  }
+
+  protected onViewClick(vehicle: Vehicle): void {
+    this.router.navigate(['/vehicles', vehicle.id]);
   }
 
   protected openCreateModal(): void {

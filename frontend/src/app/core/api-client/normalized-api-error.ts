@@ -29,10 +29,21 @@ export interface ServerError {
 }
 
 /**
- * Every error `ApiClient` requests can produce, normalized into exactly one of these
- * two structurally-distinguishable shapes via the `kind` discriminant.
+ * A 404 response whose body is a valid ProblemDetails shape — the record genuinely
+ * doesn't exist (as opposed to a `ServerError`, which covers a 404 with an untrusted
+ * body, per this module's fail-safe philosophy). Deferred by Stories 2.2/2.4 until a
+ * story actually needed to render a real "not found" state; Story 2.5 is that story.
  */
-export type NormalizedApiError = BusinessRuleError | ServerError;
+export interface NotFoundError {
+  kind: 'not-found';
+  detail: string;
+}
+
+/**
+ * Every error `ApiClient` requests can produce, normalized into exactly one of these
+ * three structurally-distinguishable shapes via the `kind` discriminant.
+ */
+export type NormalizedApiError = BusinessRuleError | ServerError | NotFoundError;
 
 /**
  * Recovers the single field name a business-rule URI refers to, for the 409 case

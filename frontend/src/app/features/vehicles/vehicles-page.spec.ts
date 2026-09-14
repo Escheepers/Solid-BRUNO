@@ -1,6 +1,7 @@
 import { provideHttpClient, withInterceptors } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { Router, provideRouter } from '@angular/router';
 import { QueryClient, provideTanStackQuery } from '@tanstack/angular-query-experimental';
 
 import { apiKeyInterceptor } from '../../core/api-client/api-key.interceptor';
@@ -58,6 +59,7 @@ describe('VehiclesPage', () => {
         provideHttpClient(withInterceptors([apiKeyInterceptor, errorNormalizationInterceptor])),
         provideHttpClientTesting(),
         provideTanStackQuery(queryClient),
+        provideRouter([]),
       ],
     }).compileComponents();
 
@@ -253,6 +255,27 @@ describe('VehiclesPage', () => {
     expect(registrationInput.value).toBe('CA777777');
   });
 
+  it('clicking "View" on a row navigates to that vehicle\'s detail route', async () => {
+    await settle();
+    expectVehiclesRequest('').flush(
+      pagedResult([vehicleDto({ id: 'v7', registrationNumber: 'CA777777' })]),
+    );
+    await settle();
+
+    const router = TestBed.inject(Router);
+    const navigateSpy = vi.spyOn(router, 'navigate');
+
+    const viewButton = Array.from<HTMLButtonElement>(
+      fixture.nativeElement.querySelectorAll('tbody button'),
+    ).find((b) => b.textContent?.trim() === 'View');
+    expect(viewButton).toBeTruthy();
+
+    viewButton!.click();
+    fixture.detectChanges();
+
+    expect(navigateSpy).toHaveBeenCalledWith(['/vehicles', 'v7']);
+  });
+
   describe('deactivate row action', () => {
     function alertDialog(): HTMLElement | null {
       return fixture.nativeElement.querySelector('[role="alertdialog"]');
@@ -354,10 +377,11 @@ describe('VehiclesPage', () => {
       expect(dialog!.textContent).not.toContain(
         'This vehicle will disappear from availability searches',
       );
-      // A 404 normalizes to a generic ServerError (errorNormalizationInterceptor only treats
-      // 400/409 as business-rule shaped) -- the dialog shows that generic message rather than
-      // deeply classifying the error, per the spec's Design Notes.
-      expect(dialog!.textContent).toContain('An unexpected error occurred');
+      // Story 2.5 gives `NormalizedApiError` a real `NotFoundError` kind for a 404 with
+      // a valid ProblemDetails body -- `toErrorMessage` (a deliberately shallow mapping,
+      // per the spec's Design Notes) shows its `detail` message rather than a generic
+      // ServerError string.
+      expect(dialog!.textContent).toContain("Vehicle 'v9' was not found.");
     });
   });
 
@@ -420,8 +444,8 @@ describe('VehiclesPage', () => {
         rows[1].querySelectorAll('button'),
       ).map((b) => b.textContent?.trim());
 
-      expect(activeButtons).toEqual(['Edit', 'Deactivate']);
-      expect(inactiveButtons).toEqual(['Restore']);
+      expect(activeButtons).toEqual(['View', 'Edit', 'Deactivate']);
+      expect(inactiveButtons).toEqual(['View', 'Restore']);
 
       const activeCell = rows[0].querySelector('td') as HTMLElement;
       const inactiveCell = rows[1].querySelector('td') as HTMLElement;

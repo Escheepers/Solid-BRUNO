@@ -238,6 +238,60 @@ public class VehiclesEndpointTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task GetById_ActiveVehicleExists_Returns200WithFullDtoAndIsDeletedFalse()
+    {
+        var vehicle = Vehicle.Create("CA131415", "Toyota", "Corolla", 2023, 350m);
+        await SeedVehiclesAsync(vehicle);
+
+        using var request = AuthenticatedGet($"/api/vehicles/{vehicle.Id}");
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var json = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(json);
+
+        document.RootElement.GetProperty("id").GetGuid().Should().Be(vehicle.Id);
+        document.RootElement.GetProperty("registrationNumber").GetString().Should().Be("CA131415");
+        document.RootElement.GetProperty("make").GetString().Should().Be("Toyota");
+        document.RootElement.GetProperty("model").GetString().Should().Be("Corolla");
+        document.RootElement.GetProperty("year").GetInt32().Should().Be(2023);
+        document.RootElement.GetProperty("dailyRate").GetDecimal().Should().Be(350m);
+        document.RootElement.TryGetProperty("createdDate", out _).Should().BeTrue();
+        document.RootElement.GetProperty("isDeleted").GetBoolean().Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task GetById_SoftDeletedVehicleExists_Returns200WithIsDeletedTrue()
+    {
+        var vehicle = Vehicle.Create("CA161718", "Mazda", "3", 2021, 280m);
+        vehicle.SoftDelete();
+        await SeedVehiclesAsync(vehicle);
+
+        using var request = AuthenticatedGet($"/api/vehicles/{vehicle.Id}");
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var json = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(json);
+
+        document.RootElement.GetProperty("id").GetGuid().Should().Be(vehicle.Id);
+        document.RootElement.GetProperty("isDeleted").GetBoolean().Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task GetById_NonexistentVehicleId_Returns404()
+    {
+        var missingId = Guid.NewGuid();
+
+        using var request = AuthenticatedGet($"/api/vehicles/{missingId}");
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
     public async Task Post_ValidCommand_Returns201WithVehicleDto_AndVehicleIsThenRetrievableViaGet()
     {
         using var request = AuthenticatedPost("/api/vehicles", new

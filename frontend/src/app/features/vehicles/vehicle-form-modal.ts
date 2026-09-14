@@ -219,6 +219,19 @@ export class VehicleFormModal {
       return;
     }
 
+    /**
+     * A `NotFoundError` (Story 2.5) is not a shape this form ever meaningfully
+     * expects — create never 404s, and edit only would on a genuine race with
+     * another user's delete — but `NormalizedApiError` growing this third member
+     * means the compiler no longer lets `error.errors`/`error.type` below be
+     * accessed without first ruling it out. Treated the same as a `ServerError`:
+     * a top-of-form banner using the ProblemDetails `detail` message.
+     */
+    if (error.kind === 'not-found') {
+      this.serverErrorMessage.set(error.detail);
+      return;
+    }
+
     if (error.errors) {
       const mapped: Partial<Record<VehicleFormFieldName, string>> = {};
       for (const [key, messages] of Object.entries(error.errors)) {
