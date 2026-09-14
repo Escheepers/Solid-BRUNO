@@ -6,7 +6,11 @@ import { QueryClient, provideTanStackQuery } from '@tanstack/angular-query-exper
 import { apiKeyInterceptor } from '../../core/api-client/api-key.interceptor';
 import { errorNormalizationInterceptor } from '../../core/api-client/error-normalization.interceptor';
 import { CustomerDto } from '../../core/models/customer-dto';
-import { useCreateCustomerMutation, useCustomersQuery } from './customers.service';
+import {
+  useCreateCustomerMutation,
+  useCustomersQuery,
+  useUpdateCustomerMutation,
+} from './customers.service';
 
 /** Matches the macrotask-flush pattern used elsewhere for TanStack Query's Angular reactivity. */
 function flushMicrotasks(): Promise<void> {
@@ -146,6 +150,80 @@ describe('useCreateCustomerMutation', () => {
 
     const req = httpMock.expectOne('/api/customers');
     req.flush(customerDto(), { status: 201, statusText: 'Created' });
+    await flushMicrotasks();
+
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['customers', 'list'] });
+  });
+});
+
+describe('useUpdateCustomerMutation', () => {
+  let httpMock: HttpTestingController;
+  let queryClient: QueryClient;
+
+  beforeEach(() => {
+    queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+
+    TestBed.configureTestingModule({
+      providers: [
+        provideHttpClient(withInterceptors([apiKeyInterceptor, errorNormalizationInterceptor])),
+        provideHttpClientTesting(),
+        provideTanStackQuery(queryClient),
+      ],
+    });
+
+    httpMock = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => {
+    httpMock.verify();
+    TestBed.resetTestingModule();
+  });
+
+  it('PUTs the payload to customers/{customerId}', async () => {
+    const mutation = TestBed.runInInjectionContext(() => useUpdateCustomerMutation());
+
+    mutation.mutate({
+      customerId: 'c42',
+      payload: {
+        firstName: 'Jane',
+        lastName: 'Doe',
+        email: 'jane.doe@example.com',
+        phoneNumber: '0821234567',
+      },
+    });
+    await flushMicrotasks();
+
+    const req = httpMock.expectOne('/api/customers/c42');
+    expect(req.request.method).toBe('PUT');
+    expect(req.request.body).toEqual({
+      firstName: 'Jane',
+      lastName: 'Doe',
+      email: 'jane.doe@example.com',
+      phoneNumber: '0821234567',
+    });
+
+    req.flush(customerDto({ id: 'c42' }));
+  });
+
+  it('invalidates the customers list query key on success', async () => {
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+    const mutation = TestBed.runInInjectionContext(() => useUpdateCustomerMutation());
+
+    mutation.mutate({
+      customerId: 'c42',
+      payload: {
+        firstName: 'Jane',
+        lastName: 'Doe',
+        email: 'jane.doe@example.com',
+        phoneNumber: '0821234567',
+      },
+    });
+    await flushMicrotasks();
+
+    const req = httpMock.expectOne('/api/customers/c42');
+    req.flush(customerDto({ id: 'c42' }));
     await flushMicrotasks();
 
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['customers', 'list'] });

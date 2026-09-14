@@ -224,6 +224,29 @@ describe('CustomersPage', () => {
     expect(fixture.nativeElement.querySelector('[role="dialog"]')).not.toBeNull();
   });
 
+  it('clicking "Edit" on a row opens the modal pre-populated with that row’s data', async () => {
+    await settle();
+    expectCustomersRequest('').flush(
+      pagedResult([customerDto({ id: 'c7', firstName: 'Zola', email: 'zola@example.com' })]),
+    );
+    await settle();
+
+    const editButton = Array.from<HTMLButtonElement>(
+      fixture.nativeElement.querySelectorAll('tbody button'),
+    ).find((b) => b.textContent?.trim() === 'Edit');
+    expect(editButton).toBeTruthy();
+
+    editButton!.click();
+    fixture.detectChanges();
+
+    const dialog = fixture.nativeElement.querySelector('[role="dialog"]');
+    expect(dialog).not.toBeNull();
+    expect(dialog.textContent).toContain('Edit Customer');
+
+    const firstNameInput: HTMLInputElement = fixture.nativeElement.querySelector('app-input input');
+    expect(firstNameInput.value).toBe('Zola');
+  });
+
   it('closing the Create Customer modal closes the dialog', async () => {
     await settle();
     expectCustomersRequest('').flush(pagedResult([]));

@@ -64,6 +64,16 @@ public class CustomerRepository(AppDbContext dbContext) : ICustomerRepository
                 cancellationToken);
     }
 
+    /// <summary>
+    /// A plain, filtered lookup -- deliberately does NOT call <c>IgnoreQueryFilters()</c> (unlike
+    /// <see cref="ExistsByEmailAsync"/> above). Mirrors <c>VehicleRepository.GetByIdAsync</c> exactly.
+    /// </summary>
+    public async Task<Customer?> GetByIdAsync(Guid id, CancellationToken cancellationToken)
+    {
+        return await dbContext.Customers
+            .FirstOrDefaultAsync(c => c.Id == id, cancellationToken);
+    }
+
     public async Task AddAsync(Customer customer, CancellationToken cancellationToken)
     {
         await dbContext.Customers.AddAsync(customer, cancellationToken);

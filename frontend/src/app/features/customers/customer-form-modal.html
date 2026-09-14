@@ -1,4 +1,4 @@
-<app-modal [open]="open()" title="+ New Customer" (closeRequest)="onModalCloseRequest()">
+<app-modal [open]="open()" [title]="modalTitle()" (closeRequest)="onModalCloseRequest()">
   <form [formGroup]="form" (ngSubmit)="onSubmit()" class="flex flex-col gap-4">
     @if (serverErrorMessage()) {
       <div
@@ -16,7 +16,17 @@
     <app-input formControlName="phoneNumber" label="Phone Number" [error]="phoneNumberError()" />
 
     <div class="flex justify-end gap-4 pt-2">
-      <app-button type="submit" [loading]="mutation.isPending()">Create Customer</app-button>
+      <app-button type="submit" [loading]="isSubmitting()">{{ submitLabel() }}</app-button>
     </div>
   </form>
+
+  <app-confirm-dialog
+    [open]="showDiscardConfirm()"
+    title="Discard changes?"
+    message="You have unsaved changes to this customer. Discard them?"
+    confirmLabel="Discard"
+    cancelLabel="Keep editing"
+    (confirm)="onConfirmDiscard()"
+    (cancel)="onCancelDiscard()"
+  />
 </app-modal>

@@ -20,6 +20,10 @@ export interface CreateCustomerPayload {
   phoneNumber: string;
 }
 
+/** Identical shape to `CreateCustomerPayload` -- kept as its own named type so `useUpdateCustomerMutation`'s
+ * call site reads clearly, mirroring `CreateCustomerPayload`'s own naming. */
+export type UpdateCustomerPayload = CreateCustomerPayload;
+
 /** Matches `useCustomersQuery`'s query-key convention (AD-3) exactly, minus the params
  * — `invalidateQueries` matches every params variant sharing this key prefix. */
 export const CUSTOMERS_LIST_QUERY_KEY = ['customers', 'list'] as const;
@@ -61,6 +65,31 @@ export function useCreateCustomerMutation() {
   return injectMutation<CustomerDto, NormalizedApiError, CreateCustomerPayload>(() => ({
     mutationFn: (payload) =>
       firstValueFrom(apiClient.post<CustomerDto, CreateCustomerPayload>('customers', payload)),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: CUSTOMERS_LIST_QUERY_KEY }),
+  }));
+}
+
+/**
+ * Wraps `injectMutation` over `ApiClient.put<CustomerDto, UpdateCustomerPayload>('customers/{id}', ...)`
+ * -- the update counterpart to `useCreateCustomerMutation` above, added for Story 3.2's Edit flow.
+ * `CustomerFormModal` selects between this and `useCreateCustomerMutation` based on whether it was
+ * opened for create or edit (its own concern, not this service's -- SRP). On success, invalidates
+ * `['customers', 'list']` (AD-3) exactly like the create mutation, so the list re-fetches and shows
+ * the edited values.
+ */
+export function useUpdateCustomerMutation() {
+  const apiClient = inject(ApiClient);
+  const queryClient = inject(QueryClient);
+
+  return injectMutation<
+    CustomerDto,
+    NormalizedApiError,
+    { customerId: string; payload: UpdateCustomerPayload }
+  >(() => ({
+    mutationFn: ({ customerId, payload }) =>
+      firstValueFrom(
+        apiClient.put<CustomerDto, UpdateCustomerPayload>(`customers/${customerId}`, payload),
+      ),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: CUSTOMERS_LIST_QUERY_KEY }),
   }));
 }

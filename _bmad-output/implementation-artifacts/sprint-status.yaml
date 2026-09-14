@@ -55,7 +55,7 @@ development_status:
 
   epic-3: in-progress
   3-1-list-create-customers: done
-  3-2-edit-a-customer: backlog
+  3-2-edit-a-customer: done
   3-3-hard-delete-a-customer-with-no-bookings: backlog
   3-4-deactivate-restore-a-customer: backlog
   3-5-erase-anonymize-a-customer-s-personal-data: backlog

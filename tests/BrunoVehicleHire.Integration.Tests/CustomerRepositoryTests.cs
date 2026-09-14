@@ -173,6 +173,56 @@ public class CustomerRepositoryTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task GetByIdAsync_ExistingCustomer_ReturnsMatchingCustomer()
+    {
+        await using var seedContext = CreateDbContext();
+        var customer = CreateValidCustomer(email: "findme@example.com");
+        seedContext.Customers.Add(customer);
+        await seedContext.SaveChangesAsync();
+
+        await using var dbContext = CreateDbContext();
+        var repository = new CustomerRepository(dbContext);
+
+        var found = await repository.GetByIdAsync(customer.Id, CancellationToken.None);
+
+        found.Should().NotBeNull();
+        found!.Id.Should().Be(customer.Id);
+        found.Email.Should().Be("findme@example.com");
+    }
+
+    [Fact]
+    public async Task GetByIdAsync_NonexistentId_ReturnsNull()
+    {
+        await using var dbContext = CreateDbContext();
+        var repository = new CustomerRepository(dbContext);
+
+        var found = await repository.GetByIdAsync(Guid.NewGuid(), CancellationToken.None);
+
+        found.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetByIdAsync_SoftDeletedCustomer_ReturnsNull_RespectingQueryFilter()
+    {
+        await using var seedContext = CreateDbContext();
+        var customer = CreateValidCustomer(email: "deleted@example.com");
+        seedContext.Customers.Add(customer);
+        await seedContext.SaveChangesAsync();
+
+        // No SoftDelete() method exists yet (YAGNI -- Stories 3.4+); directly flip the flag via raw
+        // SQL, mirroring GetPagedAsync's own soft-delete test above.
+        await seedContext.Database.ExecuteSqlInterpolatedAsync(
+            $"UPDATE \"Customers\" SET \"IsDeleted\" = true WHERE \"Id\" = {customer.Id}");
+
+        await using var dbContext = CreateDbContext();
+        var repository = new CustomerRepository(dbContext);
+
+        var found = await repository.GetByIdAsync(customer.Id, CancellationToken.None);
+
+        found.Should().BeNull();
+    }
+
+    [Fact]
     public async Task GetPagedAsync_SoftDeletedCustomerSeeded_NeverAppearsInItemsOrTotalCount()
     {
         await using var seedContext = CreateDbContext();

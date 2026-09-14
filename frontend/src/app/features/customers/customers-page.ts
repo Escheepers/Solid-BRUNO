@@ -3,8 +3,8 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { debounceTime, distinctUntilChanged } from 'rxjs';
 
 import { Button } from '../../shared/button/button';
-import { ColumnDef, DataTable } from '../../shared/data-table/data-table';
-import { CreateCustomerModal } from './create-customer-modal';
+import { ColumnDef, DataTable, RowAction } from '../../shared/data-table/data-table';
+import { CustomerFormModal } from './customer-form-modal';
 import { dateFormatter } from './customer-formatters';
 import { useCustomersQuery } from './customers.service';
 import { Customer, toCustomer } from './models/customer';
@@ -13,25 +13,26 @@ const PAGE_SIZE = 20;
 const SEARCH_DEBOUNCE_MS = 300;
 
 /**
- * The Customers feature (Story 3.1's list + create): a debounced search input, a
- * paginated `DataTable`, and the two distinct empty-state messages required by
- * `EXPERIENCE.md` — mirrors `VehiclesPage`'s Story-1.7/2.1-era shape exactly (spec-3-1's
- * Code Map), not any of Vehicles' later per-row-action/show-inactive growth (Customer
- * has no such state yet). The search Signal is debounced via `toObservable` ->
+ * The Customers feature (Story 3.1's list + create, Story 3.2's edit): a debounced
+ * search input, a paginated `DataTable`, and the two distinct empty-state messages
+ * required by `EXPERIENCE.md` — mirrors `VehiclesPage`'s exact shape (spec-3-1's Code
+ * Map, extended by spec-3-2). The search Signal is debounced via `toObservable` ->
  * `debounceTime` -> `distinctUntilChanged` -> `toSignal` (no manual `setTimeout`) per
  * AD-3, and only the debounced value participates in the query key. `DataTable`'s
- * `actions`/`rowMuted`/`rowKey`/`rowError` inputs are all left at their defaults —
- * Customer has no row actions yet, so no bespoke per-row function is needed.
+ * `rowMuted`/`rowKey`/`rowError` inputs are left at their defaults — Customer has no
+ * active/inactive split yet (Story 3.4), so only `actions` (a single-entry "Edit" per
+ * row) is wired.
  */
 @Component({
   selector: 'app-customers-page',
-  imports: [DataTable, Button, CreateCustomerModal],
+  imports: [DataTable, Button, CustomerFormModal],
   templateUrl: './customers-page.html',
 })
 export class CustomersPage {
   protected readonly searchInput = signal('');
   protected readonly pageSize = PAGE_SIZE;
-  protected readonly isCreateModalOpen = signal(false);
+  protected readonly isFormModalOpen = signal(false);
+  protected readonly editingCustomer = signal<Customer | null>(null);
 
   protected readonly debouncedSearch = toSignal(
     toObservable(this.searchInput).pipe(debounceTime(SEARCH_DEBOUNCE_MS), distinctUntilChanged()),
@@ -61,6 +62,15 @@ export class CustomersPage {
     { header: 'Email', cell: (customer) => customer.email },
     { header: 'Phone Number', cell: (customer) => customer.phoneNumber },
     { header: 'Created', cell: (customer) => dateFormatter.format(customer.createdDate) },
+  ];
+
+  /**
+   * A single-entry array for every row (spec-3-2's Code Map) — Customer has no
+   * active/inactive split yet (unlike Vehicle's per-row branching, spec-2-4), so
+   * unlike `VehiclesPage.actions` there is nothing to branch on.
+   */
+  protected readonly actions = (customer: Customer): RowAction<Customer>[] => [
+    { label: 'Edit', onClick: (c) => this.openEditModal(c) },
   ];
 
   protected readonly customers = computed<Customer[]>(() => {
@@ -95,10 +105,16 @@ export class CustomersPage {
   }
 
   protected openCreateModal(): void {
-    this.isCreateModalOpen.set(true);
+    this.editingCustomer.set(null);
+    this.isFormModalOpen.set(true);
   }
 
-  protected onCreateModalClose(): void {
-    this.isCreateModalOpen.set(false);
+  protected openEditModal(customer: Customer): void {
+    this.editingCustomer.set(customer);
+    this.isFormModalOpen.set(true);
+  }
+
+  protected onFormModalClose(): void {
+    this.isFormModalOpen.set(false);
   }
 }

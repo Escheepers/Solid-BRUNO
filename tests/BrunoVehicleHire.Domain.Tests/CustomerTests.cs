@@ -104,6 +104,106 @@ public class CustomerTests
         Assert.Equal("not-an-email", customer.Email);
     }
 
+    private const string UpdatedFirstName = "John";
+    private const string UpdatedLastName = "Smith";
+    private const string UpdatedEmail = "john.smith@example.com";
+    private const string UpdatedPhoneNumber = "0839876543";
+
+    [Fact]
+    public void Update_WithValidInput_ChangesPropertiesAndLeavesIdCreatedDateIsDeletedAndIsAnonymizedUnchanged()
+    {
+        var fixedNow = new DateTimeOffset(2026, 9, 2, 10, 30, 0, TimeSpan.Zero);
+        var timeProvider = new FixedTimeProvider(fixedNow);
+        var customer = CreateValidCustomer(timeProvider);
+        var originalId = customer.Id;
+        var originalCreatedDate = customer.CreatedDate;
+
+        customer.Update(UpdatedFirstName, UpdatedLastName, UpdatedEmail, UpdatedPhoneNumber);
+
+        Assert.Equal(UpdatedFirstName, customer.FirstName);
+        Assert.Equal(UpdatedLastName, customer.LastName);
+        Assert.Equal(UpdatedEmail, customer.Email);
+        Assert.Equal(UpdatedPhoneNumber, customer.PhoneNumber);
+        Assert.Equal(originalId, customer.Id);
+        Assert.Equal(originalCreatedDate, customer.CreatedDate);
+        Assert.False(customer.IsDeleted);
+        Assert.False(customer.IsAnonymized);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void Update_WithBlankFirstName_ThrowsDomainRuleViolationException_AndLeavesCustomerUnchanged(string blank)
+    {
+        var customer = CreateValidCustomer();
+
+        var act = () => customer.Update(blank, UpdatedLastName, UpdatedEmail, UpdatedPhoneNumber);
+
+        Assert.Throws<DomainRuleViolationException>(act);
+        Assert.Equal(ValidFirstName, customer.FirstName);
+        Assert.Equal(ValidLastName, customer.LastName);
+        Assert.Equal(ValidEmail, customer.Email);
+        Assert.Equal(ValidPhoneNumber, customer.PhoneNumber);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void Update_WithBlankLastName_ThrowsDomainRuleViolationException_AndLeavesCustomerUnchanged(string blank)
+    {
+        var customer = CreateValidCustomer();
+
+        var act = () => customer.Update(UpdatedFirstName, blank, UpdatedEmail, UpdatedPhoneNumber);
+
+        Assert.Throws<DomainRuleViolationException>(act);
+        Assert.Equal(ValidFirstName, customer.FirstName);
+        Assert.Equal(ValidLastName, customer.LastName);
+        Assert.Equal(ValidEmail, customer.Email);
+        Assert.Equal(ValidPhoneNumber, customer.PhoneNumber);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void Update_WithBlankEmail_ThrowsDomainRuleViolationException_AndLeavesCustomerUnchanged(string blank)
+    {
+        var customer = CreateValidCustomer();
+
+        var act = () => customer.Update(UpdatedFirstName, UpdatedLastName, blank, UpdatedPhoneNumber);
+
+        Assert.Throws<DomainRuleViolationException>(act);
+        Assert.Equal(ValidFirstName, customer.FirstName);
+        Assert.Equal(ValidLastName, customer.LastName);
+        Assert.Equal(ValidEmail, customer.Email);
+        Assert.Equal(ValidPhoneNumber, customer.PhoneNumber);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void Update_WithBlankPhoneNumber_ThrowsDomainRuleViolationException_AndLeavesCustomerUnchanged(string blank)
+    {
+        var customer = CreateValidCustomer();
+
+        var act = () => customer.Update(UpdatedFirstName, UpdatedLastName, UpdatedEmail, blank);
+
+        Assert.Throws<DomainRuleViolationException>(act);
+        Assert.Equal(ValidFirstName, customer.FirstName);
+        Assert.Equal(ValidLastName, customer.LastName);
+        Assert.Equal(ValidEmail, customer.Email);
+        Assert.Equal(ValidPhoneNumber, customer.PhoneNumber);
+    }
+
+    [Fact]
+    public void Update_WithMalformedEmail_StillSucceeds_BecauseEmailFormatIsNotADomainInvariant()
+    {
+        var customer = CreateValidCustomer();
+
+        customer.Update(UpdatedFirstName, UpdatedLastName, "not-an-email", UpdatedPhoneNumber);
+
+        Assert.Equal("not-an-email", customer.Email);
+    }
+
     [Fact]
     public void Customer_HasNoPublicSetters()
     {

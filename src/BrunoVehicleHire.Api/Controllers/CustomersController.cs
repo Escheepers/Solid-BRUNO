@@ -38,4 +38,21 @@ public class CustomersController(ISender sender) : ControllerBase
 
         return Created($"/api/customers/{dto.Id}", dto);
     }
+
+    /// <summary>
+    /// The route id always wins over any <c>customerId</c> present in the request body (the resource
+    /// identity comes from the URL, the body describes the desired state) -- avoids a second
+    /// near-duplicate request DTO purely to split route-bound from body-bound fields. Mirrors
+    /// <c>VehiclesController.Update</c>'s exact shape.
+    /// </summary>
+    [HttpPut("{id:guid}")]
+    public async Task<IActionResult> Update(
+        Guid id,
+        [FromBody] UpdateCustomerCommand command,
+        CancellationToken cancellationToken)
+    {
+        var dto = await sender.Send(command with { CustomerId = id }, cancellationToken);
+
+        return Ok(dto);
+    }
 }

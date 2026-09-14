@@ -81,6 +81,29 @@ public class Customer
     }
 
     /// <summary>
+    /// Reassigns every mutable field, throwing <see cref="DomainRuleViolationException"/> if any
+    /// invariant is violated -- the exact same invariants <see cref="Create"/> enforces, via the
+    /// shared <see cref="ValidateInvariants"/> validator (DRY). On a thrown exception the customer is
+    /// left entirely unchanged (validation runs before any property is reassigned). No
+    /// <c>TimeProvider</c> parameter, unlike <c>Vehicle.Update()</c> -- Customer has no
+    /// time-dependent invariant to check (unlike Vehicle's Year), so accepting one here would be
+    /// an unused parameter kept only for superficial signature symmetry (YAGNI).
+    /// </summary>
+    public void Update(
+        string firstName,
+        string lastName,
+        string email,
+        string phoneNumber)
+    {
+        ValidateInvariants(firstName, lastName, email, phoneNumber);
+
+        FirstName = firstName;
+        LastName = lastName;
+        Email = email;
+        PhoneNumber = phoneNumber;
+    }
+
+    /// <summary>
     /// The single shared source of every Customer invariant, called by <see cref="Create"/>. Throws
     /// <see cref="DomainRuleViolationException"/> on the first violated invariant; never mutates any
     /// Customer instance itself.

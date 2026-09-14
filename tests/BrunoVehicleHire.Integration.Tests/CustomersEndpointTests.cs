@@ -86,6 +86,16 @@ public class CustomersEndpointTests : IAsyncLifetime
         return request;
     }
 
+    private HttpRequestMessage AuthenticatedPut(string path, object body)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Put, path)
+        {
+            Content = JsonContent.Create(body),
+        };
+        request.Headers.Add(ApiKeyDefaults.HeaderName, ConfiguredKey);
+        return request;
+    }
+
     private async Task SeedCustomersAsync(params Customer[] customers)
     {
         using var scope = _factory.Services.CreateScope();
@@ -356,5 +366,183 @@ public class CustomersEndpointTests : IAsyncLifetime
         rawEmail.Should().NotContain(plaintextEmail);
         rawPhoneNumber.Should().NotBe(plaintextPhoneNumber);
         rawPhoneNumber.Should().NotContain(plaintextPhoneNumber);
+    }
+
+    [Fact]
+    public async Task Put_ValidEdit_Returns200WithUpdatedDto_AndChangeIsRetrievableViaGet()
+    {
+        var customer = Customer.Create("Nomvula", "Mokoena", "nomvula@example.com", "0831111111");
+        await SeedCustomersAsync(customer);
+
+        using var request = AuthenticatedPut($"/api/customers/{customer.Id}", new
+        {
+            firstName = "Nomvula",
+            lastName = "Mokoena",
+            email = "nomvula@example.com",
+            phoneNumber = "0839999999",
+        });
+
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var json = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(json);
+
+        document.RootElement.GetProperty("id").GetGuid().Should().Be(customer.Id);
+        document.RootElement.GetProperty("phoneNumber").GetString().Should().Be("0839999999");
+
+        // Prove the write really committed -- a subsequent GET must see it too.
+        using var getRequest = AuthenticatedGet("/api/customers?page=1&pageSize=20&search=Nomvula");
+        var getResponse = await _client.SendAsync(getRequest);
+
+        var getJson = await getResponse.Content.ReadAsStringAsync();
+        using var getDocument = JsonDocument.Parse(getJson);
+
+        getDocument.RootElement.GetProperty("items")[0].GetProperty("phoneNumber").GetString()
+            .Should().Be("0839999999");
+    }
+
+    [Fact]
+    public async Task Put_DuplicateEmailAgainstADifferentCustomer_Returns409WithExactDetailMessage()
+    {
+        var otherCustomer = Customer.Create("Existing", "Customer", "existing@example.com", "0821112222");
+        var customerBeingEdited = Customer.Create("Another", "Person", "another@example.com", "0823334444");
+        await SeedCustomersAsync(otherCustomer, customerBeingEdited);
+
+        using var request = AuthenticatedPut($"/api/customers/{customerBeingEdited.Id}", new
+        {
+            firstName = "Another",
+            lastName = "Person",
+            email = "existing@example.com",
+            phoneNumber = "0823334444",
+        });
+
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+
+        var json = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(json);
+
+        document.RootElement.GetProperty("detail").GetString()
+            .Should().Be("This email address is already in use.");
+    }
+
+    [Fact]
+    public async Task Put_SubmittingCustomersOwnUnchangedEmail_Returns200NotConflict()
+    {
+        // Regression-proving row: the exclude-self check must not flag a customer's own current
+        // Email as a duplicate of itself.
+        var customer = Customer.Create("Sipho", "Ndlovu", "sipho@example.com", "0827778888");
+        await SeedCustomersAsync(customer);
+
+        using var request = AuthenticatedPut($"/api/customers/{customer.Id}", new
+        {
+            firstName = "Sipho",
+            lastName = "Ndlovu",
+            email = "sipho@example.com",
+            phoneNumber = "0829990000",
+        });
+
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var json = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(json);
+
+        document.RootElement.GetProperty("phoneNumber").GetString().Should().Be("0829990000");
+    }
+
+    [Fact]
+    public async Task Put_NonexistentCustomerId_Returns404()
+    {
+        var missingId = Guid.NewGuid();
+
+        using var request = AuthenticatedPut($"/api/customers/{missingId}", new
+        {
+            firstName = "Jane",
+            lastName = "Doe",
+            email = "jane.doe@example.com",
+            phoneNumber = "0821234567",
+        });
+
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task Put_BlankFirstName_Returns400WithFirstNameInErrors()
+    {
+        var customer = Customer.Create("Jane", "Doe", "jane.doe2@example.com", "0821234567");
+        await SeedCustomersAsync(customer);
+
+        using var request = AuthenticatedPut($"/api/customers/{customer.Id}", new
+        {
+            firstName = "   ",
+            lastName = "Doe",
+            email = "jane.doe2@example.com",
+            phoneNumber = "0821234567",
+        });
+
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        var json = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(json);
+
+        document.RootElement.GetProperty("errors").TryGetProperty("FirstName", out _).Should().BeTrue();
+    }
+
+    /// <summary>
+    /// The AC's own explicit, mandatory post-edit verification: after seeding a customer and
+    /// editing their PhoneNumber via a real HTTP PUT (going through the full pipeline, including the
+    /// Data Protection value converter), connect directly to Postgres with a raw
+    /// <see cref="NpgsqlConnection"/> -- completely bypassing EF Core -- and assert the raw
+    /// PhoneNumber column value is neither equal to, nor contains as a substring, the NEW plaintext
+    /// that was submitted. Mirrors <see cref="Post_ValidCommand_RawDatabaseRow_HasEncryptedEmailAndPhoneNumber_NotPlaintext"/>,
+    /// but for an Update rather than a Create -- proving encryption still applies after an edit, not
+    /// just on initial insert.
+    /// </summary>
+    [Fact]
+    public async Task Put_ValidEdit_RawDatabaseRow_HasNewEncryptedPhoneNumber_NotPlaintext()
+    {
+        var customer = Customer.Create("Raw", "Checker", "raw-edit-check@example.com", "0831112222");
+        await SeedCustomersAsync(customer);
+
+        const string newPlaintextPhoneNumber = "0839998877";
+
+        using var request = AuthenticatedPut($"/api/customers/{customer.Id}", new
+        {
+            firstName = "Raw",
+            lastName = "Checker",
+            email = "raw-edit-check@example.com",
+            phoneNumber = newPlaintextPhoneNumber,
+        });
+
+        var response = await _client.SendAsync(request);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        await using var connection = new NpgsqlConnection(_postgres.GetConnectionString());
+        await connection.OpenAsync();
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT "PhoneNumber"
+            FROM "Customers"
+            WHERE "Id" = @id
+            """;
+        command.Parameters.AddWithValue("id", customer.Id);
+
+        await using var reader = await command.ExecuteReaderAsync();
+        (await reader.ReadAsync()).Should().BeTrue();
+
+        var rawPhoneNumber = reader.GetString(0);
+
+        rawPhoneNumber.Should().NotBe(newPlaintextPhoneNumber);
+        rawPhoneNumber.Should().NotContain(newPlaintextPhoneNumber);
     }
 }

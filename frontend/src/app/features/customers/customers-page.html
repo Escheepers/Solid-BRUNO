@@ -32,9 +32,14 @@
       [page]="page()"
       [pageSize]="pageSize"
       [totalCount]="totalCount()"
+      [actions]="actions"
       (pageChange)="onPageChange($event)"
     />
   }
 
-  <app-create-customer-modal [open]="isCreateModalOpen()" (closeRequest)="onCreateModalClose()" />
+  <app-customer-form-modal
+    [open]="isFormModalOpen()"
+    [customer]="editingCustomer()"
+    (closeRequest)="onFormModalClose()"
+  />
 </div>

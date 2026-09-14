@@ -40,6 +40,18 @@ public interface ICustomerRepository
     Task<bool> ExistsByEmailAsync(string email, Guid? excludingId, CancellationToken cancellationToken);
 
     /// <summary>
+    /// Fetches a <see cref="Customer"/> by id, respecting the existing soft-delete query filter
+    /// (AD-13) -- consistent with every other read in this repository except the deliberately
+    /// unfiltered existence check above. Mirrors <c>IVehicleRepository.GetByIdAsync</c>'s exact
+    /// shape/reasoning. Customer has no soft-delete/restore yet (Story 3.4), so this is equivalent
+    /// to "any customer" today -- a <c>GetByIdIncludingSoftDeletedAsync</c> variant arrives only when
+    /// Story 3.4's Restore actually needs one (YAGNI, mirroring Vehicle's exact evolution). Returns
+    /// <c>null</c> when no matching row exists -- callers map that to a <c>NotFoundException</c>,
+    /// never a <c>NullReferenceException</c>.
+    /// </summary>
+    Task<Customer?> GetByIdAsync(Guid id, CancellationToken cancellationToken);
+
+    /// <summary>
     /// Queues a new <see cref="Customer"/> for insertion. Never calls <c>SaveChangesAsync</c> --
     /// the caller commits via <see cref="Common.IUnitOfWork"/> (AD-5).
     /// </summary>
