@@ -7,6 +7,7 @@ import { apiKeyInterceptor } from '../../core/api-client/api-key.interceptor';
 import { errorNormalizationInterceptor } from '../../core/api-client/error-normalization.interceptor';
 import { CustomerDto } from '../../core/models/customer-dto';
 import { PagedResult } from '../../core/models/paged-result';
+import { ToastService } from '../../shared/toast/toast.service';
 import { CustomersPage } from './customers-page';
 
 function customerDto(overrides: Partial<CustomerDto> = {}): CustomerDto {
@@ -44,6 +45,7 @@ describe('CustomersPage', () => {
   let fixture: ComponentFixture<CustomersPage>;
   let httpMock: HttpTestingController;
   let queryClient: QueryClient;
+  let toastService: ToastService;
 
   beforeEach(async () => {
     queryClient = new QueryClient({
@@ -61,6 +63,7 @@ describe('CustomersPage', () => {
 
     fixture = TestBed.createComponent(CustomersPage);
     httpMock = TestBed.inject(HttpTestingController);
+    toastService = TestBed.inject(ToastService);
   });
 
   afterEach(() => {
@@ -267,5 +270,110 @@ describe('CustomersPage', () => {
     fixture.detectChanges();
 
     expect(fixture.nativeElement.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  describe('delete row action', () => {
+    function alertDialog(): HTMLElement | null {
+      return fixture.nativeElement.querySelector('[role="alertdialog"]');
+    }
+
+    async function seedOneRowAndOpenDeleteDialog(): Promise<void> {
+      await settle();
+      expectCustomersRequest('').flush(
+        pagedResult([customerDto({ id: 'c9', firstName: 'Nomvula', email: 'nomvula@example.com' })]),
+      );
+      await settle();
+
+      const deleteButton = Array.from<HTMLButtonElement>(
+        fixture.nativeElement.querySelectorAll('tbody button'),
+      ).find((b) => b.textContent?.trim() === 'Delete');
+      expect(deleteButton).toBeTruthy();
+
+      deleteButton!.click();
+      fixture.detectChanges();
+    }
+
+    it('clicking "Delete" on a row opens the ConfirmDialog for that customer', async () => {
+      await seedOneRowAndOpenDeleteDialog();
+
+      const dialog = alertDialog();
+      expect(dialog).not.toBeNull();
+      expect(dialog!.textContent).toContain('Delete this customer?');
+      expect(dialog!.textContent).toContain(
+        'This will permanently delete this customer. This cannot be undone.',
+      );
+    });
+
+    it('cancelling closes the dialog and never calls the mutation', async () => {
+      await seedOneRowAndOpenDeleteDialog();
+
+      const cancelButton = Array.from<HTMLButtonElement>(
+        fixture.nativeElement.querySelectorAll('[role="alertdialog"] button'),
+      ).find((b) => b.textContent?.trim() === 'Cancel');
+      cancelButton!.click();
+      fixture.detectChanges();
+
+      expect(alertDialog()).toBeNull();
+      httpMock.expectNone((req) => req.url === '/api/customers/c9');
+    });
+
+    it('confirming calls the mutation and, on success, closes the dialog, toasts, and invalidates the list', async () => {
+      await seedOneRowAndOpenDeleteDialog();
+
+      const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+      const toastSpy = vi.spyOn(toastService, 'success');
+
+      const confirmButton = Array.from<HTMLButtonElement>(
+        fixture.nativeElement.querySelectorAll('[role="alertdialog"] button'),
+      ).find((b) => b.textContent?.trim() === 'Delete');
+      confirmButton!.click();
+      await settle();
+
+      const req = httpMock.expectOne('/api/customers/c9');
+      expect(req.request.method).toBe('DELETE');
+      req.flush(null, { status: 204, statusText: 'No Content' });
+      await settle();
+
+      // `invalidateQueries()` (called from `useHardDeleteCustomerMutation`'s own
+      // `onSuccess`) awaits the active list query's refetch before it resolves --
+      // mirrors `VehiclesPage`'s Deactivate test's exact ordering requirement.
+      expectCustomersRequest().flush(pagedResult([]));
+      await settle();
+
+      expect(alertDialog()).toBeNull();
+      expect(toastSpy).toHaveBeenCalledWith('Customer deleted.');
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['customers', 'list'] });
+    });
+
+    it('a failed (409, has bookings) delete keeps the dialog open and shows the exact message instead of the normal copy', async () => {
+      await seedOneRowAndOpenDeleteDialog();
+
+      const confirmButton = Array.from<HTMLButtonElement>(
+        fixture.nativeElement.querySelectorAll('[role="alertdialog"] button'),
+      ).find((b) => b.textContent?.trim() === 'Delete');
+      confirmButton!.click();
+      await settle();
+
+      const req = httpMock.expectOne('/api/customers/c9');
+      req.flush(
+        {
+          type: 'urn:bruno:customer:has-bookings',
+          title: 'A domain rule was violated.',
+          status: 409,
+          detail: 'This customer has bookings — deactivate or erase their data instead.',
+        },
+        { status: 409, statusText: 'Conflict' },
+      );
+      await settle();
+
+      const dialog = alertDialog();
+      expect(dialog).not.toBeNull();
+      expect(dialog!.textContent).not.toContain(
+        'This will permanently delete this customer. This cannot be undone.',
+      );
+      expect(dialog!.textContent).toContain(
+        'This customer has bookings — deactivate or erase their data instead.',
+      );
+    });
   });
 });

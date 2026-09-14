@@ -56,4 +56,13 @@ public interface ICustomerRepository
     /// the caller commits via <see cref="Common.IUnitOfWork"/> (AD-5).
     /// </summary>
     Task AddAsync(Customer customer, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Queues an existing <see cref="Customer"/> for genuine, permanent deletion (Story 3.3) -- the
+    /// first real hard delete anywhere in this repository layer; every prior delete has been a
+    /// soft-delete field flip via <c>Update</c>-style methods instead. Mirrors <see cref="AddAsync"/>'s
+    /// shape: never calls <c>SaveChangesAsync</c> -- the caller commits via
+    /// <see cref="Common.IUnitOfWork"/> (AD-5).
+    /// </summary>
+    Task RemoveAsync(Customer customer, CancellationToken cancellationToken);
 }

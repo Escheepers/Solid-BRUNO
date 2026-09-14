@@ -93,3 +93,22 @@ export function useUpdateCustomerMutation() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: CUSTOMERS_LIST_QUERY_KEY }),
   }));
 }
+
+/**
+ * Wraps `injectMutation` over `ApiClient.delete<void>('customers/{id}', ...)` -- added
+ * for Story 3.3's hard-delete flow. This is the app's first genuine `DELETE`
+ * (`ApiClient.delete<T>` takes no body, unlike `useDeactivateVehicleMutation`'s
+ * body-less `POST`), mirroring `useDeactivateVehicleMutation`'s shape otherwise: same
+ * `injectMutation<void, NormalizedApiError, string>` signature, same
+ * invalidate-on-success behaviour so the list re-fetches and the deleted customer
+ * disappears.
+ */
+export function useHardDeleteCustomerMutation() {
+  const apiClient = inject(ApiClient);
+  const queryClient = inject(QueryClient);
+
+  return injectMutation<void, NormalizedApiError, string>(() => ({
+    mutationFn: (customerId: string) => firstValueFrom(apiClient.delete<void>(`customers/${customerId}`)),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: CUSTOMERS_LIST_QUERY_KEY }),
+  }));
+}

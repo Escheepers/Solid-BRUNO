@@ -9,6 +9,7 @@ import { CustomerDto } from '../../core/models/customer-dto';
 import {
   useCreateCustomerMutation,
   useCustomersQuery,
+  useHardDeleteCustomerMutation,
   useUpdateCustomerMutation,
 } from './customers.service';
 
@@ -224,6 +225,58 @@ describe('useUpdateCustomerMutation', () => {
 
     const req = httpMock.expectOne('/api/customers/c42');
     req.flush(customerDto({ id: 'c42' }));
+    await flushMicrotasks();
+
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['customers', 'list'] });
+  });
+});
+
+describe('useHardDeleteCustomerMutation', () => {
+  let httpMock: HttpTestingController;
+  let queryClient: QueryClient;
+
+  beforeEach(() => {
+    queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+
+    TestBed.configureTestingModule({
+      providers: [
+        provideHttpClient(withInterceptors([apiKeyInterceptor, errorNormalizationInterceptor])),
+        provideHttpClientTesting(),
+        provideTanStackQuery(queryClient),
+      ],
+    });
+
+    httpMock = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => {
+    httpMock.verify();
+    TestBed.resetTestingModule();
+  });
+
+  it('DELETEs customers/{id}', async () => {
+    const mutation = TestBed.runInInjectionContext(() => useHardDeleteCustomerMutation());
+
+    mutation.mutate('c1');
+    await flushMicrotasks();
+
+    const req = httpMock.expectOne('/api/customers/c1');
+    expect(req.request.method).toBe('DELETE');
+
+    req.flush(null, { status: 204, statusText: 'No Content' });
+  });
+
+  it('invalidates the customers list query key on success', async () => {
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+    const mutation = TestBed.runInInjectionContext(() => useHardDeleteCustomerMutation());
+
+    mutation.mutate('c1');
+    await flushMicrotasks();
+
+    const req = httpMock.expectOne('/api/customers/c1');
+    req.flush(null, { status: 204, statusText: 'No Content' });
     await flushMicrotasks();
 
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['customers', 'list'] });

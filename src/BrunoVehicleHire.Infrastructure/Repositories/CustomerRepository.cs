@@ -78,4 +78,16 @@ public class CustomerRepository(AppDbContext dbContext) : ICustomerRepository
     {
         await dbContext.Customers.AddAsync(customer, cancellationToken);
     }
+
+    /// <summary>
+    /// Queues a genuine, permanent removal -- the first real hard delete anywhere in this repository
+    /// layer (Story 3.3). Deliberately synchronous under the hood (<c>DbSet.Remove</c> has no async
+    /// overload, mirroring <c>AddAsync</c>'s own use of an actually-async EF Core API where one
+    /// exists) -- still returns a <see cref="Task"/> to match this interface's shape.
+    /// </summary>
+    public Task RemoveAsync(Customer customer, CancellationToken cancellationToken)
+    {
+        dbContext.Customers.Remove(customer);
+        return Task.CompletedTask;
+    }
 }

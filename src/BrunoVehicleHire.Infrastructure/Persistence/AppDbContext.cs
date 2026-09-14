@@ -32,6 +32,8 @@ public class AppDbContext : DbContext
 
     public DbSet<Customer> Customers => Set<Customer>();
 
+    public DbSet<Booking> Bookings => Set<Booking>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -104,6 +106,48 @@ public class AppDbContext : DbContext
             // AD-13: mirrors Vehicle's exact query filter pattern. IsAnonymized customers stay in
             // default listings (per domain-model.md) -- this filter is deliberately IsDeleted-only.
             entity.HasQueryFilter(c => !c.IsDeleted);
+        });
+
+        // Booking (Story 3.3): the first enum and the first FK relationships anywhere in this
+        // schema. Booking has no navigation properties back to Vehicle/Customer (the minimal schema
+        // this story needs), so each FK is configured via HasOne<T>().WithMany().HasForeignKey(...)
+        // with no corresponding navigation -- EF Core's supported shape for a unidirectional,
+        // navigation-free relationship. No query filter here -- Booking has no IsDeleted concept.
+        modelBuilder.Entity<Booking>(entity =>
+        {
+            entity.ToTable("Bookings");
+
+            entity.HasKey(b => b.Id);
+
+            // DateOnly maps to Postgres' native "date" column automatically (EF Core 10 +
+            // Npgsql.EntityFrameworkCore.PostgreSQL 10) -- no explicit HasColumnType needed, unlike
+            // DailyRate/TotalPrice's decimal precision below.
+            entity.Property(b => b.TotalPrice)
+                .HasColumnType("numeric(18,2)");
+
+            // The first enum anywhere in this schema: stored as its string name, not its numeric
+            // ordinal, so the column stays human-readable and insertion-order-independent if the
+            // enum's members are ever reordered.
+            entity.Property(b => b.Status)
+                .HasConversion<string>();
+
+            // Postgres does not auto-index FK columns (unlike some other databases) -- routine
+            // schema hygiene, not scope creep. Restrict (not the EF Core default of Cascade)
+            // matches domain-model.md's cross-entity constraint that a Booking must never be
+            // silently orphaned or cascade-deleted out from under an existing Vehicle/Customer row.
+            entity.HasOne<Vehicle>()
+                .WithMany()
+                .HasForeignKey(b => b.VehicleId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne<Customer>()
+                .WithMany()
+                .HasForeignKey(b => b.CustomerId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(b => b.VehicleId);
+
+            entity.HasIndex(b => b.CustomerId);
         });
     }
 

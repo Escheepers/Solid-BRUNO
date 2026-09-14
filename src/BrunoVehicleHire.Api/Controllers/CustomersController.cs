@@ -55,4 +55,19 @@ public class CustomersController(ISender sender) : ControllerBase
 
         return Ok(dto);
     }
+
+    /// <summary>
+    /// Permanently, irreversibly removes the customer -- the app's first real hard delete (Story
+    /// 3.3), unlike Vehicle's <c>POST .../deactivate</c>. A genuine <c>DELETE</c> verb, anticipated
+    /// by Story 2.3's Design Notes ("keeps [HttpDelete] free in case Customers ever need genuine
+    /// verb-based REST semantics for something different"). Blocked with a 409 (mapped by
+    /// <see cref="ExceptionHandling.GlobalExceptionHandler"/>) if the customer has any bookings.
+    /// </summary>
+    [HttpDelete("{id:guid}")]
+    public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
+    {
+        await sender.Send(new HardDeleteCustomerCommand(id), cancellationToken);
+
+        return NoContent();
+    }
 }

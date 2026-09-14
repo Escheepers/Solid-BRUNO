@@ -96,11 +96,38 @@ public class CustomersEndpointTests : IAsyncLifetime
         return request;
     }
 
+    private HttpRequestMessage AuthenticatedDelete(string path)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Delete, path);
+        request.Headers.Add(ApiKeyDefaults.HeaderName, ConfiguredKey);
+        return request;
+    }
+
     private async Task SeedCustomersAsync(params Customer[] customers)
     {
         using var scope = _factory.Services.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         dbContext.Customers.AddRange(customers);
+        await dbContext.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// Seeds a real, FK-valid <see cref="Booking"/> referencing <paramref name="customer"/> --
+    /// Postgres rejects an orphaned FK reference (see <c>BookingMigrationTests</c>), so this first
+    /// creates and persists a real <see cref="Vehicle"/> row for the booking to reference too.
+    /// </summary>
+    private async Task SeedBookingForCustomerAsync(Customer customer)
+    {
+        using var scope = _factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var vehicle = Vehicle.Create("CA999999", "Toyota", "Corolla", 2023, 350m);
+        dbContext.Vehicles.Add(vehicle);
+
+        var booking = Booking.Create(
+            vehicle.Id, customer.Id, new DateOnly(2026, 10, 1), new DateOnly(2026, 10, 5), 1500m);
+        dbContext.Bookings.Add(booking);
+
         await dbContext.SaveChangesAsync();
     }
 
@@ -544,5 +571,65 @@ public class CustomersEndpointTests : IAsyncLifetime
 
         rawPhoneNumber.Should().NotBe(newPlaintextPhoneNumber);
         rawPhoneNumber.Should().NotContain(newPlaintextPhoneNumber);
+    }
+
+    [Fact]
+    public async Task Delete_CustomerWithNoBookings_Returns204_AndCustomerIsPermanentlyGone()
+    {
+        var customer = Customer.Create("Delete", "Me", "delete.me@example.com", "0821239999");
+        await SeedCustomersAsync(customer);
+
+        using var request = AuthenticatedDelete($"/api/customers/{customer.Id}");
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        // Prove the removal really committed -- a subsequent GET-list must no longer see it.
+        using var getRequest = AuthenticatedGet("/api/customers?page=1&pageSize=20&search=Delete");
+        var getResponse = await _client.SendAsync(getRequest);
+
+        var getJson = await getResponse.Content.ReadAsStringAsync();
+        using var getDocument = JsonDocument.Parse(getJson);
+
+        getDocument.RootElement.GetProperty("totalCount").GetInt32().Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Delete_CustomerWithAtLeastOneBooking_Returns409WithExactDetailMessage()
+    {
+        var customer = Customer.Create("Has", "Bookings", "has.bookings@example.com", "0821238888");
+        await SeedCustomersAsync(customer);
+        await SeedBookingForCustomerAsync(customer);
+
+        using var request = AuthenticatedDelete($"/api/customers/{customer.Id}");
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+
+        var json = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(json);
+
+        document.RootElement.GetProperty("detail").GetString()
+            .Should().Be("This customer has bookings — deactivate or erase their data instead.");
+
+        // Prove the customer was never removed despite the failed delete attempt.
+        using var getRequest = AuthenticatedGet("/api/customers?page=1&pageSize=20&search=Bookings");
+        var getResponse = await _client.SendAsync(getRequest);
+
+        var getJson = await getResponse.Content.ReadAsStringAsync();
+        using var getDocument = JsonDocument.Parse(getJson);
+
+        getDocument.RootElement.GetProperty("totalCount").GetInt32().Should().Be(1);
+    }
+
+    [Fact]
+    public async Task Delete_NonexistentCustomerId_Returns404()
+    {
+        var missingId = Guid.NewGuid();
+
+        using var request = AuthenticatedDelete($"/api/customers/{missingId}");
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 }

@@ -1,5 +1,6 @@
 using BrunoVehicleHire.Api.Auth;
 using BrunoVehicleHire.Api.ExceptionHandling;
+using BrunoVehicleHire.Application.Bookings;
 using BrunoVehicleHire.Application.Common;
 using BrunoVehicleHire.Application.Customers;
 using BrunoVehicleHire.Application.Vehicles;
@@ -56,6 +57,7 @@ builder.Services.AddValidatorsFromAssembly(typeof(GetVehiclesQuery).Assembly);
 
 builder.Services.AddScoped<IVehicleRepository, VehicleRepository>();
 builder.Services.AddScoped<ICustomerRepository, CustomerRepository>();
+builder.Services.AddScoped<IBookingRepository, BookingRepository>();
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 
 // Swashbuckle: declares the ApiKey header security scheme + a global security requirement so

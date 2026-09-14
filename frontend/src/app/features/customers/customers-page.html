@@ -42,4 +42,14 @@
     [customer]="editingCustomer()"
     (closeRequest)="onFormModalClose()"
   />
+
+  <app-confirm-dialog
+    [open]="deletingCustomer() !== null"
+    title="Delete this customer?"
+    [message]="deleteDialogMessage()"
+    confirmLabel="Delete"
+    cancelLabel="Cancel"
+    (confirm)="onConfirmDelete()"
+    (cancel)="onCancelDelete()"
+  />
 </div>
