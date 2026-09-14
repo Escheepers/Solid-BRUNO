@@ -9,19 +9,26 @@ namespace BrunoVehicleHire.Application.Customers;
 /// shapes would invert that dependency direction. No method here ever calls
 /// <c>SaveChangesAsync</c> -- that is <see cref="Common.IUnitOfWork"/>'s sole responsibility (AD-5),
 /// called exactly once by the handler after every repository call for that request has queued its
-/// change. Deliberately mirrors <c>IVehicleRepository</c>'s shape, minus every member Story 3.1 has
-/// no use for yet (no GetById/Update/SoftDelete/Restore -- those arrive in Stories 3.2+, YAGNI).
+/// change. Deliberately mirrors <c>IVehicleRepository</c>'s shape, minus every member earlier
+/// Customer stories had no use for yet (YAGNI); <c>GetByIdIncludingSoftDeletedAsync</c> and
+/// <c>GetPagedAsync</c>'s <c>includeInactive</c> parameter arrive in Story 3.4, mirroring
+/// <c>IVehicleRepository</c>'s exact Story-2.4 addition.
 /// </summary>
 public interface ICustomerRepository
 {
     /// <summary>
     /// Search matches FirstName/LastName ONLY -- Email/PhoneNumber are encrypted at rest, and
     /// pattern-matching ciphertext is meaningless (see spec-3-1's Scope decision 2).
+    /// <paramref name="includeInactive"/>, when true, ignores the soft-delete query filter for this
+    /// call only (the Customers list's "show inactive" toggle -- Story 3.4) -- every other read in
+    /// this repository stays filtered. Mirrors <c>IVehicleRepository.GetPagedAsync</c>'s exact
+    /// Story-2.4 addition.
     /// </summary>
     Task<(IReadOnlyList<Customer> Items, int TotalCount)> GetPagedAsync(
         int page,
         int pageSize,
         string? search,
+        bool includeInactive,
         CancellationToken cancellationToken);
 
     /// <summary>
@@ -43,13 +50,22 @@ public interface ICustomerRepository
     /// Fetches a <see cref="Customer"/> by id, respecting the existing soft-delete query filter
     /// (AD-13) -- consistent with every other read in this repository except the deliberately
     /// unfiltered existence check above. Mirrors <c>IVehicleRepository.GetByIdAsync</c>'s exact
-    /// shape/reasoning. Customer has no soft-delete/restore yet (Story 3.4), so this is equivalent
-    /// to "any customer" today -- a <c>GetByIdIncludingSoftDeletedAsync</c> variant arrives only when
-    /// Story 3.4's Restore actually needs one (YAGNI, mirroring Vehicle's exact evolution). Returns
-    /// <c>null</c> when no matching row exists -- callers map that to a <c>NotFoundException</c>,
-    /// never a <c>NullReferenceException</c>.
+    /// shape/reasoning. A soft-deleted customer is therefore treated as not found here --
+    /// <see cref="Commands.SoftDeleteCustomerCommandHandler"/> relies on exactly that so a second
+    /// deactivate attempt 404s instead of silently double-processing. Returns <c>null</c> when no
+    /// matching row exists -- callers map that to a <c>NotFoundException</c>, never a
+    /// <c>NullReferenceException</c>.
     /// </summary>
     Task<Customer?> GetByIdAsync(Guid id, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Fetches a <see cref="Customer"/> by id, deliberately IGNORING the soft-delete query filter
+    /// (Story 3.4) -- <see cref="Commands.RestoreCustomerCommandHandler"/>'s whole point is finding a
+    /// currently-soft-deleted row, which <see cref="GetByIdAsync"/> would incorrectly treat as not
+    /// found. Mirrors <c>IVehicleRepository.GetByIdIncludingSoftDeletedAsync</c>'s exact Story-2.4
+    /// addition. Returns <c>null</c> only when no row with this id exists at all (deleted or not).
+    /// </summary>
+    Task<Customer?> GetByIdIncludingSoftDeletedAsync(Guid id, CancellationToken cancellationToken);
 
     /// <summary>
     /// Queues a new <see cref="Customer"/> for insertion. Never calls <c>SaveChangesAsync</c> --

@@ -17,7 +17,7 @@ public class GetCustomersQueryHandler(ICustomerRepository repository)
     public async Task<PagedResult<CustomerDto>> Handle(GetCustomersQuery request, CancellationToken cancellationToken)
     {
         var (items, totalCount) = await repository.GetPagedAsync(
-            request.Page, request.PageSize, request.Search, cancellationToken);
+            request.Page, request.PageSize, request.Search, request.IncludeInactive, cancellationToken);
 
         var dtos = items
             .Select(CustomerDto.FromDomain)

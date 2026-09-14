@@ -96,6 +96,13 @@ public class CustomersEndpointTests : IAsyncLifetime
         return request;
     }
 
+    private HttpRequestMessage AuthenticatedPost(string path)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, path);
+        request.Headers.Add(ApiKeyDefaults.HeaderName, ConfiguredKey);
+        return request;
+    }
+
     private HttpRequestMessage AuthenticatedDelete(string path)
     {
         var request = new HttpRequestMessage(HttpMethod.Delete, path);
@@ -628,6 +635,234 @@ public class CustomersEndpointTests : IAsyncLifetime
         var missingId = Guid.NewGuid();
 
         using var request = AuthenticatedDelete($"/api/customers/{missingId}");
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task Deactivate_ActiveCustomer_Returns204_AndCustomerDisappearsFromDefaultList()
+    {
+        var customer = Customer.Create("Deactivate", "Me", "deactivate.me@example.com", "0821112233");
+        await SeedCustomersAsync(customer);
+
+        using var request = AuthenticatedPost($"/api/customers/{customer.Id}/deactivate");
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        // Prove the write really committed -- a subsequent GET must no longer see it.
+        using var getRequest = AuthenticatedGet("/api/customers?page=1&pageSize=20&search=Deactivate");
+        var getResponse = await _client.SendAsync(getRequest);
+
+        var getJson = await getResponse.Content.ReadAsStringAsync();
+        using var getDocument = JsonDocument.Parse(getJson);
+
+        getDocument.RootElement.GetProperty("totalCount").GetInt32().Should().Be(0);
+        getDocument.RootElement.GetProperty("items").GetArrayLength().Should().Be(0);
+
+        using var verifyScope = _factory.Services.CreateScope();
+        var dbContext = verifyScope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var isDeleted = await dbContext.Customers
+            .IgnoreQueryFilters()
+            .Where(c => c.Id == customer.Id)
+            .Select(c => c.IsDeleted)
+            .SingleAsync();
+        isDeleted.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Deactivate_NonexistentCustomerId_Returns404()
+    {
+        var missingId = Guid.NewGuid();
+
+        using var request = AuthenticatedPost($"/api/customers/{missingId}/deactivate");
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task Deactivate_AlreadyDeactivatedCustomer_Returns404NotSilent204()
+    {
+        // Idempotency-adjacent: the query filter already excludes a soft-deleted customer, so a
+        // second deactivate attempt on the same customer must 404, not silently succeed again.
+        var customer = Customer.Create("Already", "Deactivated", "already.deactivated@example.com", "0821114444");
+        customer.SoftDelete();
+        await SeedCustomersAsync(customer);
+
+        using var request = AuthenticatedPost($"/api/customers/{customer.Id}/deactivate");
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    /// <summary>
+    /// Mandatory proof (spec-3-4's Critical correctness requirement 4): deactivating a customer must
+    /// NEVER re-encrypt or otherwise touch the Email/PhoneNumber columns -- <c>SoftDelete()</c> only
+    /// flips <c>IsDeleted</c>, and no <c>SaveChanges</c> during a deactivate touches those columns at
+    /// all. Captures the raw ciphertext via <see cref="NpgsqlConnection"/> (mirrors
+    /// <see cref="Post_ValidCommand_RawDatabaseRow_HasEncryptedEmailAndPhoneNumber_NotPlaintext"/>'s
+    /// technique) BEFORE deactivating, then again AFTER, and asserts the two are byte-identical --
+    /// the strongest possible proof, since re-encrypting the same plaintext would almost certainly
+    /// produce different ciphertext (Data Protection's non-deterministic IV).
+    /// </summary>
+    [Fact]
+    public async Task Deactivate_DoesNotTouchEncryptedPiiColumns_CiphertextIsByteIdenticalBeforeAndAfter()
+    {
+        var customer = Customer.Create("Pii", "Untouched", "pii.untouched@example.com", "0821115555");
+        await SeedCustomersAsync(customer);
+
+        async Task<(string Email, string PhoneNumber)> ReadRawRowAsync()
+        {
+            await using var connection = new NpgsqlConnection(_postgres.GetConnectionString());
+            await connection.OpenAsync();
+
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                SELECT "Email", "PhoneNumber"
+                FROM "Customers"
+                WHERE "Id" = @id
+                """;
+            command.Parameters.AddWithValue("id", customer.Id);
+
+            await using var reader = await command.ExecuteReaderAsync();
+            (await reader.ReadAsync()).Should().BeTrue();
+
+            return (reader.GetString(0), reader.GetString(1));
+        }
+
+        var beforeDeactivate = await ReadRawRowAsync();
+
+        using var request = AuthenticatedPost($"/api/customers/{customer.Id}/deactivate");
+        var response = await _client.SendAsync(request);
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        var afterDeactivate = await ReadRawRowAsync();
+
+        afterDeactivate.Email.Should().Be(beforeDeactivate.Email);
+        afterDeactivate.PhoneNumber.Should().Be(beforeDeactivate.PhoneNumber);
+        afterDeactivate.Email.Should().NotBe("pii.untouched@example.com");
+        afterDeactivate.PhoneNumber.Should().NotBe("0821115555");
+    }
+
+    [Fact]
+    public async Task Get_ShowInactiveTrue_ReturnsBothActiveAndSoftDeletedCustomers_WithIsDeletedFlag()
+    {
+        var activeCustomer = Customer.Create("Active", "Customer", "active.customer@example.com", "0821116666");
+        var deletedCustomer = Customer.Create("Deleted", "Customer", "deleted.customer@example.com", "0821117777");
+        deletedCustomer.SoftDelete();
+
+        await SeedCustomersAsync(activeCustomer, deletedCustomer);
+
+        using var request = AuthenticatedGet("/api/customers?page=1&pageSize=20&showInactive=true");
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var json = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(json);
+
+        document.RootElement.GetProperty("totalCount").GetInt32().Should().Be(2);
+        var items = document.RootElement.GetProperty("items").EnumerateArray().ToList();
+        items.Should().HaveCount(2);
+
+        var deletedItem = items.Single(item => item.GetProperty("lastName").GetString() == "Customer"
+            && item.GetProperty("firstName").GetString() == "Deleted");
+        deletedItem.GetProperty("isDeleted").GetBoolean().Should().BeTrue();
+
+        var activeItem = items.Single(item => item.GetProperty("firstName").GetString() == "Active");
+        activeItem.GetProperty("isDeleted").GetBoolean().Should().BeFalse();
+
+        // The DTO's Email is decrypted plaintext (EF's value converter decrypts on read) -- the
+        // showInactive=true path still returns the correct, fully-usable customer record, not a
+        // broken/partial one. The raw-ciphertext proof lives in the dedicated
+        // Deactivate_DoesNotTouchEncryptedPiiColumns test below, which reads the column directly.
+        deletedItem.GetProperty("email").GetString().Should().Be("deleted.customer@example.com");
+    }
+
+    [Fact]
+    public async Task Get_ShowInactiveOmittedOrFalse_StillExcludesSoftDeletedCustomers()
+    {
+        // Regression: the default (Story 3.1) behavior must stay exactly as before.
+        var activeCustomer = Customer.Create("StillActive", "One", "stillactive.one@example.com", "0821118888");
+        var deletedCustomer = Customer.Create("StillActive", "Two", "stillactive.two@example.com", "0821119999");
+        deletedCustomer.SoftDelete();
+
+        await SeedCustomersAsync(activeCustomer, deletedCustomer);
+
+        using var omittedRequest = AuthenticatedGet("/api/customers?page=1&pageSize=20&search=StillActive");
+        var omittedResponse = await _client.SendAsync(omittedRequest);
+        var omittedJson = await omittedResponse.Content.ReadAsStringAsync();
+        using var omittedDocument = JsonDocument.Parse(omittedJson);
+
+        omittedDocument.RootElement.GetProperty("totalCount").GetInt32().Should().Be(1);
+        omittedDocument.RootElement.GetProperty("items")[0].GetProperty("lastName").GetString()
+            .Should().Be("One");
+
+        using var explicitFalseRequest =
+            AuthenticatedGet("/api/customers?page=1&pageSize=20&search=StillActive&showInactive=false");
+        var explicitFalseResponse = await _client.SendAsync(explicitFalseRequest);
+        var explicitFalseJson = await explicitFalseResponse.Content.ReadAsStringAsync();
+        using var explicitFalseDocument = JsonDocument.Parse(explicitFalseJson);
+
+        explicitFalseDocument.RootElement.GetProperty("totalCount").GetInt32().Should().Be(1);
+    }
+
+    [Fact]
+    public async Task Restore_SoftDeletedCustomer_Returns204_AndReappearsInDefaultListing()
+    {
+        var customer = Customer.Create("Restore", "Me", "restore.me@example.com", "0821221111");
+        customer.SoftDelete();
+        await SeedCustomersAsync(customer);
+
+        using var restoreRequest = AuthenticatedPost($"/api/customers/{customer.Id}/restore");
+        var restoreResponse = await _client.SendAsync(restoreRequest);
+
+        restoreResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        using var inactiveGetRequest =
+            AuthenticatedGet("/api/customers?page=1&pageSize=20&showInactive=true&search=Restore");
+        var inactiveGetResponse = await _client.SendAsync(inactiveGetRequest);
+        var inactiveJson = await inactiveGetResponse.Content.ReadAsStringAsync();
+        using var inactiveDocument = JsonDocument.Parse(inactiveJson);
+
+        inactiveDocument.RootElement.GetProperty("items")[0].GetProperty("isDeleted").GetBoolean()
+            .Should().BeFalse();
+
+        using var defaultGetRequest = AuthenticatedGet("/api/customers?page=1&pageSize=20&search=Restore");
+        var defaultGetResponse = await _client.SendAsync(defaultGetRequest);
+        var defaultJson = await defaultGetResponse.Content.ReadAsStringAsync();
+        using var defaultDocument = JsonDocument.Parse(defaultJson);
+
+        defaultDocument.RootElement.GetProperty("totalCount").GetInt32().Should().Be(1);
+        defaultDocument.RootElement.GetProperty("items")[0].GetProperty("lastName").GetString()
+            .Should().Be("Me");
+    }
+
+    [Fact]
+    public async Task Restore_AlreadyActiveCustomer_Returns409WithExactDetailMessage()
+    {
+        var customer = Customer.Create("Already", "Active", "already.active@example.com", "0821222222");
+        await SeedCustomersAsync(customer);
+
+        using var request = AuthenticatedPost($"/api/customers/{customer.Id}/restore");
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+
+        var json = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(json);
+
+        document.RootElement.GetProperty("detail").GetString().Should().Be("Already active.");
+    }
+
+    [Fact]
+    public async Task Restore_NonexistentCustomerId_Returns404()
+    {
+        var missingId = Guid.NewGuid();
+
+        using var request = AuthenticatedPost($"/api/customers/{missingId}/restore");
         var response = await _client.SendAsync(request);
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);

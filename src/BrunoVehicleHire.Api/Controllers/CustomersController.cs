@@ -22,9 +22,11 @@ public class CustomersController(ISender sender) : ControllerBase
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
         [FromQuery] string? search = null,
+        [FromQuery] bool showInactive = false,
         CancellationToken cancellationToken = default)
     {
-        var result = await sender.Send(new GetCustomersQuery(page, pageSize, search), cancellationToken);
+        var result = await sender.Send(
+            new GetCustomersQuery(page, pageSize, search, showInactive), cancellationToken);
 
         return Ok(result);
     }
@@ -67,6 +69,34 @@ public class CustomersController(ISender sender) : ControllerBase
     public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
     {
         await sender.Send(new HardDeleteCustomerCommand(id), cancellationToken);
+
+        return NoContent();
+    }
+
+    /// <summary>
+    /// Soft-deletes ("deactivates") the customer -- a distinct action-named route rather than
+    /// overloading <c>DELETE</c>, since <c>DELETE</c> is already Customer's genuine hard-delete
+    /// (Story 3.3). Mirrors <c>VehiclesController.Deactivate</c>'s exact shape.
+    /// </summary>
+    [HttpPost("{id:guid}/deactivate")]
+    public async Task<IActionResult> Deactivate(Guid id, CancellationToken cancellationToken)
+    {
+        await sender.Send(new SoftDeleteCustomerCommand(id), cancellationToken);
+
+        return NoContent();
+    }
+
+    /// <summary>
+    /// Restores a soft-deleted customer -- the reverse of <see cref="Deactivate"/>. Unlike
+    /// <c>SoftDelete</c>, this is deliberately non-idempotent: restoring an already-active customer
+    /// throws <see cref="Domain.Exceptions.DomainRuleViolationException"/>, mapped to a 409 by
+    /// <see cref="ExceptionHandling.GlobalExceptionHandler"/>. Mirrors <c>VehiclesController.Restore</c>'s
+    /// exact shape.
+    /// </summary>
+    [HttpPost("{id:guid}/restore")]
+    public async Task<IActionResult> Restore(Guid id, CancellationToken cancellationToken)
+    {
+        await sender.Send(new RestoreCustomerCommand(id), cancellationToken);
 
         return NoContent();
     }

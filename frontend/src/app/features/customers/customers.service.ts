@@ -11,6 +11,7 @@ export interface CustomersQueryParams {
   page: number;
   pageSize: number;
   search: string;
+  showInactive: boolean;
 }
 
 export interface CreateCustomerPayload {
@@ -30,23 +31,29 @@ export const CUSTOMERS_LIST_QUERY_KEY = ['customers', 'list'] as const;
 
 /**
  * Wraps `injectQuery` over `ApiClient.get<PagedResult<CustomerDto>>('customers', ...)`,
- * mirroring `useVehiclesQuery`'s exact shape (spec-1-7/spec-2-1). Query-key convention
- * (AD-3): `['customers', 'list', { page, pageSize, search }]` — no `showInactive`
- * param, Customer doesn't have that yet. `params` is a function (not a plain object)
- * so `injectQuery`'s reactive context re-runs the query whenever any Signal it reads
- * (page/pageSize/search) changes.
+ * mirroring `useVehiclesQuery`'s exact shape (spec-1-7/spec-2-1, extended by spec-3-4's
+ * `showInactive` param). Query-key convention (AD-3):
+ * `['customers', 'list', { page, pageSize, search, showInactive }]` — exact, so cache
+ * entries are keyed identically across every consumer of this query. `params` is a
+ * function (not a plain object) so `injectQuery`'s reactive context re-runs the query
+ * whenever any Signal it reads (page/pageSize/search/showInactive) changes.
  */
 export function useCustomersQuery(params: () => CustomersQueryParams) {
   const apiClient = inject(ApiClient);
 
   return injectQuery(() => {
-    const { page, pageSize, search } = params();
+    const { page, pageSize, search, showInactive } = params();
 
     return {
-      queryKey: ['customers', 'list', { page, pageSize, search }] as const,
+      queryKey: ['customers', 'list', { page, pageSize, search, showInactive }] as const,
       queryFn: () =>
         firstValueFrom(
-          apiClient.get<PagedResult<CustomerDto>>('customers', { page, pageSize, search }),
+          apiClient.get<PagedResult<CustomerDto>>('customers', {
+            page,
+            pageSize,
+            search,
+            showInactive,
+          }),
         ),
     };
   });
@@ -109,6 +116,45 @@ export function useHardDeleteCustomerMutation() {
 
   return injectMutation<void, NormalizedApiError, string>(() => ({
     mutationFn: (customerId: string) => firstValueFrom(apiClient.delete<void>(`customers/${customerId}`)),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: CUSTOMERS_LIST_QUERY_KEY }),
+  }));
+}
+
+/**
+ * Wraps `injectMutation` over `ApiClient.post('customers/{id}/deactivate', ...)` --
+ * added for Story 3.4's Deactivate flow, mirroring `useDeactivateVehicleMutation`'s
+ * exact shape. `ApiClient.post<T, B>` requires a body argument, so `undefined` is
+ * passed explicitly for this body-less action. On success, invalidates
+ * `['customers', 'list']` (AD-3) so the list re-fetches and the deactivated customer
+ * disappears from the default (non-`showInactive`) view.
+ */
+export function useDeactivateCustomerMutation() {
+  const apiClient = inject(ApiClient);
+  const queryClient = inject(QueryClient);
+
+  return injectMutation<void, NormalizedApiError, string>(() => ({
+    mutationFn: (customerId: string) =>
+      firstValueFrom(
+        apiClient.post<void, undefined>(`customers/${customerId}/deactivate`, undefined),
+      ),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: CUSTOMERS_LIST_QUERY_KEY }),
+  }));
+}
+
+/**
+ * Wraps `injectMutation` over `ApiClient.post('customers/{id}/restore', ...)` --
+ * mirrors `useDeactivateCustomerMutation`'s exact pattern (same body-less POST /
+ * invalidate-on-success shape), added for Story 3.4's Restore flow. On success,
+ * invalidates `['customers', 'list']` (AD-3) so both the default and "show inactive"
+ * views re-fetch and the restored customer moves accordingly.
+ */
+export function useRestoreCustomerMutation() {
+  const apiClient = inject(ApiClient);
+  const queryClient = inject(QueryClient);
+
+  return injectMutation<void, NormalizedApiError, string>(() => ({
+    mutationFn: (customerId: string) =>
+      firstValueFrom(apiClient.post<void, undefined>(`customers/${customerId}/restore`, undefined)),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: CUSTOMERS_LIST_QUERY_KEY }),
   }));
 }

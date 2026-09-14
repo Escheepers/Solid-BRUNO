@@ -121,7 +121,7 @@ public class CustomerRepositoryTests : IAsyncLifetime
         await repository.AddAsync(CreateValidCustomer(email: "added@example.com"), CancellationToken.None);
         await dbContext.SaveChangesAsync();
 
-        var (items, totalCount) = await repository.GetPagedAsync(1, 20, search: null, CancellationToken.None);
+        var (items, totalCount) = await repository.GetPagedAsync(1, 20, search: null, includeInactive: false, CancellationToken.None);
 
         totalCount.Should().Be(1);
         items.Should().ContainSingle(c => c.Email == "added@example.com");
@@ -140,7 +140,7 @@ public class CustomerRepositoryTests : IAsyncLifetime
         await using var dbContext = CreateDbContext();
         var repository = new CustomerRepository(dbContext);
 
-        var (items, totalCount) = await repository.GetPagedAsync(1, 20, search: "ali", CancellationToken.None);
+        var (items, totalCount) = await repository.GetPagedAsync(1, 20, search: "ali", includeInactive: false, CancellationToken.None);
 
         totalCount.Should().Be(2);
         items.Select(c => c.Email).Should().BeEquivalentTo("alice@example.com", "bob@example.com");
@@ -162,9 +162,9 @@ public class CustomerRepositoryTests : IAsyncLifetime
         // encrypted fields) matches. Use "example.com" (only in Email) and "9998888" (only in
         // PhoneNumber) to prove neither is searched.
         var (byEmailFragment, emailTotal) =
-            await repository.GetPagedAsync(1, 20, search: "example.com", CancellationToken.None);
+            await repository.GetPagedAsync(1, 20, search: "example.com", includeInactive: false, CancellationToken.None);
         var (byPhoneFragment, phoneTotal) =
-            await repository.GetPagedAsync(1, 20, search: "9998888", CancellationToken.None);
+            await repository.GetPagedAsync(1, 20, search: "9998888", includeInactive: false, CancellationToken.None);
 
         emailTotal.Should().Be(0);
         byEmailFragment.Should().BeEmpty();
@@ -208,11 +208,8 @@ public class CustomerRepositoryTests : IAsyncLifetime
         var customer = CreateValidCustomer(email: "deleted@example.com");
         seedContext.Customers.Add(customer);
         await seedContext.SaveChangesAsync();
-
-        // No SoftDelete() method exists yet (YAGNI -- Stories 3.4+); directly flip the flag via raw
-        // SQL, mirroring GetPagedAsync's own soft-delete test above.
-        await seedContext.Database.ExecuteSqlInterpolatedAsync(
-            $"UPDATE \"Customers\" SET \"IsDeleted\" = true WHERE \"Id\" = {customer.Id}");
+        customer.SoftDelete();
+        await seedContext.SaveChangesAsync();
 
         await using var dbContext = CreateDbContext();
         var repository = new CustomerRepository(dbContext);
@@ -229,19 +226,76 @@ public class CustomerRepositoryTests : IAsyncLifetime
         var activeCustomer = CreateValidCustomer(firstName: "Eve", lastName: "Evans", email: "eve@example.com");
         seedContext.Customers.Add(activeCustomer);
         await seedContext.SaveChangesAsync();
-
-        // No SoftDelete() method exists yet (YAGNI -- Story 3.2+); directly flip the flag via raw
-        // SQL to prove the query filter, mirroring how this story's own I/O matrix only requires
-        // "!IsDeleted" filtering to exist, not a way to set it via the domain yet.
-        await seedContext.Database.ExecuteSqlInterpolatedAsync(
-            $"UPDATE \"Customers\" SET \"IsDeleted\" = true WHERE \"Id\" = {activeCustomer.Id}");
+        activeCustomer.SoftDelete();
+        await seedContext.SaveChangesAsync();
 
         await using var dbContext = CreateDbContext();
         var repository = new CustomerRepository(dbContext);
 
-        var (items, totalCount) = await repository.GetPagedAsync(1, 20, search: null, CancellationToken.None);
+        var (items, totalCount) = await repository.GetPagedAsync(1, 20, search: null, includeInactive: false, CancellationToken.None);
 
         totalCount.Should().Be(0);
         items.Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// Proves <c>GetPagedAsync</c>'s <c>includeInactive: true</c> ignores the soft-delete query
+    /// filter (Story 3.4) -- mirrors <c>VehicleRepository</c>'s exact Story-2.4 behavior.
+    /// </summary>
+    [Fact]
+    public async Task GetPagedAsync_IncludeInactiveTrue_ReturnsBothActiveAndSoftDeletedCustomers()
+    {
+        await using var seedContext = CreateDbContext();
+        var activeCustomer = CreateValidCustomer(firstName: "Frank", lastName: "Foster", email: "frank@example.com");
+        var deletedCustomer = CreateValidCustomer(firstName: "Grace", lastName: "Green", email: "grace@example.com");
+        seedContext.Customers.AddRange(activeCustomer, deletedCustomer);
+        await seedContext.SaveChangesAsync();
+        deletedCustomer.SoftDelete();
+        await seedContext.SaveChangesAsync();
+
+        await using var dbContext = CreateDbContext();
+        var repository = new CustomerRepository(dbContext);
+
+        var (items, totalCount) = await repository.GetPagedAsync(1, 20, search: null, includeInactive: true, CancellationToken.None);
+
+        totalCount.Should().Be(2);
+        items.Select(c => c.Email).Should().BeEquivalentTo("frank@example.com", "grace@example.com");
+    }
+
+    /// <summary>
+    /// Proves <c>GetByIdIncludingSoftDeletedAsync</c> finds a soft-deleted customer that
+    /// <c>GetByIdAsync</c>'s filtered query would incorrectly treat as not found -- mirrors
+    /// <c>VehicleRepository</c>'s exact Story-2.4 behavior; <c>RestoreCustomerCommandHandler</c>
+    /// relies on exactly this.
+    /// </summary>
+    [Fact]
+    public async Task GetByIdIncludingSoftDeletedAsync_SoftDeletedCustomer_StillReturnsIt()
+    {
+        await using var seedContext = CreateDbContext();
+        var customer = CreateValidCustomer(email: "restoreme@example.com");
+        seedContext.Customers.Add(customer);
+        await seedContext.SaveChangesAsync();
+        customer.SoftDelete();
+        await seedContext.SaveChangesAsync();
+
+        await using var dbContext = CreateDbContext();
+        var repository = new CustomerRepository(dbContext);
+
+        var found = await repository.GetByIdIncludingSoftDeletedAsync(customer.Id, CancellationToken.None);
+
+        found.Should().NotBeNull();
+        found!.Id.Should().Be(customer.Id);
+        found.IsDeleted.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task GetByIdIncludingSoftDeletedAsync_NonexistentId_ReturnsNull()
+    {
+        await using var dbContext = CreateDbContext();
+        var repository = new CustomerRepository(dbContext);
+
+        var found = await repository.GetByIdIncludingSoftDeletedAsync(Guid.NewGuid(), CancellationToken.None);
+
+        found.Should().BeNull();
     }
 }

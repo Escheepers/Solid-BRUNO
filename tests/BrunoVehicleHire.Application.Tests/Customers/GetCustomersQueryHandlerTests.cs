@@ -21,7 +21,7 @@ public class GetCustomersQueryHandlerTests
         var customerTwo = Customer.Create("John", "Smith", "john@example.com", "0822222222");
 
         var repository = Substitute.For<ICustomerRepository>();
-        repository.GetPagedAsync(2, 10, "Doe", Arg.Any<CancellationToken>())
+        repository.GetPagedAsync(2, 10, "Doe", false, Arg.Any<CancellationToken>())
             .Returns((new List<Customer> { customerOne, customerTwo }, 27));
 
         var handler = new GetCustomersQueryHandler(repository);
@@ -42,14 +42,14 @@ public class GetCustomersQueryHandlerTests
 
         result.Items[1].Id.Should().Be(customerTwo.Id);
 
-        await repository.Received(1).GetPagedAsync(2, 10, "Doe", Arg.Any<CancellationToken>());
+        await repository.Received(1).GetPagedAsync(2, 10, "Doe", false, Arg.Any<CancellationToken>());
     }
 
     [Fact]
     public async Task Handle_NoResults_ReturnsEmptyItemsWithZeroTotalCount()
     {
         var repository = Substitute.For<ICustomerRepository>();
-        repository.GetPagedAsync(1, 20, null, Arg.Any<CancellationToken>())
+        repository.GetPagedAsync(1, 20, null, false, Arg.Any<CancellationToken>())
             .Returns((new List<Customer>(), 0));
 
         var handler = new GetCustomersQueryHandler(repository);
@@ -58,5 +58,19 @@ public class GetCustomersQueryHandlerTests
 
         result.Items.Should().BeEmpty();
         result.TotalCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Handle_IncludeInactiveTrue_PassesThroughToRepository()
+    {
+        var repository = Substitute.For<ICustomerRepository>();
+        repository.GetPagedAsync(1, 20, null, true, Arg.Any<CancellationToken>())
+            .Returns((new List<Customer>(), 0));
+
+        var handler = new GetCustomersQueryHandler(repository);
+
+        await handler.Handle(new GetCustomersQuery(1, 20, null, IncludeInactive: true), CancellationToken.None);
+
+        await repository.Received(1).GetPagedAsync(1, 20, null, true, Arg.Any<CancellationToken>());
     }
 }

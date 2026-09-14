@@ -88,11 +88,12 @@ describe('CustomersPage', () => {
     input.dispatchEvent(new Event('input'));
   }
 
-  function expectCustomersRequest(matchSearch?: string) {
+  function expectCustomersRequest(matchSearch?: string, matchShowInactive?: string) {
     return httpMock.expectOne(
       (req) =>
         req.url === '/api/customers' &&
-        (matchSearch === undefined || req.params.get('search') === matchSearch),
+        (matchSearch === undefined || req.params.get('search') === matchSearch) &&
+        (matchShowInactive === undefined || req.params.get('showInactive') === matchShowInactive),
     );
   }
 
@@ -374,6 +375,256 @@ describe('CustomersPage', () => {
       expect(dialog!.textContent).toContain(
         'This customer has bookings — deactivate or erase their data instead.',
       );
+    });
+  });
+
+  describe('deactivate row action', () => {
+    function alertDialogs(): HTMLElement[] {
+      return Array.from(fixture.nativeElement.querySelectorAll('[role="alertdialog"]'));
+    }
+
+    function deactivateDialog(): HTMLElement | undefined {
+      return alertDialogs().find((d) => d.textContent?.includes('Deactivate this customer?'));
+    }
+
+    async function seedOneRowAndOpenDeactivateDialog(): Promise<void> {
+      await settle();
+      expectCustomersRequest('').flush(
+        pagedResult([customerDto({ id: 'c9', firstName: 'Nomvula', email: 'nomvula@example.com' })]),
+      );
+      await settle();
+
+      const deactivateButton = Array.from<HTMLButtonElement>(
+        fixture.nativeElement.querySelectorAll('tbody button'),
+      ).find((b) => b.textContent?.trim() === 'Deactivate');
+      expect(deactivateButton).toBeTruthy();
+
+      deactivateButton!.click();
+      fixture.detectChanges();
+    }
+
+    it('clicking "Deactivate" on a row opens the ConfirmDialog for that customer', async () => {
+      await seedOneRowAndOpenDeactivateDialog();
+
+      const dialog = deactivateDialog();
+      expect(dialog).not.toBeUndefined();
+      expect(dialog!.textContent).toContain(
+        'This customer will disappear from default listings',
+      );
+    });
+
+    it('cancelling closes the dialog and never calls the mutation', async () => {
+      await seedOneRowAndOpenDeactivateDialog();
+
+      const cancelButton = Array.from<HTMLButtonElement>(
+        deactivateDialog()!.querySelectorAll('button'),
+      ).find((b) => b.textContent?.trim() === 'Keep active');
+      cancelButton!.click();
+      fixture.detectChanges();
+
+      expect(deactivateDialog()).toBeUndefined();
+      httpMock.expectNone((req) => req.url === '/api/customers/c9/deactivate');
+    });
+
+    it('confirming calls the mutation and, on success, closes the dialog, toasts, and invalidates the list', async () => {
+      await seedOneRowAndOpenDeactivateDialog();
+
+      const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+      const toastSpy = vi.spyOn(toastService, 'success');
+
+      const confirmButton = Array.from<HTMLButtonElement>(
+        deactivateDialog()!.querySelectorAll('button'),
+      ).find((b) => b.textContent?.trim() === 'Deactivate');
+      confirmButton!.click();
+      await settle();
+
+      const req = httpMock.expectOne('/api/customers/c9/deactivate');
+      expect(req.request.method).toBe('POST');
+      req.flush(null, { status: 204, statusText: 'No Content' });
+      await settle();
+
+      // `invalidateQueries()` (called from `useDeactivateCustomerMutation`'s own
+      // `onSuccess`) awaits the active list query's refetch before it resolves --
+      // mirrors `VehiclesPage`'s Deactivate test's exact ordering requirement.
+      expectCustomersRequest().flush(pagedResult([]));
+      await settle();
+
+      expect(deactivateDialog()).toBeUndefined();
+      expect(toastSpy).toHaveBeenCalledWith('Customer deactivated.');
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['customers', 'list'] });
+    });
+
+    it('a failed deactivate keeps the dialog open and shows an error message instead of the normal one', async () => {
+      await seedOneRowAndOpenDeactivateDialog();
+
+      const confirmButton = Array.from<HTMLButtonElement>(
+        deactivateDialog()!.querySelectorAll('button'),
+      ).find((b) => b.textContent?.trim() === 'Deactivate');
+      confirmButton!.click();
+      await settle();
+
+      const req = httpMock.expectOne('/api/customers/c9/deactivate');
+      req.flush(
+        {
+          type: 'https://bruno-vehicle-hire/problems/not-found',
+          title: 'Not Found',
+          status: 404,
+          detail: "Customer 'c9' was not found.",
+        },
+        { status: 404, statusText: 'Not Found' },
+      );
+      await settle();
+
+      const dialog = deactivateDialog();
+      expect(dialog).not.toBeUndefined();
+      expect(dialog!.textContent).not.toContain('This customer will disappear from default listings');
+      expect(dialog!.textContent).toContain("Customer 'c9' was not found.");
+    });
+  });
+
+  describe('show inactive toggle', () => {
+    function showInactiveCheckbox(): HTMLInputElement {
+      return fixture.nativeElement.querySelector('input[type="checkbox"]');
+    }
+
+    it('passes showInactive=false to the query by default', async () => {
+      await settle();
+      expectCustomersRequest('', 'false').flush(pagedResult([]));
+    });
+
+    it('passes showInactive=true to the query once the toggle is checked', async () => {
+      await settle();
+      expectCustomersRequest('', 'false').flush(pagedResult([]));
+      await settle();
+
+      showInactiveCheckbox().click();
+      fixture.detectChanges();
+      await settle();
+
+      expectCustomersRequest('', 'true').flush(pagedResult([]));
+    });
+  });
+
+  describe('restore row action', () => {
+    function showInactiveCheckbox(): HTMLInputElement {
+      return fixture.nativeElement.querySelector('input[type="checkbox"]');
+    }
+
+    async function seedActiveAndInactiveRows(): Promise<void> {
+      await settle();
+      expectCustomersRequest('', 'false').flush(pagedResult([]));
+      await settle();
+
+      showInactiveCheckbox().click();
+      fixture.detectChanges();
+      await settle();
+
+      expectCustomersRequest('', 'true').flush(
+        pagedResult([
+          customerDto({ id: 'active-1', firstName: 'Active', isDeleted: false }),
+          customerDto({ id: 'inactive-1', firstName: 'Inactive', isDeleted: true }),
+        ]),
+      );
+      await settle();
+    }
+
+    it('an inactive row shows only Restore and is dimmed; an active row keeps Edit/Delete/Deactivate and is not dimmed', async () => {
+      await seedActiveAndInactiveRows();
+
+      const rows = fixture.nativeElement.querySelectorAll('tbody tr');
+      expect(rows.length).toBe(2);
+
+      const activeButtons = Array.from<HTMLButtonElement>(rows[0].querySelectorAll('button')).map(
+        (b) => b.textContent?.trim(),
+      );
+      const inactiveButtons = Array.from<HTMLButtonElement>(
+        rows[1].querySelectorAll('button'),
+      ).map((b) => b.textContent?.trim());
+
+      expect(activeButtons).toEqual(['Edit', 'Delete', 'Deactivate']);
+      expect(inactiveButtons).toEqual(['Restore']);
+
+      const activeCell = rows[0].querySelector('td') as HTMLElement;
+      const inactiveCell = rows[1].querySelector('td') as HTMLElement;
+      expect(activeCell.className).toContain('text-text-body');
+      expect(inactiveCell.className).toContain('text-text-disabled');
+    });
+
+    it('clicking Restore on a row that succeeds clears any error state and shows a success toast', async () => {
+      await settle();
+      expectCustomersRequest('', 'false').flush(pagedResult([]));
+      await settle();
+
+      showInactiveCheckbox().click();
+      fixture.detectChanges();
+      await settle();
+
+      expectCustomersRequest('', 'true').flush(
+        pagedResult([customerDto({ id: 'c5', firstName: 'Five', isDeleted: true })]),
+      );
+      await settle();
+
+      const toastSpy = vi.spyOn(toastService, 'success');
+
+      const restoreButton = Array.from<HTMLButtonElement>(
+        fixture.nativeElement.querySelectorAll('tbody button'),
+      ).find((b) => b.textContent?.trim() === 'Restore');
+      restoreButton!.click();
+      await settle();
+
+      const req = httpMock.expectOne('/api/customers/c5/restore');
+      expect(req.request.method).toBe('POST');
+      req.flush(null, { status: 204, statusText: 'No Content' });
+      await settle();
+
+      // Invalidation triggers a refetch of the currently-mounted (showInactive=true) list query.
+      expectCustomersRequest('', 'true').flush(pagedResult([]));
+      await settle();
+
+      expect(toastSpy).toHaveBeenCalledWith('Customer restored.');
+      expect(fixture.nativeElement.textContent).not.toContain('Already active');
+    });
+
+    it("clicking Restore on a row that fails (409) sets that specific row's error state only, even with multiple inactive rows", async () => {
+      await settle();
+      expectCustomersRequest('', 'false').flush(pagedResult([]));
+      await settle();
+
+      showInactiveCheckbox().click();
+      fixture.detectChanges();
+      await settle();
+
+      expectCustomersRequest('', 'true').flush(
+        pagedResult([
+          customerDto({ id: 'c10', firstName: 'Ten', isDeleted: true }),
+          customerDto({ id: 'c11', firstName: 'Eleven', isDeleted: true }),
+        ]),
+      );
+      await settle();
+
+      const restoreButtons = Array.from<HTMLButtonElement>(
+        fixture.nativeElement.querySelectorAll('tbody button'),
+      ).filter((b) => b.textContent?.trim() === 'Restore');
+      expect(restoreButtons.length).toBe(2);
+
+      restoreButtons[0].click();
+      await settle();
+
+      const req = httpMock.expectOne('/api/customers/c10/restore');
+      req.flush(
+        {
+          type: 'urn:bruno:customer:is-deleted',
+          title: 'A domain rule was violated.',
+          status: 409,
+          detail: 'Already active.',
+        },
+        { status: 409, statusText: 'Conflict' },
+      );
+      await settle();
+
+      const rows = fixture.nativeElement.querySelectorAll('tbody tr');
+      expect(rows[0].textContent).toContain('Already active.');
+      expect(rows[1].textContent).not.toContain('Already active.');
     });
   });
 });

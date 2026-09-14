@@ -9,30 +9,40 @@ import { ConfirmDialog } from '../../shared/confirm-dialog/confirm-dialog';
 import { ToastService } from '../../shared/toast/toast.service';
 import { CustomerFormModal } from './customer-form-modal';
 import { dateFormatter } from './customer-formatters';
-import { useCustomersQuery, useHardDeleteCustomerMutation } from './customers.service';
+import {
+  useCustomersQuery,
+  useDeactivateCustomerMutation,
+  useHardDeleteCustomerMutation,
+  useRestoreCustomerMutation,
+} from './customers.service';
 import { Customer, toCustomer } from './models/customer';
 
 const DEFAULT_DELETE_MESSAGE =
   'This will permanently delete this customer. This cannot be undone.';
+
+const DEFAULT_DEACTIVATE_MESSAGE =
+  'This customer will disappear from default listings. This is reversible — you can restore them later.';
 
 const PAGE_SIZE = 20;
 const SEARCH_DEBOUNCE_MS = 300;
 
 /**
  * The Customers feature (Story 3.1's list + create, Story 3.2's edit, Story 3.3's
- * hard-delete): a debounced search input, a paginated `DataTable`, and the two
- * distinct empty-state messages required by `EXPERIENCE.md` — mirrors `VehiclesPage`'s
- * exact shape (spec-3-1's Code Map, extended by spec-3-2/spec-3-3). The search Signal
- * is debounced via `toObservable` -> `debounceTime` -> `distinctUntilChanged` ->
- * `toSignal` (no manual `setTimeout`) per AD-3, and only the debounced value
- * participates in the query key. `DataTable`'s `rowMuted`/`rowKey`/`rowError` inputs
- * are left at their defaults — Customer has no active/inactive split yet (Story 3.4),
- * so only `actions` (Edit + Delete per row) is wired. Delete mirrors `VehiclesPage`'s
- * Deactivate mechanism exactly (`deletingCustomer`/`deleteErrorMessage` signals, the
- * "dialog stays open showing the error on failure" pattern) but uses the neutral
- * `ConfirmDialog` (spec-3-3's Scope decision 3 -- the destructive variant doesn't
- * exist yet, deferred to Story 3.5's Erase action) with copy that states the
- * permanent, irreversible nature of a hard-delete in the message itself.
+ * hard-delete, Story 3.4's deactivate/restore): a debounced search input, a paginated
+ * `DataTable`, and the two distinct empty-state messages required by `EXPERIENCE.md`
+ * — mirrors `VehiclesPage`'s exact shape (spec-3-1's Code Map, extended by
+ * spec-3-2/spec-3-3/spec-3-4). The search Signal is debounced via `toObservable` ->
+ * `debounceTime` -> `distinctUntilChanged` -> `toSignal` (no manual `setTimeout`) per
+ * AD-3, and only the debounced value participates in the query key. Delete mirrors
+ * `VehiclesPage`'s Deactivate mechanism exactly (`deletingCustomer`/`deleteErrorMessage`
+ * signals, the "dialog stays open showing the error on failure" pattern) but uses the
+ * neutral `ConfirmDialog` (spec-3-3's Scope decision 3 -- the destructive variant
+ * doesn't exist yet, deferred to Story 3.5's Erase action) with copy that states the
+ * permanent, irreversible nature of a hard-delete in the message itself. Deactivate
+ * (spec-3-4) gets its own separate `deactivatingCustomer`/`deactivateErrorMessage`
+ * signal pair and `ConfirmDialog` block, alongside (not merged with) Delete's --
+ * spec-3-4's Scope decision 4 deliberately defers extracting a shared "confirmable
+ * action" abstraction until a third instance justifies it (rule of three).
  */
 @Component({
   selector: 'app-customers-page',
@@ -42,6 +52,8 @@ const SEARCH_DEBOUNCE_MS = 300;
 export class CustomersPage {
   private readonly toastService = inject(ToastService);
   private readonly hardDeleteMutation = useHardDeleteCustomerMutation();
+  private readonly deactivateMutation = useDeactivateCustomerMutation();
+  private readonly restoreMutation = useRestoreCustomerMutation();
 
   protected readonly searchInput = signal('');
   protected readonly pageSize = PAGE_SIZE;
@@ -49,6 +61,11 @@ export class CustomersPage {
   protected readonly editingCustomer = signal<Customer | null>(null);
   protected readonly deletingCustomer = signal<Customer | null>(null);
   protected readonly deleteErrorMessage = signal<string | null>(null);
+  protected readonly deactivatingCustomer = signal<Customer | null>(null);
+  protected readonly deactivateErrorMessage = signal<string | null>(null);
+  protected readonly showInactive = signal(false);
+  protected readonly restoreErrorRowKey = signal<string | null>(null);
+  protected readonly restoreErrorMessage = signal<string | null>(null);
 
   protected readonly debouncedSearch = toSignal(
     toObservable(this.searchInput).pipe(debounceTime(SEARCH_DEBOUNCE_MS), distinctUntilChanged()),
@@ -70,6 +87,7 @@ export class CustomersPage {
     page: this.page(),
     pageSize: this.pageSize,
     search: this.debouncedSearch(),
+    showInactive: this.showInactive(),
   }));
 
   protected readonly columns: ColumnDef<Customer>[] = [
@@ -81,18 +99,32 @@ export class CustomersPage {
   ];
 
   /**
-   * A two-entry array for every row (spec-3-2's Edit, spec-3-3's Delete) — Customer
-   * has no active/inactive split yet (unlike Vehicle's per-row branching, spec-2-4),
-   * so unlike `VehiclesPage.actions` there is nothing to branch on. Per spec-3-3's
-   * Scope decision 4, every customer gets the same "Delete" option regardless of
-   * whether it would actually succeed -- the UI doesn't pre-guess which customers
-   * have bookings; it lets the backend guard do its job and surfaces the 409
-   * gracefully when it happens.
+   * A per-row function (spec-3-4's Story-2.4-mirrored change) so an inactive
+   * (soft-deleted) row shows only "Restore" *in place of* the usual Edit/Delete/
+   * Deactivate set, mirroring `vehicles-page.ts`'s exact state-dependent `actions`
+   * pattern. Per spec-3-3's Scope decision 4, every active customer gets the same
+   * "Delete" option regardless of whether it would actually succeed -- the UI
+   * doesn't pre-guess which customers have bookings; it lets the backend guard do
+   * its job and surfaces the 409 gracefully when it happens. Deactivate is likewise
+   * not gated on booking count (spec-3-4's Scope decision 2).
    */
-  protected readonly actions = (customer: Customer): RowAction<Customer>[] => [
-    { label: 'Edit', onClick: (c) => this.openEditModal(c) },
-    { label: 'Delete', onClick: (c) => this.openDeleteDialog(c) },
-  ];
+  protected readonly actions = (customer: Customer): RowAction<Customer>[] =>
+    customer.isDeleted
+      ? [{ label: 'Restore', onClick: (c) => this.onRestoreClick(c) }]
+      : [
+          { label: 'Edit', onClick: (c) => this.openEditModal(c) },
+          { label: 'Delete', onClick: (c) => this.openDeleteDialog(c) },
+          { label: 'Deactivate', onClick: (c) => this.openDeactivateDialog(c) },
+        ];
+
+  protected readonly rowMuted = (customer: Customer): boolean => customer.isDeleted;
+  protected readonly rowKey = (customer: Customer): string => customer.id;
+
+  protected readonly rowError = computed<{ key: string; message: string } | null>(() => {
+    const key = this.restoreErrorRowKey();
+    const message = this.restoreErrorMessage();
+    return key !== null && message !== null ? { key, message } : null;
+  });
 
   protected readonly customers = computed<Customer[]>(() => {
     const data = this.query.data();
@@ -103,6 +135,10 @@ export class CustomersPage {
 
   protected readonly deleteDialogMessage = computed(
     () => this.deleteErrorMessage() ?? DEFAULT_DELETE_MESSAGE,
+  );
+
+  protected readonly deactivateDialogMessage = computed(
+    () => this.deactivateErrorMessage() ?? DEFAULT_DEACTIVATE_MESSAGE,
   );
 
   private readonly hasSearchFilter = computed(() => this.debouncedSearch().trim().length > 0);
@@ -119,6 +155,10 @@ export class CustomersPage {
 
   protected onSearchInput(value: string): void {
     this.searchInput.set(value);
+  }
+
+  protected onShowInactiveChange(value: boolean): void {
+    this.showInactive.set(value);
   }
 
   protected onPageChange(page: number): void {
@@ -167,6 +207,54 @@ export class CustomersPage {
       },
       onError: (error) => {
         this.deleteErrorMessage.set(this.toErrorMessage(error));
+      },
+    });
+  }
+
+  protected openDeactivateDialog(customer: Customer): void {
+    this.deactivateErrorMessage.set(null);
+    this.deactivatingCustomer.set(customer);
+  }
+
+  protected onCancelDeactivate(): void {
+    this.deactivatingCustomer.set(null);
+    this.deactivateErrorMessage.set(null);
+  }
+
+  protected onConfirmDeactivate(): void {
+    const customer = this.deactivatingCustomer();
+    if (!customer) {
+      return;
+    }
+
+    this.deactivateMutation.mutate(customer.id, {
+      onSuccess: () => {
+        this.deactivatingCustomer.set(null);
+        this.deactivateErrorMessage.set(null);
+        this.toastService.success('Customer deactivated.');
+      },
+      onError: (error) => {
+        this.deactivateErrorMessage.set(this.toErrorMessage(error));
+      },
+    });
+  }
+
+  /**
+   * No `ConfirmDialog` step (mirrors `vehicles-page.ts`'s exact `onRestoreClick`
+   * reasoning: gating the undo of an already-reversible, already-confirmed action
+   * behind a second confirmation would be redundant friction, not safety). Clicking
+   * "Restore" calls the mutation directly.
+   */
+  protected onRestoreClick(customer: Customer): void {
+    this.restoreMutation.mutate(customer.id, {
+      onSuccess: () => {
+        this.restoreErrorRowKey.set(null);
+        this.restoreErrorMessage.set(null);
+        this.toastService.success('Customer restored.');
+      },
+      onError: (error) => {
+        this.restoreErrorRowKey.set(customer.id);
+        this.restoreErrorMessage.set(this.toErrorMessage(error));
       },
     });
   }

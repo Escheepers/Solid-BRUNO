@@ -103,6 +103,28 @@ public class Customer
         PhoneNumber = phoneNumber;
     }
 
+    /// <summary>Marks the customer deleted. Idempotent: calling it again is a no-op, not an error.</summary>
+    public void SoftDelete()
+    {
+        IsDeleted = true;
+    }
+
+    /// <summary>
+    /// Clears the soft-delete flag. Deliberately the OPPOSITE of <see cref="SoftDelete"/>'s
+    /// idempotency: restoring a customer that is already active throws
+    /// <see cref="DomainRuleViolationException"/> rather than silently succeeding -- mirrors
+    /// <see cref="Vehicle.Restore"/>'s exact message/shape. No other field changes.
+    /// </summary>
+    public void Restore()
+    {
+        if (!IsDeleted)
+        {
+            throw new DomainRuleViolationException(nameof(Customer), nameof(IsDeleted), "Already active.");
+        }
+
+        IsDeleted = false;
+    }
+
     /// <summary>
     /// The single shared source of every Customer invariant, called by <see cref="Create"/>. Throws
     /// <see cref="DomainRuleViolationException"/> on the first violated invariant; never mutates any

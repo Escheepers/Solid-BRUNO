@@ -205,6 +205,58 @@ public class CustomerTests
     }
 
     [Fact]
+    public void SoftDelete_MarksCustomerAsDeleted()
+    {
+        var customer = CreateValidCustomer();
+
+        customer.SoftDelete();
+
+        Assert.True(customer.IsDeleted);
+    }
+
+    [Fact]
+    public void SoftDelete_CalledTwice_StaysDeletedAndDoesNotThrow()
+    {
+        var customer = CreateValidCustomer();
+
+        customer.SoftDelete();
+        var act = () => customer.SoftDelete();
+
+        var exception = Record.Exception(act);
+        Assert.Null(exception);
+        Assert.True(customer.IsDeleted);
+    }
+
+    [Fact]
+    public void Restore_SoftDeletedCustomer_ClearsIsDeletedAndLeavesOtherFieldsUnchanged()
+    {
+        var customer = CreateValidCustomer();
+        customer.SoftDelete();
+
+        customer.Restore();
+
+        Assert.False(customer.IsDeleted);
+        Assert.Equal(ValidFirstName, customer.FirstName);
+        Assert.Equal(ValidLastName, customer.LastName);
+        Assert.Equal(ValidEmail, customer.Email);
+        Assert.Equal(ValidPhoneNumber, customer.PhoneNumber);
+    }
+
+    [Fact]
+    public void Restore_AlreadyActiveCustomer_ThrowsDomainRuleViolationException_AndLeavesIsDeletedUnchanged()
+    {
+        var customer = CreateValidCustomer();
+
+        var act = () => customer.Restore();
+
+        var exception = Assert.Throws<DomainRuleViolationException>(act);
+        Assert.Equal("Already active.", exception.Message);
+        Assert.Equal(nameof(Customer), exception.Entity);
+        Assert.Equal(nameof(Customer.IsDeleted), exception.Rule);
+        Assert.False(customer.IsDeleted);
+    }
+
+    [Fact]
     public void Customer_HasNoPublicSetters()
     {
         var propertiesWithPublicSetters = typeof(Customer)

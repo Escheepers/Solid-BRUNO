@@ -9,7 +9,9 @@ import { CustomerDto } from '../../core/models/customer-dto';
 import {
   useCreateCustomerMutation,
   useCustomersQuery,
+  useDeactivateCustomerMutation,
   useHardDeleteCustomerMutation,
+  useRestoreCustomerMutation,
   useUpdateCustomerMutation,
 } from './customers.service';
 
@@ -57,9 +59,9 @@ describe('useCustomersQuery', () => {
     TestBed.resetTestingModule();
   });
 
-  it('GETs customers with page/pageSize/search params', async () => {
+  it('GETs customers with page/pageSize/search/showInactive params', async () => {
     TestBed.runInInjectionContext(() =>
-      useCustomersQuery(() => ({ page: 2, pageSize: 20, search: 'jane' })),
+      useCustomersQuery(() => ({ page: 2, pageSize: 20, search: 'jane', showInactive: true })),
     );
     await flushMicrotasks();
 
@@ -68,7 +70,8 @@ describe('useCustomersQuery', () => {
         r.url === '/api/customers' &&
         r.params.get('page') === '2' &&
         r.params.get('pageSize') === '20' &&
-        r.params.get('search') === 'jane',
+        r.params.get('search') === 'jane' &&
+        r.params.get('showInactive') === 'true',
     );
     expect(req.request.method).toBe('GET');
     req.flush({ items: [customerDto()], totalCount: 1, page: 2, pageSize: 20 });
@@ -76,12 +79,12 @@ describe('useCustomersQuery', () => {
 
   it('resolves with the fetched PagedResult<CustomerDto> on success', async () => {
     const query = TestBed.runInInjectionContext(() =>
-      useCustomersQuery(() => ({ page: 1, pageSize: 20, search: '' })),
+      useCustomersQuery(() => ({ page: 1, pageSize: 20, search: '', showInactive: false })),
     );
     await flushMicrotasks();
 
     httpMock
-      .expectOne('/api/customers?page=1&pageSize=20&search=')
+      .expectOne('/api/customers?page=1&pageSize=20&search=&showInactive=false')
       .flush({ items: [customerDto({ firstName: 'Zola' })], totalCount: 1, page: 1, pageSize: 20 });
     await flushMicrotasks();
 
@@ -276,6 +279,112 @@ describe('useHardDeleteCustomerMutation', () => {
     await flushMicrotasks();
 
     const req = httpMock.expectOne('/api/customers/c1');
+    req.flush(null, { status: 204, statusText: 'No Content' });
+    await flushMicrotasks();
+
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['customers', 'list'] });
+  });
+});
+
+describe('useDeactivateCustomerMutation', () => {
+  let httpMock: HttpTestingController;
+  let queryClient: QueryClient;
+
+  beforeEach(() => {
+    queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+
+    TestBed.configureTestingModule({
+      providers: [
+        provideHttpClient(withInterceptors([apiKeyInterceptor, errorNormalizationInterceptor])),
+        provideHttpClientTesting(),
+        provideTanStackQuery(queryClient),
+      ],
+    });
+
+    httpMock = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => {
+    httpMock.verify();
+    TestBed.resetTestingModule();
+  });
+
+  it('POSTs to customers/{id}/deactivate with no body', async () => {
+    const mutation = TestBed.runInInjectionContext(() => useDeactivateCustomerMutation());
+
+    mutation.mutate('c1');
+    await flushMicrotasks();
+
+    const req = httpMock.expectOne('/api/customers/c1/deactivate');
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toBeFalsy();
+
+    req.flush(null, { status: 204, statusText: 'No Content' });
+  });
+
+  it('invalidates the customers list query key on success', async () => {
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+    const mutation = TestBed.runInInjectionContext(() => useDeactivateCustomerMutation());
+
+    mutation.mutate('c1');
+    await flushMicrotasks();
+
+    const req = httpMock.expectOne('/api/customers/c1/deactivate');
+    req.flush(null, { status: 204, statusText: 'No Content' });
+    await flushMicrotasks();
+
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['customers', 'list'] });
+  });
+});
+
+describe('useRestoreCustomerMutation', () => {
+  let httpMock: HttpTestingController;
+  let queryClient: QueryClient;
+
+  beforeEach(() => {
+    queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+
+    TestBed.configureTestingModule({
+      providers: [
+        provideHttpClient(withInterceptors([apiKeyInterceptor, errorNormalizationInterceptor])),
+        provideHttpClientTesting(),
+        provideTanStackQuery(queryClient),
+      ],
+    });
+
+    httpMock = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => {
+    httpMock.verify();
+    TestBed.resetTestingModule();
+  });
+
+  it('POSTs to customers/{id}/restore with no body', async () => {
+    const mutation = TestBed.runInInjectionContext(() => useRestoreCustomerMutation());
+
+    mutation.mutate('c1');
+    await flushMicrotasks();
+
+    const req = httpMock.expectOne('/api/customers/c1/restore');
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toBeFalsy();
+
+    req.flush(null, { status: 204, statusText: 'No Content' });
+  });
+
+  it('invalidates the customers list query key on success', async () => {
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+    const mutation = TestBed.runInInjectionContext(() => useRestoreCustomerMutation());
+
+    mutation.mutate('c1');
+    await flushMicrotasks();
+
+    const req = httpMock.expectOne('/api/customers/c1/restore');
     req.flush(null, { status: 204, statusText: 'No Content' });
     await flushMicrotasks();
 
