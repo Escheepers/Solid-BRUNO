@@ -126,6 +126,33 @@ public class Customer
     }
 
     /// <summary>
+    /// Irreversibly scrubs PII to fixed placeholders and sets <see cref="IsAnonymized"/> -- the
+    /// permanent alternative to <see cref="SoftDelete"/> for a customer who wants their personal
+    /// data genuinely destroyed, never conflated with the reversible SoftDelete/Restore pair
+    /// (domain-model.md). Deliberately leaves <see cref="IsDeleted"/> completely untouched -- the
+    /// two flags stay fully independent, whichever combination is already set. No method anywhere
+    /// ever clears <see cref="IsAnonymized"/> back to <c>false</c>. Bypasses
+    /// <see cref="ValidateInvariants"/> entirely: every placeholder here is constructed by this
+    /// method, not user input, so there is nothing to validate. Idempotent, mirroring
+    /// <see cref="SoftDelete"/>'s precedent: calling this again on an already-anonymized customer is
+    /// a silent no-op, not an error -- including re-deriving the same <c>Email</c> placeholder,
+    /// since it is a pure function of the never-changing <see cref="Id"/>.
+    /// </summary>
+    public void Anonymize()
+    {
+        if (IsAnonymized)
+        {
+            return;
+        }
+
+        FirstName = "Anonymized";
+        LastName = "Customer";
+        Email = $"erased-{Id}@anonymized.local";
+        PhoneNumber = "0000000000";
+        IsAnonymized = true;
+    }
+
+    /// <summary>
     /// The single shared source of every Customer invariant, called by <see cref="Create"/>. Throws
     /// <see cref="DomainRuleViolationException"/> on the first violated invariant; never mutates any
     /// Customer instance itself.

@@ -158,3 +158,23 @@ export function useRestoreCustomerMutation() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: CUSTOMERS_LIST_QUERY_KEY }),
   }));
 }
+
+/**
+ * Wraps `injectMutation` over `ApiClient.post('customers/{id}/anonymize', ...)` --
+ * added for Story 3.5's Erase flow, mirroring `useDeactivateCustomerMutation`'s
+ * exact shape (same body-less POST / invalidate-on-success pattern). On success,
+ * invalidates `['customers', 'list']` (AD-3) so the list re-fetches and the erased
+ * customer's row reflects its scrubbed placeholder values.
+ */
+export function useAnonymizeCustomerMutation() {
+  const apiClient = inject(ApiClient);
+  const queryClient = inject(QueryClient);
+
+  return injectMutation<void, NormalizedApiError, string>(() => ({
+    mutationFn: (customerId: string) =>
+      firstValueFrom(
+        apiClient.post<void, undefined>(`customers/${customerId}/anonymize`, undefined),
+      ),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: CUSTOMERS_LIST_QUERY_KEY }),
+  }));
+}

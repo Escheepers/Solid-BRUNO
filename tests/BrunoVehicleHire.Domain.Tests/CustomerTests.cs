@@ -257,6 +257,65 @@ public class CustomerTests
     }
 
     [Fact]
+    public void Anonymize_ActiveCustomer_ScrubsPiiToPlaceholdersAndSetsIsAnonymized()
+    {
+        var customer = CreateValidCustomer();
+        var id = customer.Id;
+
+        customer.Anonymize();
+
+        Assert.Equal("Anonymized", customer.FirstName);
+        Assert.Equal("Customer", customer.LastName);
+        Assert.Equal($"erased-{id}@anonymized.local", customer.Email);
+        Assert.Equal("0000000000", customer.PhoneNumber);
+        Assert.True(customer.IsAnonymized);
+    }
+
+    [Fact]
+    public void Anonymize_SoftDeletedCustomer_ScrubsPiiButLeavesIsDeletedUnchanged()
+    {
+        var customer = CreateValidCustomer();
+        customer.SoftDelete();
+
+        customer.Anonymize();
+
+        Assert.True(customer.IsDeleted);
+        Assert.True(customer.IsAnonymized);
+        Assert.Equal("Anonymized", customer.FirstName);
+    }
+
+    [Fact]
+    public void Anonymize_CalledTwice_StaysAnonymizedAndDoesNotThrow()
+    {
+        var customer = CreateValidCustomer();
+        customer.Anonymize();
+        var emailAfterFirstCall = customer.Email;
+
+        var act = () => customer.Anonymize();
+
+        var exception = Record.Exception(act);
+        Assert.Null(exception);
+        Assert.True(customer.IsAnonymized);
+        Assert.Equal(emailAfterFirstCall, customer.Email);
+        Assert.Equal("Anonymized", customer.FirstName);
+        Assert.Equal("Customer", customer.LastName);
+        Assert.Equal("0000000000", customer.PhoneNumber);
+    }
+
+    [Fact]
+    public void Restore_AfterAnonymize_ClearsIsDeletedButLeavesIsAnonymizedUnchanged()
+    {
+        var customer = CreateValidCustomer();
+        customer.SoftDelete();
+        customer.Anonymize();
+
+        customer.Restore();
+
+        Assert.False(customer.IsDeleted);
+        Assert.True(customer.IsAnonymized);
+    }
+
+    [Fact]
     public void Customer_HasNoPublicSetters()
     {
         var propertiesWithPublicSetters = typeof(Customer)

@@ -6,10 +6,12 @@ import { NormalizedApiError } from '../../core/api-client/normalized-api-error';
 import { Button } from '../../shared/button/button';
 import { ColumnDef, DataTable, RowAction } from '../../shared/data-table/data-table';
 import { ConfirmDialog } from '../../shared/confirm-dialog/confirm-dialog';
+import { ConfirmableAction, createConfirmableAction } from '../../shared/confirm-dialog/confirmable-action';
 import { ToastService } from '../../shared/toast/toast.service';
 import { CustomerFormModal } from './customer-form-modal';
 import { dateFormatter } from './customer-formatters';
 import {
+  useAnonymizeCustomerMutation,
   useCustomersQuery,
   useDeactivateCustomerMutation,
   useHardDeleteCustomerMutation,
@@ -23,26 +25,36 @@ const DEFAULT_DELETE_MESSAGE =
 const DEFAULT_DEACTIVATE_MESSAGE =
   'This customer will disappear from default listings. This is reversible — you can restore them later.';
 
+const DEFAULT_ERASE_MESSAGE =
+  "This will permanently erase this customer's personal data. This cannot be undone. " +
+  'Their booking history stays intact.';
+
+/** Shared cell treatment for an anonymized customer's PII columns (spec-3-5's
+ * Scope decision 4/DESIGN.md's `anonymized-text` token) -- a single constant so
+ * the four affected columns below apply the identical class string (DRY). */
+const ANONYMIZED_CELL_CLASS = 'italic text-anonymized-text';
+
 const PAGE_SIZE = 20;
 const SEARCH_DEBOUNCE_MS = 300;
 
 /**
  * The Customers feature (Story 3.1's list + create, Story 3.2's edit, Story 3.3's
- * hard-delete, Story 3.4's deactivate/restore): a debounced search input, a paginated
- * `DataTable`, and the two distinct empty-state messages required by `EXPERIENCE.md`
- * — mirrors `VehiclesPage`'s exact shape (spec-3-1's Code Map, extended by
- * spec-3-2/spec-3-3/spec-3-4). The search Signal is debounced via `toObservable` ->
- * `debounceTime` -> `distinctUntilChanged` -> `toSignal` (no manual `setTimeout`) per
- * AD-3, and only the debounced value participates in the query key. Delete mirrors
- * `VehiclesPage`'s Deactivate mechanism exactly (`deletingCustomer`/`deleteErrorMessage`
- * signals, the "dialog stays open showing the error on failure" pattern) but uses the
- * neutral `ConfirmDialog` (spec-3-3's Scope decision 3 -- the destructive variant
- * doesn't exist yet, deferred to Story 3.5's Erase action) with copy that states the
- * permanent, irreversible nature of a hard-delete in the message itself. Deactivate
- * (spec-3-4) gets its own separate `deactivatingCustomer`/`deactivateErrorMessage`
- * signal pair and `ConfirmDialog` block, alongside (not merged with) Delete's --
- * spec-3-4's Scope decision 4 deliberately defers extracting a shared "confirmable
- * action" abstraction until a third instance justifies it (rule of three).
+ * hard-delete, Story 3.4's deactivate/restore, Story 3.5's erase/anonymize): a
+ * debounced search input, a paginated `DataTable`, and the two distinct empty-state
+ * messages required by `EXPERIENCE.md` — mirrors `VehiclesPage`'s exact shape
+ * (spec-3-1's Code Map, extended by spec-3-2/spec-3-3/spec-3-4/spec-3-5). The search
+ * Signal is debounced via `toObservable` -> `debounceTime` -> `distinctUntilChanged`
+ * -> `toSignal` (no manual `setTimeout`) per AD-3, and only the debounced value
+ * participates in the query key.
+ *
+ * Delete, Deactivate, and Erase (spec-3-5) each get their own `ConfirmableAction`
+ * (`createConfirmableAction`, spec-3-5's Scope decision 5 -- extracted once Erase
+ * became the third instance of the identical open/cancel/confirm +
+ * current-item/error-message shape that spec-3-4's Design Notes flagged as the
+ * trigger to revisit). Delete and Deactivate's own behavior is unchanged by this
+ * refactor -- same messages, same "dialog stays open showing the error on failure"
+ * pattern, same neutral `ConfirmDialog`. Erase is the first consumer of the
+ * destructive `ConfirmDialog` variant, per spec-3-3's Scope decision 3.
  */
 @Component({
   selector: 'app-customers-page',
@@ -54,18 +66,45 @@ export class CustomersPage {
   private readonly hardDeleteMutation = useHardDeleteCustomerMutation();
   private readonly deactivateMutation = useDeactivateCustomerMutation();
   private readonly restoreMutation = useRestoreCustomerMutation();
+  private readonly anonymizeMutation = useAnonymizeCustomerMutation();
 
   protected readonly searchInput = signal('');
   protected readonly pageSize = PAGE_SIZE;
   protected readonly isFormModalOpen = signal(false);
   protected readonly editingCustomer = signal<Customer | null>(null);
-  protected readonly deletingCustomer = signal<Customer | null>(null);
-  protected readonly deleteErrorMessage = signal<string | null>(null);
-  protected readonly deactivatingCustomer = signal<Customer | null>(null);
-  protected readonly deactivateErrorMessage = signal<string | null>(null);
   protected readonly showInactive = signal(false);
   protected readonly restoreErrorRowKey = signal<string | null>(null);
   protected readonly restoreErrorMessage = signal<string | null>(null);
+
+  protected readonly hardDeleteAction: ConfirmableAction<Customer> = createConfirmableAction<
+    Customer,
+    NormalizedApiError
+  >({
+    mutate: (customer, callbacks) => this.hardDeleteMutation.mutate(customer.id, callbacks),
+    defaultMessage: DEFAULT_DELETE_MESSAGE,
+    toErrorMessage: (error) => this.toErrorMessage(error),
+    onSuccess: () => this.toastService.success('Customer deleted.'),
+  });
+
+  protected readonly deactivateAction: ConfirmableAction<Customer> = createConfirmableAction<
+    Customer,
+    NormalizedApiError
+  >({
+    mutate: (customer, callbacks) => this.deactivateMutation.mutate(customer.id, callbacks),
+    defaultMessage: DEFAULT_DEACTIVATE_MESSAGE,
+    toErrorMessage: (error) => this.toErrorMessage(error),
+    onSuccess: () => this.toastService.success('Customer deactivated.'),
+  });
+
+  protected readonly eraseAction: ConfirmableAction<Customer> = createConfirmableAction<
+    Customer,
+    NormalizedApiError
+  >({
+    mutate: (customer, callbacks) => this.anonymizeMutation.mutate(customer.id, callbacks),
+    defaultMessage: DEFAULT_ERASE_MESSAGE,
+    toErrorMessage: (error) => this.toErrorMessage(error),
+    onSuccess: () => this.toastService.success("Customer's personal data erased."),
+  });
 
   protected readonly debouncedSearch = toSignal(
     toObservable(this.searchInput).pipe(debounceTime(SEARCH_DEBOUNCE_MS), distinctUntilChanged()),
@@ -90,34 +129,78 @@ export class CustomersPage {
     showInactive: this.showInactive(),
   }));
 
+  /**
+   * First Name/Last Name/Email/Phone Number all carry `cellClass` (spec-3-5's Scope
+   * decision 4) so an anonymized row's PII columns render in the muted-italic
+   * `anonymized-text` treatment instead of the normal body style. Last Name is the
+   * one column that also swaps its rendered text for the literal "(anonymized)"
+   * suffix (`EXPERIENCE.md`: "never just... the placeholder value alone, so it
+   * reads unambiguously as 'this was erased'") -- First Name/Email/Phone Number
+   * already show `Customer.Anonymize()`'s own placeholder values, which the
+   * `cellClass` styling alone is enough to flag as not-a-real-value.
+   */
   protected readonly columns: ColumnDef<Customer>[] = [
-    { header: 'First Name', cell: (customer) => customer.firstName },
-    { header: 'Last Name', cell: (customer) => customer.lastName },
-    { header: 'Email', cell: (customer) => customer.email },
-    { header: 'Phone Number', cell: (customer) => customer.phoneNumber },
+    {
+      header: 'First Name',
+      cell: (customer) => customer.firstName,
+      cellClass: (customer) => (customer.isAnonymized ? ANONYMIZED_CELL_CLASS : ''),
+    },
+    {
+      header: 'Last Name',
+      cell: (customer) =>
+        customer.isAnonymized ? `${customer.lastName} (anonymized)` : customer.lastName,
+      cellClass: (customer) => (customer.isAnonymized ? ANONYMIZED_CELL_CLASS : ''),
+    },
+    {
+      header: 'Email',
+      cell: (customer) => customer.email,
+      cellClass: (customer) => (customer.isAnonymized ? ANONYMIZED_CELL_CLASS : ''),
+    },
+    {
+      header: 'Phone Number',
+      cell: (customer) => customer.phoneNumber,
+      cellClass: (customer) => (customer.isAnonymized ? ANONYMIZED_CELL_CLASS : ''),
+    },
     { header: 'Created', cell: (customer) => dateFormatter.format(customer.createdDate) },
   ];
 
   /**
-   * A per-row function (spec-3-4's Story-2.4-mirrored change) so an inactive
-   * (soft-deleted) row shows only "Restore" *in place of* the usual Edit/Delete/
-   * Deactivate set, mirroring `vehicles-page.ts`'s exact state-dependent `actions`
-   * pattern. Per spec-3-3's Scope decision 4, every active customer gets the same
-   * "Delete" option regardless of whether it would actually succeed -- the UI
-   * doesn't pre-guess which customers have bookings; it lets the backend guard do
-   * its job and surfaces the 409 gracefully when it happens. Deactivate is likewise
-   * not gated on booking count (spec-3-4's Scope decision 2).
+   * A per-row function (spec-3-4's Story-2.4-mirrored change, extended to a
+   * three-way split by spec-3-5) so a row's actions match its state exactly:
+   * anonymized rows get none at all (nothing left to do -- edit/delete/deactivate/
+   * restore are all meaningless once PII is scrubbed, and un-anonymizing is never
+   * possible per the domain rule); soft-deleted-only rows get `[Restore, Erase
+   * personal data]` (erasing doesn't require restoring first, per spec-3-5's Scope
+   * decision 2); active rows keep the full `[Edit, Delete, Deactivate, Erase
+   * personal data]` set. Per spec-3-3/spec-3-4's Scope decisions, neither Delete
+   * nor Deactivate nor Erase is gated on booking count in the UI -- the backend
+   * guard (or lack thereof) is the single source of truth.
    */
-  protected readonly actions = (customer: Customer): RowAction<Customer>[] =>
-    customer.isDeleted
-      ? [{ label: 'Restore', onClick: (c) => this.onRestoreClick(c) }]
-      : [
-          { label: 'Edit', onClick: (c) => this.openEditModal(c) },
-          { label: 'Delete', onClick: (c) => this.openDeleteDialog(c) },
-          { label: 'Deactivate', onClick: (c) => this.openDeactivateDialog(c) },
-        ];
+  protected readonly actions = (customer: Customer): RowAction<Customer>[] => {
+    if (customer.isAnonymized) {
+      return [];
+    }
 
-  protected readonly rowMuted = (customer: Customer): boolean => customer.isDeleted;
+    if (customer.isDeleted) {
+      return [
+        { label: 'Restore', onClick: (c) => this.onRestoreClick(c) },
+        { label: 'Erase personal data', onClick: (c) => this.eraseAction.open(c) },
+      ];
+    }
+
+    return [
+      { label: 'Edit', onClick: (c) => this.openEditModal(c) },
+      { label: 'Delete', onClick: (c) => this.hardDeleteAction.open(c) },
+      { label: 'Deactivate', onClick: (c) => this.deactivateAction.open(c) },
+      { label: 'Erase personal data', onClick: (c) => this.eraseAction.open(c) },
+    ];
+  };
+
+  /** An anonymized row gets its own distinct `cellClass` treatment (above) instead
+   * of the generic dimmed one -- only a soft-deleted-but-not-anonymized row is
+   * muted here (spec-3-5's Boundaries). */
+  protected readonly rowMuted = (customer: Customer): boolean =>
+    customer.isDeleted && !customer.isAnonymized;
   protected readonly rowKey = (customer: Customer): string => customer.id;
 
   protected readonly rowError = computed<{ key: string; message: string } | null>(() => {
@@ -132,14 +215,6 @@ export class CustomersPage {
   });
 
   protected readonly totalCount = computed(() => this.query.data()?.totalCount ?? 0);
-
-  protected readonly deleteDialogMessage = computed(
-    () => this.deleteErrorMessage() ?? DEFAULT_DELETE_MESSAGE,
-  );
-
-  protected readonly deactivateDialogMessage = computed(
-    () => this.deactivateErrorMessage() ?? DEFAULT_DEACTIVATE_MESSAGE,
-  );
 
   private readonly hasSearchFilter = computed(() => this.debouncedSearch().trim().length > 0);
   private readonly isEmptyResult = computed(
@@ -181,62 +256,6 @@ export class CustomersPage {
 
   protected onFormModalClose(): void {
     this.isFormModalOpen.set(false);
-  }
-
-  protected openDeleteDialog(customer: Customer): void {
-    this.deleteErrorMessage.set(null);
-    this.deletingCustomer.set(customer);
-  }
-
-  protected onCancelDelete(): void {
-    this.deletingCustomer.set(null);
-    this.deleteErrorMessage.set(null);
-  }
-
-  protected onConfirmDelete(): void {
-    const customer = this.deletingCustomer();
-    if (!customer) {
-      return;
-    }
-
-    this.hardDeleteMutation.mutate(customer.id, {
-      onSuccess: () => {
-        this.deletingCustomer.set(null);
-        this.deleteErrorMessage.set(null);
-        this.toastService.success('Customer deleted.');
-      },
-      onError: (error) => {
-        this.deleteErrorMessage.set(this.toErrorMessage(error));
-      },
-    });
-  }
-
-  protected openDeactivateDialog(customer: Customer): void {
-    this.deactivateErrorMessage.set(null);
-    this.deactivatingCustomer.set(customer);
-  }
-
-  protected onCancelDeactivate(): void {
-    this.deactivatingCustomer.set(null);
-    this.deactivateErrorMessage.set(null);
-  }
-
-  protected onConfirmDeactivate(): void {
-    const customer = this.deactivatingCustomer();
-    if (!customer) {
-      return;
-    }
-
-    this.deactivateMutation.mutate(customer.id, {
-      onSuccess: () => {
-        this.deactivatingCustomer.set(null);
-        this.deactivateErrorMessage.set(null);
-        this.toastService.success('Customer deactivated.');
-      },
-      onError: (error) => {
-        this.deactivateErrorMessage.set(this.toErrorMessage(error));
-      },
-    });
   }
 
   /**

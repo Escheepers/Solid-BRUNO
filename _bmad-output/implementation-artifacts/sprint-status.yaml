@@ -53,12 +53,12 @@ development_status:
   2-5-view-vehicle-detail: done
   epic-2-retrospective: optional
 
-  epic-3: in-progress
+  epic-3: done
   3-1-list-create-customers: done
   3-2-edit-a-customer: done
   3-3-hard-delete-a-customer-with-no-bookings: done
   3-4-deactivate-restore-a-customer: done
-  3-5-erase-anonymize-a-customer-s-personal-data: backlog
+  3-5-erase-anonymize-a-customer-s-personal-data: done
   epic-3-retrospective: optional
 
   epic-4: backlog

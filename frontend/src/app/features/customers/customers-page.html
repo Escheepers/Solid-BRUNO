@@ -56,22 +56,33 @@
   />
 
   <app-confirm-dialog
-    [open]="deletingCustomer() !== null"
+    [open]="hardDeleteAction.current() !== null"
     title="Delete this customer?"
-    [message]="deleteDialogMessage()"
+    [message]="hardDeleteAction.dialogMessage()"
     confirmLabel="Delete"
     cancelLabel="Cancel"
-    (confirm)="onConfirmDelete()"
-    (cancel)="onCancelDelete()"
+    (confirm)="hardDeleteAction.confirm()"
+    (cancel)="hardDeleteAction.cancel()"
   />
 
   <app-confirm-dialog
-    [open]="deactivatingCustomer() !== null"
+    [open]="deactivateAction.current() !== null"
     title="Deactivate this customer?"
-    [message]="deactivateDialogMessage()"
+    [message]="deactivateAction.dialogMessage()"
     confirmLabel="Deactivate"
     cancelLabel="Keep active"
-    (confirm)="onConfirmDeactivate()"
-    (cancel)="onCancelDeactivate()"
+    (confirm)="deactivateAction.confirm()"
+    (cancel)="deactivateAction.cancel()"
+  />
+
+  <app-confirm-dialog
+    [open]="eraseAction.current() !== null"
+    variant="destructive"
+    title="Erase this customer's personal data?"
+    [message]="eraseAction.dialogMessage()"
+    confirmLabel="Erase"
+    cancelLabel="Cancel"
+    (confirm)="eraseAction.confirm()"
+    (cancel)="eraseAction.cancel()"
   />
 </div>

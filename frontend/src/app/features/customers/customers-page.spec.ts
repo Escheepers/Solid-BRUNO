@@ -528,7 +528,7 @@ describe('CustomersPage', () => {
       await settle();
     }
 
-    it('an inactive row shows only Restore and is dimmed; an active row keeps Edit/Delete/Deactivate and is not dimmed', async () => {
+    it('an inactive row shows Restore and Erase and is dimmed; an active row keeps Edit/Delete/Deactivate/Erase and is not dimmed', async () => {
       await seedActiveAndInactiveRows();
 
       const rows = fixture.nativeElement.querySelectorAll('tbody tr');
@@ -541,8 +541,8 @@ describe('CustomersPage', () => {
         rows[1].querySelectorAll('button'),
       ).map((b) => b.textContent?.trim());
 
-      expect(activeButtons).toEqual(['Edit', 'Delete', 'Deactivate']);
-      expect(inactiveButtons).toEqual(['Restore']);
+      expect(activeButtons).toEqual(['Edit', 'Delete', 'Deactivate', 'Erase personal data']);
+      expect(inactiveButtons).toEqual(['Restore', 'Erase personal data']);
 
       const activeCell = rows[0].querySelector('td') as HTMLElement;
       const inactiveCell = rows[1].querySelector('td') as HTMLElement;
@@ -625,6 +625,147 @@ describe('CustomersPage', () => {
       const rows = fixture.nativeElement.querySelectorAll('tbody tr');
       expect(rows[0].textContent).toContain('Already active.');
       expect(rows[1].textContent).not.toContain('Already active.');
+    });
+  });
+
+  describe('erase row action', () => {
+    function alertDialogs(): HTMLElement[] {
+      return Array.from(fixture.nativeElement.querySelectorAll('[role="alertdialog"]'));
+    }
+
+    function eraseDialog(): HTMLElement | undefined {
+      return alertDialogs().find((d) => d.textContent?.includes("Erase this customer's personal data?"));
+    }
+
+    async function seedOneRowAndOpenEraseDialog(): Promise<void> {
+      await settle();
+      expectCustomersRequest('').flush(
+        pagedResult([customerDto({ id: 'c9', firstName: 'Nomvula', email: 'nomvula@example.com' })]),
+      );
+      await settle();
+
+      const eraseButton = Array.from<HTMLButtonElement>(
+        fixture.nativeElement.querySelectorAll('tbody button'),
+      ).find((b) => b.textContent?.trim() === 'Erase personal data');
+      expect(eraseButton).toBeTruthy();
+
+      eraseButton!.click();
+      fixture.detectChanges();
+    }
+
+    it('clicking "Erase personal data" on a row opens the destructive ConfirmDialog for that customer', async () => {
+      await seedOneRowAndOpenEraseDialog();
+
+      const dialog = eraseDialog();
+      expect(dialog).not.toBeUndefined();
+      expect(dialog!.textContent).toContain('permanently');
+      expect(dialog!.textContent).toContain('cannot be undone');
+      expect(dialog!.textContent).toContain('booking history stays intact');
+      expect(dialog!.querySelector('[data-testid="confirm-dialog-destructive-confirm"]')).not.toBeNull();
+    });
+
+    it('cancelling closes the dialog and never calls the mutation', async () => {
+      await seedOneRowAndOpenEraseDialog();
+
+      const cancelButton = Array.from<HTMLButtonElement>(
+        eraseDialog()!.querySelectorAll('button'),
+      ).find((b) => b.textContent?.trim() === 'Cancel');
+      cancelButton!.click();
+      fixture.detectChanges();
+
+      expect(eraseDialog()).toBeUndefined();
+      httpMock.expectNone((req) => req.url === '/api/customers/c9/anonymize');
+    });
+
+    it('confirming calls the mutation and, on success, closes the dialog, toasts, and invalidates the list', async () => {
+      await seedOneRowAndOpenEraseDialog();
+
+      const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+      const toastSpy = vi.spyOn(toastService, 'success');
+
+      const confirmButton = eraseDialog()!.querySelector(
+        '[data-testid="confirm-dialog-destructive-confirm"]',
+      ) as HTMLButtonElement;
+      confirmButton.click();
+      await settle();
+
+      const req = httpMock.expectOne('/api/customers/c9/anonymize');
+      expect(req.request.method).toBe('POST');
+      req.flush(null, { status: 204, statusText: 'No Content' });
+      await settle();
+
+      expectCustomersRequest().flush(pagedResult([]));
+      await settle();
+
+      expect(eraseDialog()).toBeUndefined();
+      expect(toastSpy).toHaveBeenCalledWith("Customer's personal data erased.");
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['customers', 'list'] });
+    });
+
+    it('a failed erase keeps the dialog open and shows the exact message instead of the normal copy', async () => {
+      await seedOneRowAndOpenEraseDialog();
+
+      const confirmButton = eraseDialog()!.querySelector(
+        '[data-testid="confirm-dialog-destructive-confirm"]',
+      ) as HTMLButtonElement;
+      confirmButton.click();
+      await settle();
+
+      const req = httpMock.expectOne('/api/customers/c9/anonymize');
+      req.flush(
+        {
+          type: 'https://bruno-vehicle-hire/problems/not-found',
+          title: 'Not Found',
+          status: 404,
+          detail: "Customer 'c9' was not found.",
+        },
+        { status: 404, statusText: 'Not Found' },
+      );
+      await settle();
+
+      const dialog = eraseDialog();
+      expect(dialog).not.toBeUndefined();
+      expect(dialog!.textContent).not.toContain('permanently');
+      expect(dialog!.textContent).toContain("Customer 'c9' was not found.");
+    });
+  });
+
+  describe('anonymized row rendering', () => {
+    function showInactiveCheckbox(): HTMLInputElement {
+      return fixture.nativeElement.querySelector('input[type="checkbox"]');
+    }
+
+    it('shows an anonymized customer with muted-italic placeholder text and no row actions when "show inactive" is on', async () => {
+      await settle();
+      expectCustomersRequest('', 'false').flush(pagedResult([]));
+      await settle();
+
+      showInactiveCheckbox().click();
+      fixture.detectChanges();
+      await settle();
+
+      expectCustomersRequest('', 'true').flush(
+        pagedResult([
+          customerDto({
+            id: 'anon-1',
+            firstName: 'Anonymized',
+            lastName: 'Customer',
+            email: 'erased-anon-1@anonymized.local',
+            phoneNumber: '0000000000',
+            isDeleted: true,
+            isAnonymized: true,
+          }),
+        ]),
+      );
+      await settle();
+
+      const row = fixture.nativeElement.querySelector('tbody tr') as HTMLElement;
+      expect(row.textContent).toContain('Customer (anonymized)');
+      expect(row.querySelectorAll('button').length).toBe(0);
+
+      const nameCell = row.querySelector('td') as HTMLElement;
+      expect(nameCell.className).toContain('italic');
+      expect(nameCell.className).toContain('text-anonymized-text');
     });
   });
 });

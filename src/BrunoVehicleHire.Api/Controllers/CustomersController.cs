@@ -100,4 +100,19 @@ public class CustomersController(ISender sender) : ControllerBase
 
         return NoContent();
     }
+
+    /// <summary>
+    /// Irreversibly erases the customer's personal data (<see cref="Domain.Customer.Anonymize"/>) --
+    /// the permanent, non-reversible alternative to <see cref="Deactivate"/>. Works whether the
+    /// customer is currently active or already deactivated (spec-3-5's Scope decision 2), since the
+    /// underlying command looks the customer up the same way <see cref="Restore"/> does. Mirrors
+    /// <see cref="Deactivate"/>'s exact shape.
+    /// </summary>
+    [HttpPost("{id:guid}/anonymize")]
+    public async Task<IActionResult> Anonymize(Guid id, CancellationToken cancellationToken)
+    {
+        await sender.Send(new AnonymizeCustomerCommand(id), cancellationToken);
+
+        return NoContent();
+    }
 }

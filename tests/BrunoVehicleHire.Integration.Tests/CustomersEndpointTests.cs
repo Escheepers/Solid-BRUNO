@@ -867,4 +867,214 @@ public class CustomersEndpointTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
+
+    /// <summary>
+    /// Counts raw "Customers" rows for the given id via a direct <see cref="NpgsqlConnection"/> --
+    /// used only to confirm a repeated Anonymize call updates the existing row in place rather than
+    /// somehow duplicating it.
+    /// </summary>
+    private async Task<int> CountCustomerRowsAsync(Guid id)
+    {
+        await using var connection = new NpgsqlConnection(_postgres.GetConnectionString());
+        await connection.OpenAsync();
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT COUNT(*)
+            FROM "Customers"
+            WHERE "Id" = @id
+            """;
+        command.Parameters.AddWithValue("id", id);
+
+        return Convert.ToInt32(await command.ExecuteScalarAsync());
+    }
+
+    [Fact]
+    public async Task Anonymize_ActiveCustomer_Returns204_ScrubsPiiAndSetsIsAnonymized_AndDisappearsFromDefaultList()
+    {
+        var customer = Customer.Create("Erase", "Me", "erase.me@example.com", "0821223333");
+        await SeedCustomersAsync(customer);
+
+        using var request = AuthenticatedPost($"/api/customers/{customer.Id}/anonymize");
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        // Prove the write really committed -- a subsequent GET must no longer see it by default.
+        using var getRequest = AuthenticatedGet("/api/customers?page=1&pageSize=20&search=Erase");
+        var getResponse = await _client.SendAsync(getRequest);
+
+        var getJson = await getResponse.Content.ReadAsStringAsync();
+        using var getDocument = JsonDocument.Parse(getJson);
+
+        getDocument.RootElement.GetProperty("totalCount").GetInt32().Should().Be(0);
+
+        using var verifyScope = _factory.Services.CreateScope();
+        var dbContext = verifyScope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var anonymized = await dbContext.Customers
+            .IgnoreQueryFilters()
+            .Where(c => c.Id == customer.Id)
+            .SingleAsync();
+
+        anonymized.IsAnonymized.Should().BeTrue();
+        anonymized.IsDeleted.Should().BeFalse();
+        anonymized.FirstName.Should().Be("Anonymized");
+        anonymized.LastName.Should().Be("Customer");
+        anonymized.Email.Should().Be($"erased-{customer.Id}@anonymized.local");
+        anonymized.PhoneNumber.Should().Be("0000000000");
+    }
+
+    [Fact]
+    public async Task Anonymize_DeactivatedCustomer_Returns204_ScrubsPii_AndLeavesIsDeletedTrue()
+    {
+        var customer = Customer.Create("Erase", "Deactivated", "erase.deactivated@example.com", "0821224444");
+        customer.SoftDelete();
+        await SeedCustomersAsync(customer);
+
+        using var request = AuthenticatedPost($"/api/customers/{customer.Id}/anonymize");
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        using var verifyScope = _factory.Services.CreateScope();
+        var dbContext = verifyScope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var anonymized = await dbContext.Customers
+            .IgnoreQueryFilters()
+            .Where(c => c.Id == customer.Id)
+            .SingleAsync();
+
+        anonymized.IsAnonymized.Should().BeTrue();
+        anonymized.IsDeleted.Should().BeTrue();
+        anonymized.FirstName.Should().Be("Anonymized");
+        anonymized.Email.Should().Be($"erased-{customer.Id}@anonymized.local");
+    }
+
+    [Fact]
+    public async Task Anonymize_CalledTwice_Returns204BothTimes_NoErrorAndNoFurtherChange()
+    {
+        // The mandatory DB-level proof (Design Notes): the second anonymize call must not throw
+        // DbUpdateException from the unfiltered EmailHash unique index, since the placeholder email
+        // embeds the customer's own Id and therefore hashes uniquely per row even across repeats.
+        var customer = Customer.Create("Erase", "Twice", "erase.twice@example.com", "0821225555");
+        await SeedCustomersAsync(customer);
+
+        using var firstRequest = AuthenticatedPost($"/api/customers/{customer.Id}/anonymize");
+        var firstResponse = await _client.SendAsync(firstRequest);
+        firstResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        using var secondRequest = AuthenticatedPost($"/api/customers/{customer.Id}/anonymize");
+        var secondResponse = await _client.SendAsync(secondRequest);
+        secondResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        (await CountCustomerRowsAsync(customer.Id)).Should().Be(1);
+
+        using var verifyScope = _factory.Services.CreateScope();
+        var dbContext = verifyScope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var anonymized = await dbContext.Customers
+            .IgnoreQueryFilters()
+            .Where(c => c.Id == customer.Id)
+            .SingleAsync();
+
+        anonymized.IsAnonymized.Should().BeTrue();
+        anonymized.Email.Should().Be($"erased-{customer.Id}@anonymized.local");
+    }
+
+    /// <summary>
+    /// Two DIFFERENT customers anonymized back-to-back: proves the unfiltered EmailHash unique
+    /// index tolerates anonymizing multiple customers, not just the same one twice -- each
+    /// placeholder email embeds its own customer's Id, so the hashes never collide with each other
+    /// (Design Notes).
+    /// </summary>
+    [Fact]
+    public async Task Anonymize_TwoDifferentCustomersBackToBack_BothSucceed_EmailHashUniqueIndexTolerates()
+    {
+        var first = Customer.Create("Erase", "First", "erase.first@example.com", "0821226666");
+        var second = Customer.Create("Erase", "Second", "erase.second@example.com", "0821227777");
+        await SeedCustomersAsync(first, second);
+
+        using var firstRequest = AuthenticatedPost($"/api/customers/{first.Id}/anonymize");
+        var firstResponse = await _client.SendAsync(firstRequest);
+        firstResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        using var secondRequest = AuthenticatedPost($"/api/customers/{second.Id}/anonymize");
+        var secondResponse = await _client.SendAsync(secondRequest);
+        secondResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        await using var connection = new NpgsqlConnection(_postgres.GetConnectionString());
+        await connection.OpenAsync();
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT "Email"
+            FROM "Customers"
+            WHERE "Id" = ANY(@ids)
+            """;
+        command.Parameters.AddWithValue("ids", new[] { first.Id, second.Id });
+
+        await using var reader = await command.ExecuteReaderAsync();
+        var rawEmails = new List<string>();
+        while (await reader.ReadAsync())
+        {
+            rawEmails.Add(reader.GetString(0));
+        }
+
+        rawEmails.Should().HaveCount(2);
+        rawEmails[0].Should().NotBe(rawEmails[1]);
+    }
+
+    [Fact]
+    public async Task Anonymize_NonexistentCustomerId_Returns404()
+    {
+        var missingId = Guid.NewGuid();
+
+        using var request = AuthenticatedPost($"/api/customers/{missingId}/anonymize");
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task Get_ShowInactiveTrue_ReturnsAnonymizedCustomerWithIsAnonymizedFlag()
+    {
+        var customer = Customer.Create("Anonymized", "Listing", "anonymized.listing@example.com", "0821228888");
+        customer.Anonymize();
+        await SeedCustomersAsync(customer);
+
+        using var request =
+            AuthenticatedGet("/api/customers?page=1&pageSize=20&showInactive=true&search=Customer");
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var json = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(json);
+
+        var items = document.RootElement.GetProperty("items").EnumerateArray().ToList();
+        var anonymizedItem = items.Single(item => item.GetProperty("id").GetGuid() == customer.Id);
+
+        anonymizedItem.GetProperty("isAnonymized").GetBoolean().Should().BeTrue();
+        anonymizedItem.GetProperty("firstName").GetString().Should().Be("Anonymized");
+        anonymizedItem.GetProperty("lastName").GetString().Should().Be("Customer");
+    }
+
+    [Fact]
+    public async Task Get_ShowInactiveOmittedOrFalse_StillExcludesAnonymizedCustomers()
+    {
+        var activeCustomer = Customer.Create("StillVisible", "One", "stillvisible.one@example.com", "0821229999");
+        var anonymizedCustomer = Customer.Create(
+            "StillVisible", "Two", "stillvisible.two@example.com", "0821220000");
+        anonymizedCustomer.Anonymize();
+
+        await SeedCustomersAsync(activeCustomer, anonymizedCustomer);
+
+        using var request = AuthenticatedGet("/api/customers?page=1&pageSize=20&search=StillVisible");
+        var response = await _client.SendAsync(request);
+
+        var json = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(json);
+
+        document.RootElement.GetProperty("totalCount").GetInt32().Should().Be(1);
+        document.RootElement.GetProperty("items")[0].GetProperty("lastName").GetString()
+            .Should().Be("One");
+    }
 }

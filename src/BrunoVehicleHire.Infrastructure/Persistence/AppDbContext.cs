@@ -103,9 +103,12 @@ public class AppDbContext : DbContext
             entity.HasIndex("EmailHash")
                 .IsUnique();
 
-            // AD-13: mirrors Vehicle's exact query filter pattern. IsAnonymized customers stay in
-            // default listings (per domain-model.md) -- this filter is deliberately IsDeleted-only.
-            entity.HasQueryFilter(c => !c.IsDeleted);
+            // AD-13: mirrors Vehicle's exact query filter pattern. Story 3.5 extends it to also
+            // exclude IsAnonymized customers from default listings and booking selection -- the same
+            // query-filter mechanism as IsDeleted, not a new one (spec-3-5's Scope decision 3).
+            // GetPagedAsync's includeInactive flag already bypasses this filter wholesale via
+            // IgnoreQueryFilters(), so toggling "show inactive" surfaces anonymized customers too.
+            entity.HasQueryFilter(c => !c.IsDeleted && !c.IsAnonymized);
         });
 
         // Booking (Story 3.3): the first enum and the first FK relationships anywhere in this

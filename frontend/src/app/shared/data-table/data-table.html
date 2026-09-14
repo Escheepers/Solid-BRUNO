@@ -23,8 +23,9 @@
             @for (column of columns(); track column.header) {
               <td
                 class="py-row-y px-row-x text-body"
-                [class.text-text-body]="!isRowMuted(row)"
-                [class.text-text-disabled]="isRowMuted(row)"
+                [class.text-text-body]="!isRowMuted(row) && !cellClass(column, row)"
+                [class.text-text-disabled]="isRowMuted(row) && !cellClass(column, row)"
+                [class]="cellClass(column, row)"
               >
                 {{ column.cell(row) }}
               </td>

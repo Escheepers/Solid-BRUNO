@@ -264,4 +264,57 @@ describe('DataTable', () => {
       }
     });
   });
+
+  describe('cellClass', () => {
+    it("applies a column's cellClass only to the rows for which it returns a non-empty string", () => {
+      const columnsWithCellClass: ColumnDef<Row>[] = [
+        { header: 'ID', cell: (row) => String(row.id) },
+        {
+          header: 'Name',
+          cell: (row) => row.name.toUpperCase(),
+          cellClass: (row) => (row.id === 2 ? 'italic text-anonymized-text' : ''),
+        },
+      ];
+      fixture.componentRef.setInput('columns', columnsWithCellClass);
+      fixture.detectChanges();
+
+      const styledCell = tableRows()[1].querySelectorAll('td')[1] as HTMLElement;
+      const plainCell = tableRows()[0].querySelectorAll('td')[1] as HTMLElement;
+
+      expect(styledCell.className).toContain('italic');
+      expect(styledCell.className).toContain('text-anonymized-text');
+
+      expect(plainCell.className).not.toContain('italic');
+      expect(plainCell.className).not.toContain('text-anonymized-text');
+    });
+
+    it('suppresses the default text-text-body/text-text-disabled classes on a cell whose cellClass is non-empty', () => {
+      const columnsWithCellClass: ColumnDef<Row>[] = [
+        {
+          header: 'Name',
+          cell: (row) => row.name,
+          cellClass: (row) => (row.id === 2 ? 'italic text-anonymized-text' : ''),
+        },
+      ];
+      fixture.componentRef.setInput('columns', columnsWithCellClass);
+      fixture.detectChanges();
+
+      const styledCell = tableRows()[1].querySelector('td') as HTMLElement;
+      const plainCell = tableRows()[0].querySelector('td') as HTMLElement;
+
+      expect(styledCell.className).not.toContain('text-text-body');
+      expect(styledCell.className).not.toContain('text-text-disabled');
+      expect(plainCell.className).toContain('text-text-body');
+    });
+
+    it('leaves every cell with the default text-text-body treatment when no column defines cellClass', () => {
+      fixture.detectChanges();
+
+      for (const row of tableRows()) {
+        for (const cell of Array.from(row.querySelectorAll('td'))) {
+          expect((cell as HTMLElement).className).toContain('text-text-body');
+        }
+      }
+    });
+  });
 });

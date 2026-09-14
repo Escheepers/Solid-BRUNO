@@ -14,6 +14,7 @@ import { ConfirmDialog } from './confirm-dialog';
       message="You have unsaved changes. Discard them?"
       confirmLabel="Discard"
       cancelLabel="Keep editing"
+      [variant]="variant"
       (confirm)="onConfirm()"
       (cancel)="onCancel()"
     />
@@ -23,6 +24,7 @@ class TestHost {
   open = false;
   confirmed = false;
   cancelled = false;
+  variant: 'neutral' | 'destructive' = 'neutral';
 
   onConfirm(): void {
     this.confirmed = true;
@@ -143,5 +145,42 @@ describe('ConfirmDialog', () => {
     dialog()!.dispatchEvent(event);
 
     expect(document.activeElement).toBe(focusable[0]);
+  });
+
+  describe('variant', () => {
+    it('renders the neutral app-button confirm control by default', () => {
+      host.open = true;
+      fixture.detectChanges();
+
+      expect(dialog()!.querySelector('app-button')).not.toBeNull();
+      expect(
+        dialog()!.querySelector('[data-testid="confirm-dialog-destructive-confirm"]'),
+      ).toBeNull();
+    });
+
+    it('renders a danger-toned confirm button instead of app-button when variant is destructive', () => {
+      host.variant = 'destructive';
+      host.open = true;
+      fixture.detectChanges();
+
+      const destructiveButton = dialog()!.querySelector(
+        '[data-testid="confirm-dialog-destructive-confirm"]',
+      );
+      expect(destructiveButton).not.toBeNull();
+      expect(destructiveButton!.className).toContain('bg-danger-text');
+      expect(destructiveButton!.textContent?.trim()).toBe('Discard');
+      expect(dialog()!.querySelector('app-button')).toBeNull();
+    });
+
+    it('still emits confirm when clicking the destructive confirm button', () => {
+      host.variant = 'destructive';
+      host.open = true;
+      fixture.detectChanges();
+
+      buttonNamed('Discard')!.click();
+      fixture.detectChanges();
+
+      expect(host.confirmed).toBe(true);
+    });
   });
 });

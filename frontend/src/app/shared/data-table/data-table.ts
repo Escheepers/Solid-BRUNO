@@ -11,6 +11,15 @@ import { Skeleton } from '../skeleton/skeleton';
 export interface ColumnDef<T> {
   header: string;
   cell: (row: T) => string;
+  /**
+   * Optional per-row class override for this column's `<td>` (spec-3-5's Scope
+   * decision 4, added for the anonymized-customer name treatment). Omitted by
+   * every pre-existing column (defaults to no-op), so this is additive only --
+   * when it returns a non-empty string for a row, it replaces that cell's default
+   * `text-text-body`/`text-text-disabled` treatment rather than layering on top of
+   * it (avoids two conflicting Tailwind text-color utilities on the same element).
+   */
+  cellClass?: (row: T) => string;
 }
 
 /**
@@ -93,6 +102,10 @@ export class DataTable<T> {
 
   protected isRowMuted(row: T): boolean {
     return this.rowMuted()?.(row) ?? false;
+  }
+
+  protected cellClass(column: ColumnDef<T>, row: T): string {
+    return column.cellClass?.(row) ?? '';
   }
 
   protected rowErrorMessage(row: T): string | null {

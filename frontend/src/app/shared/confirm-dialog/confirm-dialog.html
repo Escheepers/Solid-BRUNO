@@ -27,7 +27,18 @@
           >
             {{ cancelLabel() }}
           </button>
-          <app-button (click)="onConfirmClick()">{{ confirmLabel() }}</app-button>
+          @if (variant() === 'destructive') {
+            <button
+              type="button"
+              data-testid="confirm-dialog-destructive-confirm"
+              class="inline-flex items-center justify-center gap-2 rounded-md bg-danger-text px-[18px] py-[9px] text-button text-primary-foreground hover:opacity-90"
+              (click)="onConfirmClick()"
+            >
+              {{ confirmLabel() }}
+            </button>
+          } @else {
+            <app-button (click)="onConfirmClick()">{{ confirmLabel() }}</app-button>
+          }
         </div>
       </div>
     </div>

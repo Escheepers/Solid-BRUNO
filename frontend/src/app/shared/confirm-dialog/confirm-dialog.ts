@@ -18,6 +18,14 @@ import { Button } from '../button/button';
  * alongside an already-open `Modal` during the discard-guard flow, and
  * `EXPERIENCE.md`'s Interaction Primitives require Escape to close only the
  * topmost dialog, never bubble to close the `Modal` underneath too.
+ *
+ * `variant` (spec-3-5) adds the `destructive` treatment (`{components.confirm-
+ * dialog-destructive}` in DESIGN.md) for the irreversible Erase-personal-data
+ * action — its confirm button renders in `{colors.danger-text}` instead of the
+ * shared `Button`'s primary styling, so the visual weight matches the actual
+ * stakes (`EXPERIENCE.md`'s "give the destructive action its own distinct,
+ * harsher-styled button"). Defaults to `neutral` so every pre-existing consumer
+ * (Delete, Deactivate) is unaffected.
  */
 @Component({
   selector: 'app-confirm-dialog',
@@ -30,6 +38,7 @@ export class ConfirmDialog implements AfterViewChecked {
   readonly message = input<string>('');
   readonly confirmLabel = input('Confirm');
   readonly cancelLabel = input('Cancel');
+  readonly variant = input<'neutral' | 'destructive'>('neutral');
 
   readonly confirm = output<void>();
   readonly cancel = output<void>();
