@@ -14,4 +14,5 @@ export interface VehicleDto {
   year: number;
   dailyRate: number;
   createdDate: string;
+  isDeleted: boolean;
 }

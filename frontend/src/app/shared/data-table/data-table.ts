@@ -33,10 +33,13 @@ export interface RowAction<T> {
  * `loading` is true. Does not handle empty states itself — a `DataTable` with zero
  * rows and `loading=false` is the caller's concern (e.g. Vehicles' two distinct
  * empty-state messages), since the two states this story needs are entity-specific
- * text, not a shared component DESIGN.md names. `actions` (spec-2-2) adds an
- * optional trailing column of generic row-level text-link actions — rendered only
- * when at least one is supplied, so every pre-existing caller (columns/rows/etc.
- * only) keeps working unchanged.
+ * text, not a shared component DESIGN.md names. `actions` (spec-2-2, changed to a
+ * per-row function in spec-2-4) adds an optional trailing column of generic
+ * row-level text-link actions — rendered only when at least one row produces at
+ * least one action, so every pre-existing caller (columns/rows/etc. only) keeps
+ * working unchanged. `rowMuted`/`rowKey`+`rowError` (spec-2-4) stay entity-agnostic
+ * too: `DataTable` never learns what "soft-deleted" or "already active" means, only
+ * renders what the caller's predicates/functions tell it to (SRP).
  */
 @Component({
   selector: 'app-data-table',
@@ -50,9 +53,16 @@ export class DataTable<T> {
   readonly page = input(1);
   readonly pageSize = input(20);
   readonly totalCount = input(0);
-  readonly actions = input<RowAction<T>[]>([]);
+  readonly actions = input<(row: T) => RowAction<T>[]>(() => []);
+  readonly rowMuted = input<((row: T) => boolean) | null>(null);
+  readonly rowKey = input<((row: T) => string) | null>(null);
+  readonly rowError = input<{ key: string; message: string } | null>(null);
 
   readonly pageChange = output<number>();
+
+  protected readonly hasAnyRowActions = computed(() =>
+    this.rows().some((row) => this.actions()(row).length > 0),
+  );
 
   protected readonly totalPages = computed(() =>
     Math.max(1, Math.ceil(this.totalCount() / this.pageSize())),
@@ -79,5 +89,18 @@ export class DataTable<T> {
       return;
     }
     this.pageChange.emit(target);
+  }
+
+  protected isRowMuted(row: T): boolean {
+    return this.rowMuted()?.(row) ?? false;
+  }
+
+  protected rowErrorMessage(row: T): string | null {
+    const key = this.rowKey();
+    const error = this.rowError();
+    if (!key || !error || key(row) !== error.key) {
+      return null;
+    }
+    return error.message;
   }
 }

@@ -15,7 +15,8 @@ public record VehicleDto(
     string Model,
     int Year,
     decimal DailyRate,
-    DateTime CreatedDate)
+    DateTime CreatedDate,
+    bool IsDeleted)
 {
     /// <summary>
     /// The one place a <see cref="Vehicle"/> is projected to its wire shape, shared by every
@@ -29,5 +30,6 @@ public record VehicleDto(
         vehicle.Model,
         vehicle.Year,
         vehicle.DailyRate,
-        vehicle.CreatedDate);
+        vehicle.CreatedDate,
+        vehicle.IsDeleted);
 }

@@ -15,6 +15,7 @@ export interface Vehicle {
   year: number;
   dailyRate: number;
   createdDate: Date;
+  isDeleted: boolean;
 }
 
 /** Explicit DTO -> view-model mapper. Never mapped implicitly / structurally. */
@@ -27,5 +28,6 @@ export function toVehicle(dto: VehicleDto): Vehicle {
     year: dto.year,
     dailyRate: dto.dailyRate,
     createdDate: new Date(dto.createdDate),
+    isDeleted: dto.isDeleted,
   };
 }

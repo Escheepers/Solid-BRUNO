@@ -10,6 +10,7 @@ describe('toVehicle', () => {
     year: 2022,
     dailyRate: 350,
     createdDate: '2026-01-15T10:30:00Z',
+    isDeleted: false,
   };
 
   it('maps every primitive field across unchanged', () => {
@@ -21,6 +22,7 @@ describe('toVehicle', () => {
     expect(vehicle.model).toBe(dto.model);
     expect(vehicle.year).toBe(dto.year);
     expect(vehicle.dailyRate).toBe(dto.dailyRate);
+    expect(vehicle.isDeleted).toBe(dto.isDeleted);
   });
 
   it('parses the ISO createdDate string into a real Date', () => {

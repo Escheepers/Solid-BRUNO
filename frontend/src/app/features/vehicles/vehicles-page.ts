@@ -9,7 +9,11 @@ import { ConfirmDialog } from '../../shared/confirm-dialog/confirm-dialog';
 import { ToastService } from '../../shared/toast/toast.service';
 import { Vehicle, toVehicle } from './models/vehicle';
 import { VehicleFormModal } from './vehicle-form-modal';
-import { useDeactivateVehicleMutation, useVehiclesQuery } from './vehicles.service';
+import {
+  useDeactivateVehicleMutation,
+  useRestoreVehicleMutation,
+  useVehiclesQuery,
+} from './vehicles.service';
 
 const DEFAULT_DEACTIVATE_MESSAGE =
   'This vehicle will disappear from availability searches. This is reversible — you can restore it later.';
@@ -43,6 +47,7 @@ const dateFormatter = new Intl.DateTimeFormat('en-ZA', {
 export class VehiclesPage {
   private readonly toastService = inject(ToastService);
   private readonly deactivateMutation = useDeactivateVehicleMutation();
+  private readonly restoreMutation = useRestoreVehicleMutation();
 
   protected readonly searchInput = signal('');
   protected readonly pageSize = PAGE_SIZE;
@@ -50,6 +55,9 @@ export class VehiclesPage {
   protected readonly editingVehicle = signal<Vehicle | null>(null);
   protected readonly deactivatingVehicle = signal<Vehicle | null>(null);
   protected readonly deactivateErrorMessage = signal<string | null>(null);
+  protected readonly showInactive = signal(false);
+  protected readonly restoreErrorRowKey = signal<string | null>(null);
+  protected readonly restoreErrorMessage = signal<string | null>(null);
 
   protected readonly debouncedSearch = toSignal(
     toObservable(this.searchInput).pipe(debounceTime(SEARCH_DEBOUNCE_MS), distinctUntilChanged()),
@@ -74,6 +82,7 @@ export class VehiclesPage {
     page: this.page(),
     pageSize: this.pageSize,
     search: this.debouncedSearch(),
+    showInactive: this.showInactive(),
   }));
 
   protected readonly columns: ColumnDef<Vehicle>[] = [
@@ -85,10 +94,27 @@ export class VehiclesPage {
     { header: 'Created', cell: (vehicle) => dateFormatter.format(vehicle.createdDate) },
   ];
 
-  protected readonly actions: RowAction<Vehicle>[] = [
-    { label: 'Edit', onClick: (vehicle) => this.openEditModal(vehicle) },
-    { label: 'Deactivate', onClick: (vehicle) => this.openDeactivateDialog(vehicle) },
-  ];
+  /**
+   * A per-row function (spec-2-4's `DataTable.actions` change) so an inactive
+   * (soft-deleted) row shows only "Restore" *in place of* the usual Edit/Deactivate
+   * pair, per `EXPERIENCE.md`'s State Patterns row for "Soft-deleted vehicle".
+   */
+  protected readonly actions = (vehicle: Vehicle): RowAction<Vehicle>[] =>
+    vehicle.isDeleted
+      ? [{ label: 'Restore', onClick: (v) => this.onRestoreClick(v) }]
+      : [
+          { label: 'Edit', onClick: (v) => this.openEditModal(v) },
+          { label: 'Deactivate', onClick: (v) => this.openDeactivateDialog(v) },
+        ];
+
+  protected readonly rowMuted = (vehicle: Vehicle): boolean => vehicle.isDeleted;
+  protected readonly rowKey = (vehicle: Vehicle): string => vehicle.id;
+
+  protected readonly rowError = computed<{ key: string; message: string } | null>(() => {
+    const key = this.restoreErrorRowKey();
+    const message = this.restoreErrorMessage();
+    return key !== null && message !== null ? { key, message } : null;
+  });
 
   protected readonly deactivateDialogMessage = computed(
     () => this.deactivateErrorMessage() ?? DEFAULT_DEACTIVATE_MESSAGE,
@@ -115,6 +141,10 @@ export class VehiclesPage {
 
   protected onSearchInput(value: string): void {
     this.searchInput.set(value);
+  }
+
+  protected onShowInactiveChange(value: boolean): void {
+    this.showInactive.set(value);
   }
 
   protected onPageChange(page: number): void {
@@ -163,6 +193,26 @@ export class VehiclesPage {
       },
       onError: (error) => {
         this.deactivateErrorMessage.set(this.toErrorMessage(error));
+      },
+    });
+  }
+
+  /**
+   * No `ConfirmDialog` step (spec-2-4's Scope decision 3 -- gating the undo of an
+   * already-reversible, already-confirmed action behind a second confirmation would
+   * be redundant friction, not safety). Clicking "Restore" calls the mutation
+   * directly.
+   */
+  protected onRestoreClick(vehicle: Vehicle): void {
+    this.restoreMutation.mutate(vehicle.id, {
+      onSuccess: () => {
+        this.restoreErrorRowKey.set(null);
+        this.restoreErrorMessage.set(null);
+        this.toastService.success('Vehicle restored.');
+      },
+      onError: (error) => {
+        this.restoreErrorRowKey.set(vehicle.id);
+        this.restoreErrorMessage.set(this.toErrorMessage(error));
       },
     });
   }

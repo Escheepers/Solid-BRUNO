@@ -19,6 +19,7 @@ function vehicleDto(overrides: Partial<VehicleDto> = {}): VehicleDto {
     year: 2022,
     dailyRate: 350,
     createdDate: '2026-01-15T10:30:00Z',
+    isDeleted: false,
     ...overrides,
   };
 }
@@ -87,11 +88,12 @@ describe('VehiclesPage', () => {
     input.dispatchEvent(new Event('input'));
   }
 
-  function expectVehiclesRequest(matchSearch?: string) {
+  function expectVehiclesRequest(matchSearch?: string, matchShowInactive?: string) {
     return httpMock.expectOne(
       (req) =>
         req.url === '/api/vehicles' &&
-        (matchSearch === undefined || req.params.get('search') === matchSearch),
+        (matchSearch === undefined || req.params.get('search') === matchSearch) &&
+        (matchShowInactive === undefined || req.params.get('showInactive') === matchShowInactive),
     );
   }
 
@@ -356,6 +358,152 @@ describe('VehiclesPage', () => {
       // 400/409 as business-rule shaped) -- the dialog shows that generic message rather than
       // deeply classifying the error, per the spec's Design Notes.
       expect(dialog!.textContent).toContain('An unexpected error occurred');
+    });
+  });
+
+  describe('show inactive toggle', () => {
+    function showInactiveCheckbox(): HTMLInputElement {
+      return fixture.nativeElement.querySelector('input[type="checkbox"]');
+    }
+
+    it('passes showInactive=false to the query by default', async () => {
+      await settle();
+      expectVehiclesRequest('', 'false').flush(pagedResult([]));
+    });
+
+    it('passes showInactive=true to the query once the toggle is checked', async () => {
+      await settle();
+      expectVehiclesRequest('', 'false').flush(pagedResult([]));
+      await settle();
+
+      showInactiveCheckbox().click();
+      fixture.detectChanges();
+      await settle();
+
+      expectVehiclesRequest('', 'true').flush(pagedResult([]));
+    });
+  });
+
+  describe('restore row action', () => {
+    function showInactiveCheckbox(): HTMLInputElement {
+      return fixture.nativeElement.querySelector('input[type="checkbox"]');
+    }
+
+    async function seedActiveAndInactiveRows(): Promise<void> {
+      await settle();
+      expectVehiclesRequest('', 'false').flush(pagedResult([]));
+      await settle();
+
+      showInactiveCheckbox().click();
+      fixture.detectChanges();
+      await settle();
+
+      expectVehiclesRequest('', 'true').flush(
+        pagedResult([
+          vehicleDto({ id: 'active-1', registrationNumber: 'CA111111', isDeleted: false }),
+          vehicleDto({ id: 'inactive-1', registrationNumber: 'CA222222', isDeleted: true }),
+        ]),
+      );
+      await settle();
+    }
+
+    it('an inactive row shows only Restore and is dimmed; an active row keeps Edit/Deactivate and is not dimmed', async () => {
+      await seedActiveAndInactiveRows();
+
+      const rows = fixture.nativeElement.querySelectorAll('tbody tr');
+      expect(rows.length).toBe(2);
+
+      const activeButtons = Array.from<HTMLButtonElement>(rows[0].querySelectorAll('button')).map(
+        (b) => b.textContent?.trim(),
+      );
+      const inactiveButtons = Array.from<HTMLButtonElement>(
+        rows[1].querySelectorAll('button'),
+      ).map((b) => b.textContent?.trim());
+
+      expect(activeButtons).toEqual(['Edit', 'Deactivate']);
+      expect(inactiveButtons).toEqual(['Restore']);
+
+      const activeCell = rows[0].querySelector('td') as HTMLElement;
+      const inactiveCell = rows[1].querySelector('td') as HTMLElement;
+      expect(activeCell.className).toContain('text-text-body');
+      expect(inactiveCell.className).toContain('text-text-disabled');
+    });
+
+    it('clicking Restore on a row that succeeds clears any error state and shows a success toast', async () => {
+      await settle();
+      expectVehiclesRequest('', 'false').flush(pagedResult([]));
+      await settle();
+
+      showInactiveCheckbox().click();
+      fixture.detectChanges();
+      await settle();
+
+      expectVehiclesRequest('', 'true').flush(
+        pagedResult([vehicleDto({ id: 'v5', registrationNumber: 'CA555555', isDeleted: true })]),
+      );
+      await settle();
+
+      const toastSpy = vi.spyOn(toastService, 'success');
+
+      const restoreButton = Array.from<HTMLButtonElement>(
+        fixture.nativeElement.querySelectorAll('tbody button'),
+      ).find((b) => b.textContent?.trim() === 'Restore');
+      restoreButton!.click();
+      await settle();
+
+      const req = httpMock.expectOne('/api/vehicles/v5/restore');
+      expect(req.request.method).toBe('POST');
+      req.flush(null, { status: 204, statusText: 'No Content' });
+      await settle();
+
+      // Invalidation triggers a refetch of the currently-mounted (showInactive=true) list query.
+      expectVehiclesRequest('', 'true').flush(pagedResult([]));
+      await settle();
+
+      expect(toastSpy).toHaveBeenCalledWith('Vehicle restored.');
+      expect(fixture.nativeElement.textContent).not.toContain('Already active');
+    });
+
+    it("clicking Restore on a row that fails (409) sets that specific row's error state only, even with multiple inactive rows", async () => {
+      await settle();
+      expectVehiclesRequest('', 'false').flush(pagedResult([]));
+      await settle();
+
+      showInactiveCheckbox().click();
+      fixture.detectChanges();
+      await settle();
+
+      expectVehiclesRequest('', 'true').flush(
+        pagedResult([
+          vehicleDto({ id: 'v10', registrationNumber: 'CA101010', isDeleted: true }),
+          vehicleDto({ id: 'v11', registrationNumber: 'CA111011', isDeleted: true }),
+        ]),
+      );
+      await settle();
+
+      const restoreButtons = Array.from<HTMLButtonElement>(
+        fixture.nativeElement.querySelectorAll('tbody button'),
+      ).filter((b) => b.textContent?.trim() === 'Restore');
+      expect(restoreButtons.length).toBe(2);
+
+      restoreButtons[0].click();
+      await settle();
+
+      const req = httpMock.expectOne('/api/vehicles/v10/restore');
+      req.flush(
+        {
+          type: 'urn:bruno:vehicle:is-deleted',
+          title: 'A domain rule was violated.',
+          status: 409,
+          detail: 'Already active.',
+        },
+        { status: 409, statusText: 'Conflict' },
+      );
+      await settle();
+
+      const rows = fixture.nativeElement.querySelectorAll('tbody tr');
+      expect(rows[0].textContent).toContain('Already active.');
+      expect(rows[1].textContent).not.toContain('Already active.');
     });
   });
 });

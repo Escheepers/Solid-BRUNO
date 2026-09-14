@@ -292,6 +292,36 @@ public class VehicleTests
     }
 
     [Fact]
+    public void Restore_SoftDeletedVehicle_ClearsIsDeletedAndLeavesOtherFieldsUnchanged()
+    {
+        var vehicle = CreateValidVehicle();
+        vehicle.SoftDelete();
+
+        vehicle.Restore();
+
+        Assert.False(vehicle.IsDeleted);
+        Assert.Equal(ValidRegistrationNumber, vehicle.RegistrationNumber);
+        Assert.Equal(ValidMake, vehicle.Make);
+        Assert.Equal(ValidModel, vehicle.Model);
+        Assert.Equal(ValidYear, vehicle.Year);
+        Assert.Equal(ValidDailyRate, vehicle.DailyRate);
+    }
+
+    [Fact]
+    public void Restore_AlreadyActiveVehicle_ThrowsDomainRuleViolationException_AndLeavesIsDeletedUnchanged()
+    {
+        var vehicle = CreateValidVehicle();
+
+        var act = () => vehicle.Restore();
+
+        var exception = Assert.Throws<DomainRuleViolationException>(act);
+        Assert.Equal("Already active.", exception.Message);
+        Assert.Equal(nameof(Vehicle), exception.Entity);
+        Assert.Equal(nameof(Vehicle.IsDeleted), exception.Rule);
+        Assert.False(vehicle.IsDeleted);
+    }
+
+    [Fact]
     public void Vehicle_HasNoPublicSetters()
     {
         var propertiesWithPublicSetters = typeof(Vehicle)

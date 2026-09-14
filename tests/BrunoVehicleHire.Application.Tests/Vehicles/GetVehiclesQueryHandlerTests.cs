@@ -22,7 +22,7 @@ public class GetVehiclesQueryHandlerTests
         var vehicleTwo = Vehicle.Create("CA654321", "Honda", "Civic", 2024, 400m);
 
         var repository = Substitute.For<IVehicleRepository>();
-        repository.GetPagedAsync(2, 10, "Toyota", Arg.Any<CancellationToken>())
+        repository.GetPagedAsync(2, 10, "Toyota", false, Arg.Any<CancellationToken>())
             .Returns((new List<Vehicle> { vehicleOne, vehicleTwo }, 27));
 
         var handler = new GetVehiclesQueryHandler(repository);
@@ -45,14 +45,14 @@ public class GetVehiclesQueryHandlerTests
         result.Items[1].Id.Should().Be(vehicleTwo.Id);
         result.Items[1].RegistrationNumber.Should().Be(vehicleTwo.RegistrationNumber);
 
-        await repository.Received(1).GetPagedAsync(2, 10, "Toyota", Arg.Any<CancellationToken>());
+        await repository.Received(1).GetPagedAsync(2, 10, "Toyota", false, Arg.Any<CancellationToken>());
     }
 
     [Fact]
     public async Task Handle_NoResults_ReturnsEmptyItemsWithZeroTotalCount()
     {
         var repository = Substitute.For<IVehicleRepository>();
-        repository.GetPagedAsync(1, 20, null, Arg.Any<CancellationToken>())
+        repository.GetPagedAsync(1, 20, null, false, Arg.Any<CancellationToken>())
             .Returns((new List<Vehicle>(), 0));
 
         var handler = new GetVehiclesQueryHandler(repository);
@@ -61,5 +61,19 @@ public class GetVehiclesQueryHandlerTests
 
         result.Items.Should().BeEmpty();
         result.TotalCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Handle_IncludeInactiveTrue_PassesThroughToRepository()
+    {
+        var repository = Substitute.For<IVehicleRepository>();
+        repository.GetPagedAsync(1, 20, null, true, Arg.Any<CancellationToken>())
+            .Returns((new List<Vehicle>(), 0));
+
+        var handler = new GetVehiclesQueryHandler(repository);
+
+        await handler.Handle(new GetVehiclesQuery(1, 20, null, IncludeInactive: true), CancellationToken.None);
+
+        await repository.Received(1).GetPagedAsync(1, 20, null, true, Arg.Any<CancellationToken>());
     }
 }

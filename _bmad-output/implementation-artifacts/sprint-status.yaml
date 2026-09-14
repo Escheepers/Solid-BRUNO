@@ -49,7 +49,7 @@ development_status:
   2-1-create-a-vehicle: done
   2-2-edit-a-vehicle: done
   2-3-soft-delete-a-vehicle: done
-  2-4-restore-a-soft-deleted-vehicle: backlog
+  2-4-restore-a-soft-deleted-vehicle: done
   2-5-view-vehicle-detail: backlog
   epic-2-retrospective: optional
 

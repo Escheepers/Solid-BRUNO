@@ -114,6 +114,23 @@ public class Vehicle
     }
 
     /// <summary>
+    /// Clears the soft-delete flag. Deliberately the OPPOSITE of <see cref="SoftDelete"/>'s
+    /// idempotency: restoring a vehicle that is already active throws
+    /// <see cref="DomainRuleViolationException"/> rather than silently succeeding, per the
+    /// AC ("the action fails gracefully... rather than silently double-processing"). No other
+    /// field changes.
+    /// </summary>
+    public void Restore()
+    {
+        if (!IsDeleted)
+        {
+            throw new DomainRuleViolationException(nameof(Vehicle), nameof(IsDeleted), "Already active.");
+        }
+
+        IsDeleted = false;
+    }
+
+    /// <summary>
     /// The single shared source of every Vehicle invariant, called by both <see cref="Create"/> and
     /// <see cref="Update"/> (DRY -- previously these four checks lived duplicated inline in each).
     /// Throws <see cref="DomainRuleViolationException"/> on the first violated invariant; never

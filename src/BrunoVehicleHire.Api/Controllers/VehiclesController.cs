@@ -23,9 +23,11 @@ public class VehiclesController(ISender sender) : ControllerBase
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
         [FromQuery] string? search = null,
+        [FromQuery] bool showInactive = false,
         CancellationToken cancellationToken = default)
     {
-        var result = await sender.Send(new GetVehiclesQuery(page, pageSize, search), cancellationToken);
+        var result = await sender.Send(
+            new GetVehiclesQuery(page, pageSize, search, showInactive), cancellationToken);
 
         return Ok(result);
     }
@@ -65,6 +67,20 @@ public class VehiclesController(ISender sender) : ControllerBase
     public async Task<IActionResult> Deactivate(Guid id, CancellationToken cancellationToken)
     {
         await sender.Send(new SoftDeleteVehicleCommand(id), cancellationToken);
+
+        return NoContent();
+    }
+
+    /// <summary>
+    /// Restores a soft-deleted vehicle -- the reverse of <see cref="Deactivate"/>. Unlike
+    /// <c>SoftDelete</c>, this is deliberately non-idempotent: restoring an already-active vehicle
+    /// throws <see cref="Domain.Exceptions.DomainRuleViolationException"/>, mapped to a 409 by
+    /// <see cref="ExceptionHandling.GlobalExceptionHandler"/>.
+    /// </summary>
+    [HttpPost("{id:guid}/restore")]
+    public async Task<IActionResult> Restore(Guid id, CancellationToken cancellationToken)
+    {
+        await sender.Send(new RestoreVehicleCommand(id), cancellationToken);
 
         return NoContent();
     }

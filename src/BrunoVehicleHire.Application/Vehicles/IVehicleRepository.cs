@@ -13,10 +13,17 @@ namespace BrunoVehicleHire.Application.Vehicles;
 /// </summary>
 public interface IVehicleRepository
 {
+    /// <summary>
+    /// <paramref name="includeInactive"/>, when true, ignores the soft-delete query filter for this
+    /// call only (the Vehicles list's "show inactive" toggle -- Story 2.4) -- every other read in
+    /// this repository stays filtered. Defaults to false so every pre-existing call site's behavior
+    /// is unchanged.
+    /// </summary>
     Task<(IReadOnlyList<Vehicle> Items, int TotalCount)> GetPagedAsync(
         int page,
         int pageSize,
         string? search,
+        bool includeInactive,
         CancellationToken cancellationToken);
 
     /// <summary>
@@ -41,6 +48,14 @@ public interface IVehicleRepository
     /// <c>NotFoundException</c>, never a <c>NullReferenceException</c>.
     /// </summary>
     Task<Vehicle?> GetByIdAsync(Guid id, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Fetches a <see cref="Vehicle"/> by id, deliberately IGNORING the soft-delete query filter
+    /// (Story 2.4) -- <see cref="Commands.RestoreVehicleCommandHandler"/>'s whole point is finding a
+    /// currently-soft-deleted row, which <see cref="GetByIdAsync"/> would incorrectly treat as not
+    /// found. Returns <c>null</c> only when no row with this id exists at all (deleted or not).
+    /// </summary>
+    Task<Vehicle?> GetByIdIncludingSoftDeletedAsync(Guid id, CancellationToken cancellationToken);
 
     /// <summary>
     /// Queues a new <see cref="Vehicle"/> for insertion. Never calls <c>SaveChangesAsync</c> --

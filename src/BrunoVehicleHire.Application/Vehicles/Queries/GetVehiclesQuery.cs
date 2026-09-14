@@ -10,4 +10,5 @@ namespace BrunoVehicleHire.Application.Vehicles.Queries;
 /// shared <c>ValidationBehavior&lt;TRequest,TResponse&gt;</c> MediatR pipeline -- never validated
 /// manually in the handler.
 /// </summary>
-public record GetVehiclesQuery(int Page, int PageSize, string? Search) : IRequest<PagedResult<VehicleDto>>;
+public record GetVehiclesQuery(int Page, int PageSize, string? Search, bool IncludeInactive = false)
+    : IRequest<PagedResult<VehicleDto>>;

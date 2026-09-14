@@ -10,7 +10,7 @@
               {{ column.header }}
             </th>
           }
-          @if (actions().length > 0) {
+          @if (hasAnyRowActions()) {
             <th class="py-row-y px-row-x text-section-label uppercase text-text-faint" scope="col">
               <span class="sr-only">Actions</span>
             </th>
@@ -19,16 +19,20 @@
       </thead>
       <tbody>
         @for (row of rows(); track $index) {
-          <tr class="odd:bg-surface-alt">
+          <tr [class]="rowErrorMessage(row) ? 'bg-error-row-bg' : 'odd:bg-surface-alt'">
             @for (column of columns(); track column.header) {
-              <td class="py-row-y px-row-x text-body text-text-body">
+              <td
+                class="py-row-y px-row-x text-body"
+                [class.text-text-body]="!isRowMuted(row)"
+                [class.text-text-disabled]="isRowMuted(row)"
+              >
                 {{ column.cell(row) }}
               </td>
             }
-            @if (actions().length > 0) {
+            @if (hasAnyRowActions()) {
               <td class="py-row-y px-row-x text-body">
                 <div class="flex gap-3">
-                  @for (action of actions(); track action.label) {
+                  @for (action of actions()(row); track action.label) {
                     <button
                       type="button"
                       class="text-button text-primary hover:underline"
@@ -38,6 +42,9 @@
                     </button>
                   }
                 </div>
+                @if (rowErrorMessage(row); as message) {
+                  <p aria-live="polite" class="text-caption text-danger-text">{{ message }}</p>
+                }
               </td>
             }
           </tr>

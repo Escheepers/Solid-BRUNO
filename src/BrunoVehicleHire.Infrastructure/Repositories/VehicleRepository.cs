@@ -20,9 +20,12 @@ public class VehicleRepository(AppDbContext dbContext) : IVehicleRepository
         int page,
         int pageSize,
         string? search,
+        bool includeInactive,
         CancellationToken cancellationToken)
     {
-        var query = dbContext.Vehicles.AsQueryable();
+        var query = includeInactive
+            ? dbContext.Vehicles.IgnoreQueryFilters()
+            : dbContext.Vehicles.AsQueryable();
 
         if (!string.IsNullOrWhiteSpace(search))
         {
@@ -68,6 +71,19 @@ public class VehicleRepository(AppDbContext dbContext) : IVehicleRepository
     public async Task<Vehicle?> GetByIdAsync(Guid id, CancellationToken cancellationToken)
     {
         return await dbContext.Vehicles
+            .FirstOrDefaultAsync(v => v.Id == id, cancellationToken);
+    }
+
+    /// <summary>
+    /// Deliberately calls <c>IgnoreQueryFilters()</c> -- mirrors
+    /// <see cref="ExistsByRegistrationNumberAsync"/>'s reasoning. Restore's whole point is finding a
+    /// currently-soft-deleted row, which <see cref="GetByIdAsync"/>'s filtered query would
+    /// incorrectly report as not found.
+    /// </summary>
+    public async Task<Vehicle?> GetByIdIncludingSoftDeletedAsync(Guid id, CancellationToken cancellationToken)
+    {
+        return await dbContext.Vehicles
+            .IgnoreQueryFilters()
             .FirstOrDefaultAsync(v => v.Id == id, cancellationToken);
     }
 

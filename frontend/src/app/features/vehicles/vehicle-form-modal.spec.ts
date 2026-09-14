@@ -23,6 +23,7 @@ function vehicleDto(overrides: Partial<VehicleDto> = {}): VehicleDto {
     year: 2022,
     dailyRate: 350,
     createdDate: '2026-01-15T10:30:00Z',
+    isDeleted: false,
     ...overrides,
   };
 }
@@ -36,6 +37,7 @@ function vehicle(overrides: Partial<Vehicle> = {}): Vehicle {
     year: 2022,
     dailyRate: 350,
     createdDate: new Date('2026-01-15T10:30:00Z'),
+    isDeleted: false,
     ...overrides,
   };
 }

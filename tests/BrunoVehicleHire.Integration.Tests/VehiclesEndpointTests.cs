@@ -554,4 +554,118 @@ public class VehiclesEndpointTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
+
+    [Fact]
+    public async Task Get_ShowInactiveTrue_ReturnsBothActiveAndSoftDeletedVehicles_WithIsDeletedFlag()
+    {
+        var activeVehicle = Vehicle.Create("CA171819", "Toyota", "Yaris", 2023, 300m);
+        var deletedVehicle = Vehicle.Create("CA202122", "Mazda", "3", 2021, 280m);
+        deletedVehicle.SoftDelete();
+
+        await SeedVehiclesAsync(activeVehicle, deletedVehicle);
+
+        using var request = AuthenticatedGet("/api/vehicles?page=1&pageSize=20&showInactive=true");
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var json = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(json);
+
+        document.RootElement.GetProperty("totalCount").GetInt32().Should().Be(2);
+        var items = document.RootElement.GetProperty("items").EnumerateArray().ToList();
+        items.Should().HaveCount(2);
+
+        var deletedItem = items.Single(item => item.GetProperty("registrationNumber").GetString() == "CA202122");
+        deletedItem.GetProperty("isDeleted").GetBoolean().Should().BeTrue();
+
+        var activeItem = items.Single(item => item.GetProperty("registrationNumber").GetString() == "CA171819");
+        activeItem.GetProperty("isDeleted").GetBoolean().Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Get_ShowInactiveOmittedOrFalse_StillExcludesSoftDeletedVehicles()
+    {
+        // Regression: the default (Story 1.7/2.3) behavior must stay exactly as before.
+        var activeVehicle = Vehicle.Create("CA232425", "Honda", "Jazz", 2022, 310m);
+        var deletedVehicle = Vehicle.Create("CA262728", "Kia", "Rio", 2020, 260m);
+        deletedVehicle.SoftDelete();
+
+        await SeedVehiclesAsync(activeVehicle, deletedVehicle);
+
+        using var omittedRequest = AuthenticatedGet("/api/vehicles?page=1&pageSize=20");
+        var omittedResponse = await _client.SendAsync(omittedRequest);
+        var omittedJson = await omittedResponse.Content.ReadAsStringAsync();
+        using var omittedDocument = JsonDocument.Parse(omittedJson);
+
+        omittedDocument.RootElement.GetProperty("totalCount").GetInt32().Should().Be(1);
+        omittedDocument.RootElement.GetProperty("items")[0].GetProperty("registrationNumber").GetString()
+            .Should().Be("CA232425");
+
+        using var explicitFalseRequest = AuthenticatedGet("/api/vehicles?page=1&pageSize=20&showInactive=false");
+        var explicitFalseResponse = await _client.SendAsync(explicitFalseRequest);
+        var explicitFalseJson = await explicitFalseResponse.Content.ReadAsStringAsync();
+        using var explicitFalseDocument = JsonDocument.Parse(explicitFalseJson);
+
+        explicitFalseDocument.RootElement.GetProperty("totalCount").GetInt32().Should().Be(1);
+    }
+
+    [Fact]
+    public async Task Restore_SoftDeletedVehicle_Returns204_AndReappearsInDefaultListing()
+    {
+        var vehicle = Vehicle.Create("CA293031", "Nissan", "Qashqai", 2022, 380m);
+        vehicle.SoftDelete();
+        await SeedVehiclesAsync(vehicle);
+
+        using var restoreRequest = AuthenticatedPost($"/api/vehicles/{vehicle.Id}/restore");
+        var restoreResponse = await _client.SendAsync(restoreRequest);
+
+        restoreResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        using var inactiveGetRequest =
+            AuthenticatedGet($"/api/vehicles?page=1&pageSize=20&showInactive=true&search=CA293031");
+        var inactiveGetResponse = await _client.SendAsync(inactiveGetRequest);
+        var inactiveJson = await inactiveGetResponse.Content.ReadAsStringAsync();
+        using var inactiveDocument = JsonDocument.Parse(inactiveJson);
+
+        inactiveDocument.RootElement.GetProperty("items")[0].GetProperty("isDeleted").GetBoolean()
+            .Should().BeFalse();
+
+        using var defaultGetRequest = AuthenticatedGet("/api/vehicles?page=1&pageSize=20&search=CA293031");
+        var defaultGetResponse = await _client.SendAsync(defaultGetRequest);
+        var defaultJson = await defaultGetResponse.Content.ReadAsStringAsync();
+        using var defaultDocument = JsonDocument.Parse(defaultJson);
+
+        defaultDocument.RootElement.GetProperty("totalCount").GetInt32().Should().Be(1);
+        defaultDocument.RootElement.GetProperty("items")[0].GetProperty("registrationNumber").GetString()
+            .Should().Be("CA293031");
+    }
+
+    [Fact]
+    public async Task Restore_AlreadyActiveVehicle_Returns409WithExactDetailMessage()
+    {
+        var vehicle = Vehicle.Create("CA323334", "Subaru", "Forester", 2021, 420m);
+        await SeedVehiclesAsync(vehicle);
+
+        using var request = AuthenticatedPost($"/api/vehicles/{vehicle.Id}/restore");
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+
+        var json = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(json);
+
+        document.RootElement.GetProperty("detail").GetString().Should().Be("Already active.");
+    }
+
+    [Fact]
+    public async Task Restore_NonexistentVehicleId_Returns404()
+    {
+        var missingId = Guid.NewGuid();
+
+        using var request = AuthenticatedPost($"/api/vehicles/{missingId}/restore");
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
 }

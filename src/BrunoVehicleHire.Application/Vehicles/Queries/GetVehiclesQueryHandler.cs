@@ -16,7 +16,7 @@ public class GetVehiclesQueryHandler(IVehicleRepository repository)
     public async Task<PagedResult<VehicleDto>> Handle(GetVehiclesQuery request, CancellationToken cancellationToken)
     {
         var (items, totalCount) = await repository.GetPagedAsync(
-            request.Page, request.PageSize, request.Search, cancellationToken);
+            request.Page, request.PageSize, request.Search, request.IncludeInactive, cancellationToken);
 
         var dtos = items
             .Select(VehicleDto.FromDomain)
