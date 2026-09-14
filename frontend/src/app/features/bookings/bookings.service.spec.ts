@@ -6,7 +6,7 @@ import { QueryClient, provideTanStackQuery } from '@tanstack/angular-query-exper
 import { apiKeyInterceptor } from '../../core/api-client/api-key.interceptor';
 import { errorNormalizationInterceptor } from '../../core/api-client/error-normalization.interceptor';
 import { BookingDto } from '../../core/models/booking-dto';
-import { useBookingsQuery, useCreateBookingMutation } from './bookings.service';
+import { useBookingsQuery, useCancelBookingMutation, useCreateBookingMutation } from './bookings.service';
 
 /** Matches the macrotask-flush pattern used elsewhere for TanStack Query's Angular reactivity. */
 function flushMicrotasks(): Promise<void> {
@@ -145,6 +145,59 @@ describe('useCreateBookingMutation', () => {
 
     const req = httpMock.expectOne('/api/bookings');
     req.flush(bookingDto(), { status: 201, statusText: 'Created' });
+    await flushMicrotasks();
+
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['bookings', 'list'] });
+  });
+});
+
+describe('useCancelBookingMutation', () => {
+  let httpMock: HttpTestingController;
+  let queryClient: QueryClient;
+
+  beforeEach(() => {
+    queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+
+    TestBed.configureTestingModule({
+      providers: [
+        provideHttpClient(withInterceptors([apiKeyInterceptor, errorNormalizationInterceptor])),
+        provideHttpClientTesting(),
+        provideTanStackQuery(queryClient),
+      ],
+    });
+
+    httpMock = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => {
+    httpMock.verify();
+    TestBed.resetTestingModule();
+  });
+
+  it('POSTs to bookings/{id}/cancel with no body', async () => {
+    const mutation = TestBed.runInInjectionContext(() => useCancelBookingMutation());
+
+    mutation.mutate('b1');
+    await flushMicrotasks();
+
+    const req = httpMock.expectOne('/api/bookings/b1/cancel');
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toBeFalsy();
+
+    req.flush(null, { status: 204, statusText: 'No Content' });
+  });
+
+  it('invalidates the bookings list query key on success', async () => {
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+    const mutation = TestBed.runInInjectionContext(() => useCancelBookingMutation());
+
+    mutation.mutate('b1');
+    await flushMicrotasks();
+
+    const req = httpMock.expectOne('/api/bookings/b1/cancel');
+    req.flush(null, { status: 204, statusText: 'No Content' });
     await flushMicrotasks();
 
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['bookings', 'list'] });

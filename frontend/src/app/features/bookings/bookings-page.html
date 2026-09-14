@@ -18,10 +18,21 @@
       [page]="page()"
       [pageSize]="pageSize"
       [totalCount]="totalCount()"
+      [actions]="actions"
       [rowKey]="rowKey"
       (pageChange)="onPageChange($event)"
     />
   }
 
   <app-booking-form-modal [open]="isFormModalOpen()" (closeRequest)="onFormModalClose()" />
+
+  <app-confirm-dialog
+    [open]="cancelAction.current() !== null"
+    title="Cancel this booking?"
+    [message]="cancelAction.dialogMessage()"
+    confirmLabel="Cancel booking"
+    cancelLabel="Keep booking"
+    (confirm)="cancelAction.confirm()"
+    (cancel)="cancelAction.cancel()"
+  />
 </div>

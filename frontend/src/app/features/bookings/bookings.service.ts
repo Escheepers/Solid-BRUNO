@@ -71,3 +71,21 @@ export function useCreateBookingMutation() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: BOOKINGS_LIST_QUERY_KEY }),
   }));
 }
+
+/**
+ * Wraps `injectMutation` over `ApiClient.post('bookings/{id}/cancel', ...)` -- added for Story 4.3's
+ * Cancel flow, mirroring `useDeactivateCustomerMutation`'s exact shape (same body-less POST /
+ * invalidate-on-success pattern). `ApiClient.post<T, B>` requires a body argument, so `undefined` is
+ * passed explicitly for this body-less action. On success, invalidates `['bookings', 'list']` (AD-3)
+ * so the list re-fetches and the cancelled booking's row reflects its new `Cancelled` status.
+ */
+export function useCancelBookingMutation() {
+  const apiClient = inject(ApiClient);
+  const queryClient = inject(QueryClient);
+
+  return injectMutation<void, NormalizedApiError, string>(() => ({
+    mutationFn: (bookingId: string) =>
+      firstValueFrom(apiClient.post<void, undefined>(`bookings/${bookingId}/cancel`, undefined)),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: BOOKINGS_LIST_QUERY_KEY }),
+  }));
+}

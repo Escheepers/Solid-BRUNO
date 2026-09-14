@@ -50,4 +50,12 @@ public interface IBookingRepository
     /// predicate.
     /// </summary>
     Task<IReadOnlyList<Booking>> GetNonCancelledForVehicleAsync(Guid vehicleId, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// A plain, direct lookup by id -- backs <see cref="Commands.CancelBookingCommandHandler"/>
+    /// (spec-4-3), mirroring <c>IVehicleRepository.GetByIdAsync</c>/<c>ICustomerRepository.GetByIdAsync</c>'s
+    /// shape. Unlike those, Booking has no soft-delete query filter of its own, so this is a direct,
+    /// unfiltered lookup -- no <c>IgnoreQueryFilters()</c> consideration applies here.
+    /// </summary>
+    Task<Booking?> GetByIdAsync(Guid id, CancellationToken cancellationToken);
 }

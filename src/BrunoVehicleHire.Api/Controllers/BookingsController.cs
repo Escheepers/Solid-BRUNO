@@ -7,10 +7,10 @@ namespace BrunoVehicleHire.Api.Controllers;
 
 /// <summary>
 /// The Booking aggregate's HTTP entry point: sends <see cref="GetBookingsQuery"/>/
-/// <see cref="CreateBookingCommand"/> via <see cref="ISender"/> and returns each result directly.
-/// Mirrors <see cref="VehiclesController"/>'s shape. Deliberately carries only List/Create for this
-/// story -- no Edit/Cancel/View/Deactivate routes yet (spec-4-1's Never section: those belong to
-/// later Epic 4 stories). Deliberately carries no [Authorize]/[AllowAnonymous] attribute --
+/// <see cref="CreateBookingCommand"/>/<see cref="CancelBookingCommand"/> via <see cref="ISender"/> and
+/// returns each result directly. Mirrors <see cref="VehiclesController"/>'s shape. Deliberately
+/// carries no Edit/View/Deactivate routes yet (spec-4-1's Never section: those belong to later Epic 4
+/// stories still not built). Deliberately carries no [Authorize]/[AllowAnonymous] attribute --
 /// protection comes entirely from the global FallbackPolicy registered in Program.cs (Story 1.4).
 /// Validation of every request shape happens entirely in each request's own validator via the shared
 /// MediatR pipeline (AD-10) -- never here.
@@ -38,5 +38,20 @@ public class BookingsController(ISender sender) : ControllerBase
         var dto = await sender.Send(command, cancellationToken);
 
         return Created($"/api/bookings/{dto.Id}", dto);
+    }
+
+    /// <summary>
+    /// Cancels the booking (spec-4-3) -- a distinct action-named route, mirroring
+    /// <see cref="VehiclesController.Deactivate"/>'s exact shape. Every ineligibility rule
+    /// (already-Cancelled, already-Completed, past-EndDate-still-Active) is enforced entirely by
+    /// <see cref="Domain.Booking.Cancel"/> and surfaces as a 409 via
+    /// <see cref="ExceptionHandling.GlobalExceptionHandler"/> -- never checked here.
+    /// </summary>
+    [HttpPost("{id:guid}/cancel")]
+    public async Task<IActionResult> Cancel(Guid id, CancellationToken cancellationToken)
+    {
+        await sender.Send(new CancelBookingCommand(id), cancellationToken);
+
+        return NoContent();
     }
 }

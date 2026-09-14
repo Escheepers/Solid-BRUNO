@@ -7,6 +7,7 @@ import { apiKeyInterceptor } from '../../core/api-client/api-key.interceptor';
 import { errorNormalizationInterceptor } from '../../core/api-client/error-normalization.interceptor';
 import { BookingDto } from '../../core/models/booking-dto';
 import { PagedResult } from '../../core/models/paged-result';
+import { ToastService } from '../../shared/toast/toast.service';
 import { currencyFormatter } from './booking-formatters';
 import { BookingsPage } from './bookings-page';
 
@@ -47,6 +48,7 @@ describe('BookingsPage', () => {
   let fixture: ComponentFixture<BookingsPage>;
   let httpMock: HttpTestingController;
   let queryClient: QueryClient;
+  let toastService: ToastService;
 
   beforeEach(async () => {
     queryClient = new QueryClient({
@@ -64,6 +66,7 @@ describe('BookingsPage', () => {
 
     fixture = TestBed.createComponent(BookingsPage);
     httpMock = TestBed.inject(HttpTestingController);
+    toastService = TestBed.inject(ToastService);
   });
 
   afterEach(() => {
@@ -130,7 +133,9 @@ describe('BookingsPage', () => {
     const headers = Array.from(fixture.nativeElement.querySelectorAll('thead th')).map((th) =>
       (th as HTMLElement).textContent?.trim(),
     );
-    expect(headers).toEqual(['Vehicle', 'Customer', 'Start', 'End', 'Total', 'Status']);
+    // The default `bookingDto()` fixture is Active with a future EndDate (2026-10-05), so it's
+    // cancellable -- DataTable renders its trailing (sr-only-labelled) Actions column (spec-4-3).
+    expect(headers).toEqual(['Vehicle', 'Customer', 'Start', 'End', 'Total', 'Status', 'Actions']);
 
     const row = fixture.nativeElement.querySelector('tbody tr');
     expect(row.textContent).toContain('Toyota Corolla — CA123456');
@@ -138,16 +143,45 @@ describe('BookingsPage', () => {
     expect(row.textContent).toContain(currencyFormatter.format(1400));
   });
 
-  it('renders no Actions column (Scope decision 5 -- read + create only)', async () => {
+  it('offers a Cancel action for a future Active booking (spec-4-3)', async () => {
     await settle();
-    expectBookingsRequest().flush(pagedResult([bookingDto()]));
+    expectBookingsRequest().flush(
+      pagedResult([bookingDto({ status: 'Active', endDate: '2099-01-05' })]),
+    );
     flushPickerQueries();
     await settle();
 
-    const headers = Array.from(fixture.nativeElement.querySelectorAll('thead th')).map((th) =>
-      (th as HTMLElement).textContent?.trim(),
-    );
-    expect(headers).not.toContain('Actions');
+    const cancelButton = Array.from<HTMLButtonElement>(
+      fixture.nativeElement.querySelectorAll('tbody button'),
+    ).find((b) => b.textContent?.trim() === 'Cancel');
+    expect(cancelButton).toBeTruthy();
+  });
+
+  it('offers no row action at all for a Completed booking', async () => {
+    await settle();
+    expectBookingsRequest().flush(pagedResult([bookingDto({ status: 'Completed' })]));
+    flushPickerQueries();
+    await settle();
+
+    expect(fixture.nativeElement.querySelectorAll('tbody button').length).toBe(0);
+  });
+
+  it('offers no row action at all for a Cancelled booking', async () => {
+    await settle();
+    expectBookingsRequest().flush(pagedResult([bookingDto({ status: 'Cancelled' })]));
+    flushPickerQueries();
+    await settle();
+
+    expect(fixture.nativeElement.querySelectorAll('tbody button').length).toBe(0);
+  });
+
+  it('offers no row action at all for a still-Active booking whose EndDate is already in the past', async () => {
+    await settle();
+    expectBookingsRequest().flush(pagedResult([bookingDto({ status: 'Active', endDate: '2020-01-05' })]));
+    flushPickerQueries();
+    await settle();
+
+    expect(fixture.nativeElement.querySelectorAll('tbody button').length).toBe(0);
   });
 
   it('renders a real Badge component for the Status column', async () => {
@@ -235,5 +269,106 @@ describe('BookingsPage', () => {
     const req = httpMock.expectOne((r) => r.url === '/api/bookings' && r.params.get('page') === '2');
     req.flush(pagedResult([bookingDto()], { totalCount: 100, page: 2 }));
     await settle();
+  });
+
+  describe('cancel row action', () => {
+    function alertDialog(): HTMLElement | null {
+      return fixture.nativeElement.querySelector('[role="alertdialog"]');
+    }
+
+    async function seedOneCancellableRowAndOpenCancelDialog(): Promise<void> {
+      await settle();
+      expectBookingsRequest().flush(
+        pagedResult([bookingDto({ id: 'b9', status: 'Active', endDate: '2099-01-05' })]),
+      );
+      flushPickerQueries();
+      await settle();
+
+      const cancelButton = Array.from<HTMLButtonElement>(
+        fixture.nativeElement.querySelectorAll('tbody button'),
+      ).find((b) => b.textContent?.trim() === 'Cancel');
+      expect(cancelButton).toBeTruthy();
+
+      cancelButton!.click();
+      fixture.detectChanges();
+    }
+
+    it('clicking "Cancel" on a row opens the ConfirmDialog for that booking', async () => {
+      await seedOneCancellableRowAndOpenCancelDialog();
+
+      const dialog = alertDialog();
+      expect(dialog).not.toBeNull();
+      expect(dialog!.textContent).toContain('Cancel this booking?');
+      expect(dialog!.textContent).toContain('stay in records as Cancelled');
+      expect(dialog!.textContent).toContain('not reversible');
+    });
+
+    it('cancelling (keeping the booking) closes the dialog and never calls the mutation', async () => {
+      await seedOneCancellableRowAndOpenCancelDialog();
+
+      const keepButton = Array.from<HTMLButtonElement>(
+        fixture.nativeElement.querySelectorAll('[role="alertdialog"] button'),
+      ).find((b) => b.textContent?.trim() === 'Keep booking');
+      keepButton!.click();
+      fixture.detectChanges();
+
+      expect(alertDialog()).toBeNull();
+      httpMock.expectNone((req) => req.url === '/api/bookings/b9/cancel');
+    });
+
+    it('confirming calls the mutation and, on success, closes the dialog, toasts, and invalidates the list', async () => {
+      await seedOneCancellableRowAndOpenCancelDialog();
+
+      const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+      const toastSpy = vi.spyOn(toastService, 'success');
+
+      const confirmButton = Array.from<HTMLButtonElement>(
+        fixture.nativeElement.querySelectorAll('[role="alertdialog"] button'),
+      ).find((b) => b.textContent?.trim() === 'Cancel booking');
+      confirmButton!.click();
+      await settle();
+
+      const req = httpMock.expectOne('/api/bookings/b9/cancel');
+      expect(req.request.method).toBe('POST');
+      req.flush(null, { status: 204, statusText: 'No Content' });
+      await settle();
+
+      // `invalidateQueries()` (called from `useCancelBookingMutation`'s own `onSuccess`)
+      // awaits the active list query's refetch before it resolves -- mirrors
+      // `CustomersPage`'s Deactivate test's exact ordering requirement.
+      expectBookingsRequest().flush(pagedResult([]));
+      await settle();
+
+      expect(alertDialog()).toBeNull();
+      expect(toastSpy).toHaveBeenCalledWith('Booking cancelled.');
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['bookings', 'list'] });
+    });
+
+    it('a failed (409, stale UI/race) cancel keeps the dialog open and shows the exact message instead of the normal copy', async () => {
+      await seedOneCancellableRowAndOpenCancelDialog();
+
+      const confirmButton = Array.from<HTMLButtonElement>(
+        fixture.nativeElement.querySelectorAll('[role="alertdialog"] button'),
+      ).find((b) => b.textContent?.trim() === 'Cancel booking');
+      confirmButton!.click();
+      await settle();
+
+      const req = httpMock.expectOne('/api/bookings/b9/cancel');
+      req.flush(
+        {
+          type: 'urn:bruno:booking:already-completed',
+          title: 'A domain rule was violated.',
+          status: 409,
+          detail: 'Cannot cancel — booking already completed.',
+        },
+        { status: 409, statusText: 'Conflict' },
+      );
+      await settle();
+
+      const dialog = alertDialog();
+      expect(dialog).not.toBeNull();
+      expect(dialog!.textContent).not.toContain('stay in records as Cancelled');
+      expect(dialog!.textContent).toContain('Cannot cancel — booking already completed.');
+    });
   });
 });

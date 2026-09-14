@@ -73,4 +73,15 @@ public class BookingRepository(AppDbContext dbContext) : IBookingRepository
             .Where(b => b.VehicleId == vehicleId && b.Status != BookingStatus.Cancelled)
             .ToListAsync(cancellationToken);
     }
+
+    /// <summary>
+    /// Backs <see cref="IBookingRepository.GetByIdAsync"/>: a direct, unfiltered lookup against the
+    /// <c>Bookings</c> table -- no <c>IgnoreQueryFilters()</c> needed since Booking has no
+    /// soft-delete/query-filter concept, unlike <c>VehicleRepository</c>/<c>CustomerRepository</c>'s
+    /// own <c>GetByIdAsync</c>.
+    /// </summary>
+    public async Task<Booking?> GetByIdAsync(Guid id, CancellationToken cancellationToken)
+    {
+        return await dbContext.Bookings.FirstOrDefaultAsync(b => b.Id == id, cancellationToken);
+    }
 }

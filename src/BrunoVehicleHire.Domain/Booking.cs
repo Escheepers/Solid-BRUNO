@@ -16,15 +16,14 @@ public enum BookingStatus
 }
 
 /// <summary>
-/// A genuinely minimal Booking entity (spec-3-3) -- just enough to construct a valid row for
-/// test-seeding and to query "does this customer have any bookings". The only way to construct a
-/// valid instance is <see cref="Create"/>, which enforces the one context-free invariant this story
-/// can honestly validate; EF Core materializes existing rows via the private parameterless
+/// A genuinely minimal Booking entity (spec-3-3), grown by later Epic 4 stories: <see cref="Create"/>
+/// (spec-3-3, the one context-free invariant a Booking can honestly validate at construction time)
+/// and <see cref="Cancel"/> (spec-4-3, the Active -> Cancelled transition) are the only ways to
+/// mutate a valid instance; EF Core materializes existing rows via the private parameterless
 /// constructor, bypassing no invariant since the row was valid when it was written. No property has
 /// a public setter -- mirrors <see cref="Vehicle"/>/<see cref="Customer"/>'s exact pattern.
-/// Deliberately NOT built: overlap prevention (needs cross-row Vehicle-availability logic), the
-/// past-booking delete guard, and any Cancel/Complete transition -- all belong to Epic 4's actual
-/// Booking feature set, not this story.
+/// Deliberately NOT built: any Complete transition -- still belongs to a later Epic 4 story, not
+/// this one.
 /// </summary>
 public class Booking
 {
@@ -98,6 +97,40 @@ public class Booking
             endDate,
             totalPrice,
             timeProvider.GetUtcNow().UtcDateTime);
+    }
+
+    /// <summary>
+    /// Transitions <see cref="Status"/> from <see cref="BookingStatus.Active"/> to
+    /// <see cref="BookingStatus.Cancelled"/> (spec-4-3), never a physical delete (AD-16). Throws
+    /// <see cref="DomainRuleViolationException"/> if the booking is already ineligible: an
+    /// already-<see cref="BookingStatus.Cancelled"/> booking throws with "Cannot cancel — booking
+    /// already cancelled."; an already-<see cref="BookingStatus.Completed"/> booking, or a
+    /// still-<see cref="BookingStatus.Active"/> booking whose <see cref="EndDate"/> is on or before
+    /// today (per <paramref name="timeProvider"/>), throws the identical "Cannot cancel — booking
+    /// already completed." message -- a past-EndDate-but-not-yet-swept booking is ineligible for the
+    /// exact same reason a user would understand as "this booking is over," even though no sweep has
+    /// flipped its <see cref="Status"/> yet. No other field changes. <paramref name="timeProvider"/>
+    /// defaults to <see cref="TimeProvider.System"/> so tests can inject a fixed clock, mirroring
+    /// every other domain method's own convention.
+    /// </summary>
+    public void Cancel(TimeProvider? timeProvider = null)
+    {
+        timeProvider ??= TimeProvider.System;
+
+        if (Status == BookingStatus.Cancelled)
+        {
+            throw new DomainRuleViolationException(
+                nameof(Booking), nameof(Status), "Cannot cancel — booking already cancelled.");
+        }
+
+        var today = DateOnly.FromDateTime(timeProvider.GetUtcNow().UtcDateTime);
+        if (Status == BookingStatus.Completed || EndDate <= today)
+        {
+            throw new DomainRuleViolationException(
+                nameof(Booking), nameof(Status), "Cannot cancel — booking already completed.");
+        }
+
+        Status = BookingStatus.Cancelled;
     }
 
     /// <summary>

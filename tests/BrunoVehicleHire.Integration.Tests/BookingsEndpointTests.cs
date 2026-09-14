@@ -16,13 +16,15 @@ using Testcontainers.PostgreSql;
 namespace BrunoVehicleHire.Integration.Tests;
 
 /// <summary>
-/// End-to-end proof of Story 4.1's List/Create Booking slice against a real ASP.NET Core pipeline
-/// via <see cref="WebApplicationFactory{TEntryPoint}"/> -- not a mock -- backed by its own ephemeral
+/// End-to-end proof of the Booking feature slice (List/Create -- spec-4-1; overlap prevention --
+/// spec-4-2; Cancel -- spec-4-3) against a real ASP.NET Core pipeline via
+/// <see cref="WebApplicationFactory{TEntryPoint}"/> -- not a mock -- backed by its own ephemeral
 /// Testcontainers Postgres instance (mirrors <see cref="VehiclesEndpointTests"/>'s exact pattern):
-/// ApiClient -> API-key auth -> <c>GetBookingsQuery</c>/<c>CreateBookingCommand</c> ->
-/// <c>IBookingRepository</c>/<c>IVehicleRepository</c>/<c>ICustomerRepository</c> -> PostgreSQL -> a
-/// real <c>PagedResult&lt;BookingDto&gt;</c>/<c>BookingDto</c> response. Covers every row of
-/// spec-4-1's I/O &amp; Edge-Case Matrix.
+/// ApiClient -> API-key auth -> <c>GetBookingsQuery</c>/<c>CreateBookingCommand</c>/
+/// <c>CancelBookingCommand</c> -> <c>IBookingRepository</c>/<c>IVehicleRepository</c>/
+/// <c>ICustomerRepository</c> -> PostgreSQL -> a real <c>PagedResult&lt;BookingDto&gt;</c>/
+/// <c>BookingDto</c>/204/409/404 response. Covers every row of spec-4-1/spec-4-2/spec-4-3's own
+/// I/O &amp; Edge-Case Matrix.
 /// </summary>
 public class BookingsEndpointTests : IAsyncLifetime
 {
@@ -88,6 +90,14 @@ public class BookingsEndpointTests : IAsyncLifetime
         {
             Content = JsonContent.Create(body),
         };
+        request.Headers.Add(ApiKeyDefaults.HeaderName, ConfiguredKey);
+        return request;
+    }
+
+    /// <summary>Body-less overload for action routes like Cancel, mirroring <c>VehiclesEndpointTests</c>'s own.</summary>
+    private HttpRequestMessage AuthenticatedPost(string path)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, path);
         request.Headers.Add(ApiKeyDefaults.HeaderName, ConfiguredKey);
         return request;
     }
@@ -164,11 +174,12 @@ public class BookingsEndpointTests : IAsyncLifetime
     }
 
     /// <summary>
-    /// Booking has no public Cancel()/Complete() transition yet (out of this story's scope -- see
-    /// domain-model.md/Booking.cs) -- flips the "Status" column directly via raw SQL after a normal
-    /// (always-Active) seed, exactly as a future Cancel/Complete feature eventually would, so
-    /// spec-4-2's Completed-blocks/Cancelled-doesn't-block I/O-matrix rows can be proven through the
-    /// real API.
+    /// Booking still has no public Complete() transition (out of scope -- see domain-model.md/
+    /// Booking.cs), and even <see cref="Domain.Booking.Cancel"/> (spec-4-3) can only ever reach
+    /// <c>Cancelled</c>, never <c>Completed</c> -- so this flips the "Status" column directly via raw
+    /// SQL after a normal (always-Active) seed, exactly as a future Complete-sweep feature eventually
+    /// would, so spec-4-2's Completed-blocks/Cancelled-doesn't-block and spec-4-3's already-Completed/
+    /// already-Cancelled I/O-matrix rows can all be proven through the real API.
     /// </summary>
     private async Task<Booking> SeedBookingWithStatusAsync(
         Vehicle vehicle, Customer customer, DateOnly startDate, DateOnly endDate, BookingStatus status)
@@ -550,5 +561,103 @@ public class BookingsEndpointTests : IAsyncLifetime
         var response = await _client.SendAsync(request);
 
         response.StatusCode.Should().Be(HttpStatusCode.Created);
+    }
+
+    /// <summary>
+    /// Covers every row of spec-4-3's I/O &amp; Edge-Case Matrix through the real API: a future
+    /// Active booking cancels successfully and is never physically removed; an already-Completed,
+    /// already-Cancelled, or still-Active-but-past-EndDate booking each returns 409 with the exact
+    /// message for that state; a nonexistent id returns 404. Completed/past-Active rows are seeded via
+    /// <see cref="SeedBookingWithStatusAsync"/>, mirroring spec-4-2's own raw-SQL status-flip pattern.
+    /// </summary>
+    [Fact]
+    public async Task Cancel_FutureActiveBooking_Returns204_SetsStatusToCancelled_RowNeverRemoved()
+    {
+        var vehicle = await SeedActiveVehicleAsync();
+        var customer = await SeedActiveCustomerAsync();
+        var booking = await SeedBookingAsync(
+            vehicle, customer, new DateOnly(2026, 10, 1), new DateOnly(2026, 10, 5));
+
+        using var request = AuthenticatedPost($"/api/bookings/{booking.Id}/cancel");
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        using var scope = _factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var persisted = await dbContext.Bookings.SingleAsync(b => b.Id == booking.Id);
+
+        persisted.Status.Should().Be(BookingStatus.Cancelled);
+    }
+
+    [Fact]
+    public async Task Cancel_AlreadyCompletedBooking_Returns409WithExactDetailMessage()
+    {
+        var vehicle = await SeedActiveVehicleAsync();
+        var customer = await SeedActiveCustomerAsync();
+        var booking = await SeedBookingWithStatusAsync(
+            vehicle, customer, new DateOnly(2026, 10, 1), new DateOnly(2026, 10, 5), BookingStatus.Completed);
+
+        using var request = AuthenticatedPost($"/api/bookings/{booking.Id}/cancel");
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+
+        var json = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(json);
+
+        document.RootElement.GetProperty("detail").GetString()
+            .Should().Be("Cannot cancel — booking already completed.");
+    }
+
+    [Fact]
+    public async Task Cancel_AlreadyCancelledBooking_Returns409WithExactDetailMessage()
+    {
+        var vehicle = await SeedActiveVehicleAsync();
+        var customer = await SeedActiveCustomerAsync();
+        var booking = await SeedBookingWithStatusAsync(
+            vehicle, customer, new DateOnly(2026, 10, 1), new DateOnly(2026, 10, 5), BookingStatus.Cancelled);
+
+        using var request = AuthenticatedPost($"/api/bookings/{booking.Id}/cancel");
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+
+        var json = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(json);
+
+        document.RootElement.GetProperty("detail").GetString()
+            .Should().Be("Cannot cancel — booking already cancelled.");
+    }
+
+    [Fact]
+    public async Task Cancel_StillActiveBookingWithPastEndDate_Returns409WithSameMessageAsAlreadyCompleted()
+    {
+        var vehicle = await SeedActiveVehicleAsync();
+        var customer = await SeedActiveCustomerAsync();
+        // Seeded as Active (the default status), but EndDate is already in the past relative to
+        // "today" -- proves the guard treats an unswept past-EndDate booking exactly like Completed.
+        var booking = await SeedBookingAsync(
+            vehicle, customer, new DateOnly(2020, 1, 1), new DateOnly(2020, 1, 5));
+
+        using var request = AuthenticatedPost($"/api/bookings/{booking.Id}/cancel");
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+
+        var json = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(json);
+
+        document.RootElement.GetProperty("detail").GetString()
+            .Should().Be("Cannot cancel — booking already completed.");
+    }
+
+    [Fact]
+    public async Task Cancel_NonexistentBookingId_Returns404()
+    {
+        using var request = AuthenticatedPost($"/api/bookings/{Guid.NewGuid()}/cancel");
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 }
