@@ -127,4 +127,25 @@ public class BookingRepository(AppDbContext dbContext) : IBookingRepository
             .Where(b => b.Status == BookingStatus.Active && b.EndDate <= asOf)
             .ToListAsync(cancellationToken);
     }
+
+    /// <summary>
+    /// Backs <see cref="IBookingRepository.GetForCustomerWithVehicleAsync"/>: every Booking for
+    /// <paramref name="customerId"/> joined to its referenced Vehicle row via
+    /// <c>IgnoreQueryFilters()</c> (spec-5-1's Boundaries/AD-13), mirroring
+    /// <see cref="GetPagedAsync"/>/<see cref="GetByIdWithVehicleAndCustomerAsync"/>'s exact join
+    /// pattern minus the redundant Customer join (the caller already has that one row).
+    /// </summary>
+    public async Task<IReadOnlyList<(Booking Booking, Vehicle Vehicle)>> GetForCustomerWithVehicleAsync(
+        Guid customerId, CancellationToken cancellationToken)
+    {
+        var rows = await (
+                from booking in dbContext.Bookings
+                join vehicle in dbContext.Vehicles.IgnoreQueryFilters() on booking.VehicleId equals vehicle.Id
+                where booking.CustomerId == customerId
+                orderby booking.CreatedDate, booking.Id
+                select new { booking, vehicle })
+            .ToListAsync(cancellationToken);
+
+        return rows.Select(row => (row.booking, row.vehicle)).ToList();
+    }
 }

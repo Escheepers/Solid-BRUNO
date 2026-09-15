@@ -1,5 +1,6 @@
 using BrunoVehicleHire.Application.Customers.Commands;
 using BrunoVehicleHire.Application.Customers.Queries;
+using BrunoVehicleHire.Application.CustomerSummaries.Queries;
 using MediatR;
 using Microsoft.AspNetCore.Mvc;
 
@@ -114,5 +115,21 @@ public class CustomersController(ISender sender) : ControllerBase
         await sender.Send(new AnonymizeCustomerCommand(id), cancellationToken);
 
         return NoContent();
+    }
+
+    /// <summary>
+    /// The read-only Customer Summary page's sole endpoint (spec-5-1), mirroring
+    /// <c>BookingsController.GetById</c>'s exact shape. Resolves a deactivated (soft-deleted)
+    /// customer's summary too -- see <c>GetCustomerSummaryQueryHandler</c>'s use of
+    /// <c>GetByIdIncludingSoftDeletedAsync</c>. A stale/invalid id surfaces as a 404 via
+    /// <see cref="ExceptionHandling.GlobalExceptionHandler"/>'s <c>NotFoundException</c> branch --
+    /// never checked here.
+    /// </summary>
+    [HttpGet("{id:guid}/summary")]
+    public async Task<IActionResult> GetSummary(Guid id, CancellationToken cancellationToken)
+    {
+        var dto = await sender.Send(new GetCustomerSummaryQuery(id), cancellationToken);
+
+        return Ok(dto);
     }
 }

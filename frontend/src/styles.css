@@ -106,6 +106,23 @@
  * every `bg-*`/`text-*`/`border-*`/etc. utility built from these tokens automatically,
  * with no `dark:` variant needed anywhere in a component template.
  */
+/*
+ * This app's first `@media print` rule (spec-5-1), added for the read-only Customer
+ * Summary page. Hides the global `app-top-app-bar` (rendered once in `app.html`,
+ * outside every router-outlet's content, so no per-page opt-out is possible or
+ * needed) plus every element a page flags `.no-print` (this story's own "Back to
+ * Customers" link and its optional convenience "Print" button) -- leaving only a
+ * page's own content (identity card + booking list, for Customer Summary) in printed
+ * output. Scoped generically enough that any future page needing the same
+ * chrome-free print behavior can reuse `.no-print` without a new rule.
+ */
+@media print {
+  app-top-app-bar,
+  .no-print {
+    display: none;
+  }
+}
+
 @media (prefers-color-scheme: dark) {
   :root {
     --color-background: #0e1116;

@@ -140,6 +140,34 @@ describe('BookingDetailPage', () => {
     expect(fixture.nativeElement.textContent).not.toContain('Thabo Nkosi');
   });
 
+  it("links the Customer field to that customer's Summary page (spec-5-1)", async () => {
+    createComponent('b1');
+    await settle();
+
+    httpMock.expectOne('/api/bookings/b1').flush(bookingDto({ customerId: 'c9' }));
+    await settle();
+
+    const links: HTMLAnchorElement[] = Array.from(fixture.nativeElement.querySelectorAll('a'));
+    const customerLink = links.find((a) => a.textContent?.includes('Thabo Nkosi'));
+    expect(customerLink).toBeTruthy();
+    expect(customerLink!.getAttribute('href')).toBe('/customers/c9/summary');
+  });
+
+  it("still links the Customer field to the Summary page for an anonymized customer", async () => {
+    createComponent('b1');
+    await settle();
+
+    httpMock.expectOne('/api/bookings/b1').flush(
+      bookingDto({ customerId: 'c9', customerIsAnonymized: true }),
+    );
+    await settle();
+
+    const links: HTMLAnchorElement[] = Array.from(fixture.nativeElement.querySelectorAll('a'));
+    const customerLink = links.find((a) => a.textContent?.includes('Customer (anonymized)'));
+    expect(customerLink).toBeTruthy();
+    expect(customerLink!.getAttribute('href')).toBe('/customers/c9/summary');
+  });
+
   it('renders a generic fallback message for a non-not-found error, never a blank page', async () => {
     createComponent('b3');
     await settle();

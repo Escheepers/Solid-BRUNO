@@ -1,5 +1,6 @@
 import { Component, computed, inject, linkedSignal, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { Router } from '@angular/router';
 import { debounceTime, distinctUntilChanged } from 'rxjs';
 
 import { NormalizedApiError } from '../../core/api-client/normalized-api-error';
@@ -63,6 +64,7 @@ const SEARCH_DEBOUNCE_MS = 300;
 })
 export class CustomersPage {
   private readonly toastService = inject(ToastService);
+  private readonly router = inject(Router);
   private readonly hardDeleteMutation = useHardDeleteCustomerMutation();
   private readonly deactivateMutation = useDeactivateCustomerMutation();
   private readonly restoreMutation = useRestoreCustomerMutation();
@@ -166,29 +168,38 @@ export class CustomersPage {
 
   /**
    * A per-row function (spec-3-4's Story-2.4-mirrored change, extended to a
-   * three-way split by spec-3-5) so a row's actions match its state exactly:
-   * anonymized rows get none at all (nothing left to do -- edit/delete/deactivate/
-   * restore are all meaningless once PII is scrubbed, and un-anonymizing is never
-   * possible per the domain rule); soft-deleted-only rows get `[Restore, Erase
-   * personal data]` (erasing doesn't require restoring first, per spec-3-5's Scope
-   * decision 2); active rows keep the full `[Edit, Delete, Deactivate, Erase
-   * personal data]` set. Per spec-3-3/spec-3-4's Scope decisions, neither Delete
-   * nor Deactivate nor Erase is gated on booking count in the UI -- the backend
-   * guard (or lack thereof) is the single source of truth.
+   * three-way split by spec-3-5, then to a four-way "Summary" addition by spec-5-1's
+   * Scope decision 2) so a row's actions match its state exactly: anonymized rows now
+   * get exactly `[Summary]` (previously none at all -- spec-5-1's own AC requires the
+   * summary to work for an anonymized customer, and viewing it is the one thing still
+   * meaningful once PII is scrubbed); soft-deleted-only rows get `[Summary, Restore,
+   * Erase personal data]` (erasing doesn't require restoring first, per spec-3-5's
+   * Scope decision 2); active rows keep the full `[Summary, Edit, Delete, Deactivate,
+   * Erase personal data]` set. "Summary" leads every branch, mirroring `VehiclesPage`'s
+   * own "View" leading its two branches. Per spec-3-3/spec-3-4's Scope decisions,
+   * neither Delete nor Deactivate nor Erase is gated on booking count in the UI -- the
+   * backend guard (or lack thereof) is the single source of truth.
    */
   protected readonly actions = (customer: Customer): RowAction<Customer>[] => {
+    const summaryAction: RowAction<Customer> = {
+      label: 'Summary',
+      onClick: (c) => this.onSummaryClick(c),
+    };
+
     if (customer.isAnonymized) {
-      return [];
+      return [summaryAction];
     }
 
     if (customer.isDeleted) {
       return [
+        summaryAction,
         { label: 'Restore', onClick: (c) => this.onRestoreClick(c) },
         { label: 'Erase personal data', onClick: (c) => this.eraseAction.open(c) },
       ];
     }
 
     return [
+      summaryAction,
       { label: 'Edit', onClick: (c) => this.openEditModal(c) },
       { label: 'Delete', onClick: (c) => this.hardDeleteAction.open(c) },
       { label: 'Deactivate', onClick: (c) => this.deactivateAction.open(c) },
@@ -256,6 +267,12 @@ export class CustomersPage {
 
   protected onFormModalClose(): void {
     this.isFormModalOpen.set(false);
+  }
+
+  /** Mirrors `VehiclesPage.onViewClick`'s exact shape -- a plain `Router.navigate`,
+   * available on every row regardless of state (spec-5-1's Scope decision 2). */
+  protected onSummaryClick(customer: Customer): void {
+    this.router.navigate(['/customers', customer.id, 'summary']);
   }
 
   /**

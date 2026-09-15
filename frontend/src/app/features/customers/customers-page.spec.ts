@@ -1,6 +1,7 @@
 import { provideHttpClient, withInterceptors } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { Router, provideRouter } from '@angular/router';
 import { QueryClient, provideTanStackQuery } from '@tanstack/angular-query-experimental';
 
 import { apiKeyInterceptor } from '../../core/api-client/api-key.interceptor';
@@ -58,6 +59,7 @@ describe('CustomersPage', () => {
         provideHttpClient(withInterceptors([apiKeyInterceptor, errorNormalizationInterceptor])),
         provideHttpClientTesting(),
         provideTanStackQuery(queryClient),
+        provideRouter([]),
       ],
     }).compileComponents();
 
@@ -528,7 +530,7 @@ describe('CustomersPage', () => {
       await settle();
     }
 
-    it('an inactive row shows Restore and Erase and is dimmed; an active row keeps Edit/Delete/Deactivate/Erase and is not dimmed', async () => {
+    it('an inactive row shows Summary/Restore/Erase and is dimmed; an active row keeps Summary/Edit/Delete/Deactivate/Erase and is not dimmed', async () => {
       await seedActiveAndInactiveRows();
 
       const rows = fixture.nativeElement.querySelectorAll('tbody tr');
@@ -541,13 +543,30 @@ describe('CustomersPage', () => {
         rows[1].querySelectorAll('button'),
       ).map((b) => b.textContent?.trim());
 
-      expect(activeButtons).toEqual(['Edit', 'Delete', 'Deactivate', 'Erase personal data']);
-      expect(inactiveButtons).toEqual(['Restore', 'Erase personal data']);
+      expect(activeButtons).toEqual(['Summary', 'Edit', 'Delete', 'Deactivate', 'Erase personal data']);
+      expect(inactiveButtons).toEqual(['Summary', 'Restore', 'Erase personal data']);
 
       const activeCell = rows[0].querySelector('td') as HTMLElement;
       const inactiveCell = rows[1].querySelector('td') as HTMLElement;
       expect(activeCell.className).toContain('text-text-body');
       expect(inactiveCell.className).toContain('text-text-disabled');
+    });
+
+    it('clicking "Summary" on a row navigates to that customer\'s summary route (spec-5-1)', async () => {
+      await seedActiveAndInactiveRows();
+
+      const router = TestBed.inject(Router);
+      const navigateSpy = vi.spyOn(router, 'navigate');
+
+      const summaryButton = Array.from<HTMLButtonElement>(
+        fixture.nativeElement.querySelectorAll('tbody button'),
+      ).find((b) => b.textContent?.trim() === 'Summary');
+      expect(summaryButton).toBeTruthy();
+
+      summaryButton!.click();
+      fixture.detectChanges();
+
+      expect(navigateSpy).toHaveBeenCalledWith(['/customers', 'active-1', 'summary']);
     });
 
     it('clicking Restore on a row that succeeds clears any error state and shows a success toast', async () => {
@@ -735,37 +754,50 @@ describe('CustomersPage', () => {
       return fixture.nativeElement.querySelector('input[type="checkbox"]');
     }
 
-    it('shows an anonymized customer with muted-italic placeholder text and no row actions when "show inactive" is on', async () => {
-      await settle();
-      expectCustomersRequest('', 'false').flush(pagedResult([]));
-      await settle();
+    it(
+      'shows an anonymized customer with muted-italic placeholder text and exactly one row ' +
+        'action ("Summary", spec-5-1\'s Scope decision 2) when "show inactive" is on',
+      async () => {
+        await settle();
+        expectCustomersRequest('', 'false').flush(pagedResult([]));
+        await settle();
 
-      showInactiveCheckbox().click();
-      fixture.detectChanges();
-      await settle();
+        showInactiveCheckbox().click();
+        fixture.detectChanges();
+        await settle();
 
-      expectCustomersRequest('', 'true').flush(
-        pagedResult([
-          customerDto({
-            id: 'anon-1',
-            firstName: 'Anonymized',
-            lastName: 'Customer',
-            email: 'erased-anon-1@anonymized.local',
-            phoneNumber: '0000000000',
-            isDeleted: true,
-            isAnonymized: true,
-          }),
-        ]),
-      );
-      await settle();
+        expectCustomersRequest('', 'true').flush(
+          pagedResult([
+            customerDto({
+              id: 'anon-1',
+              firstName: 'Anonymized',
+              lastName: 'Customer',
+              email: 'erased-anon-1@anonymized.local',
+              phoneNumber: '0000000000',
+              isDeleted: true,
+              isAnonymized: true,
+            }),
+          ]),
+        );
+        await settle();
 
-      const row = fixture.nativeElement.querySelector('tbody tr') as HTMLElement;
-      expect(row.textContent).toContain('Customer (anonymized)');
-      expect(row.querySelectorAll('button').length).toBe(0);
+        const row = fixture.nativeElement.querySelector('tbody tr') as HTMLElement;
+        expect(row.textContent).toContain('Customer (anonymized)');
 
-      const nameCell = row.querySelector('td') as HTMLElement;
-      expect(nameCell.className).toContain('italic');
-      expect(nameCell.className).toContain('text-anonymized-text');
-    });
+        const buttons = Array.from<HTMLButtonElement>(row.querySelectorAll('button'));
+        expect(buttons.map((b) => b.textContent?.trim())).toEqual(['Summary']);
+
+        const nameCell = row.querySelector('td') as HTMLElement;
+        expect(nameCell.className).toContain('italic');
+        expect(nameCell.className).toContain('text-anonymized-text');
+
+        const router = TestBed.inject(Router);
+        const navigateSpy = vi.spyOn(router, 'navigate');
+        buttons[0].click();
+        fixture.detectChanges();
+
+        expect(navigateSpy).toHaveBeenCalledWith(['/customers', 'anon-1', 'summary']);
+      },
+    );
   });
 });

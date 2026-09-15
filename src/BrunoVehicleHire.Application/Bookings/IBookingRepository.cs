@@ -87,4 +87,18 @@ public interface IBookingRepository
     /// caller -- no ordering guarantee needed since every eligible booking in the result is dispatched.
     /// </summary>
     Task<IReadOnlyList<Booking>> GetActivePastEndDateAsync(DateOnly asOf, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Every Booking for <paramref name="customerId"/>, joined with its referenced
+    /// <see cref="Vehicle"/> row via <c>IgnoreQueryFilters()</c> (AD-13) -- backs the Customer
+    /// Summary page's unbounded booking-history list (spec-5-1's Boundaries), so a booking
+    /// referencing an already-soft-deleted vehicle still renders its make/model/registration. No
+    /// Customer join here, unlike <see cref="GetByIdWithVehicleAndCustomerAsync"/> -- the caller
+    /// (<c>GetCustomerSummaryQueryHandler</c>) already has the one Customer this method's own
+    /// <paramref name="customerId"/> identifies, so re-joining it again would be redundant. Ordered
+    /// by <c>Booking.CreatedDate</c> then <c>Id</c> for a stable order, mirroring
+    /// <see cref="GetPagedAsync"/>'s exact ordering.
+    /// </summary>
+    Task<IReadOnlyList<(Booking Booking, Vehicle Vehicle)>> GetForCustomerWithVehicleAsync(
+        Guid customerId, CancellationToken cancellationToken);
 }

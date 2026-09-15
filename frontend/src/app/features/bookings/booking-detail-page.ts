@@ -37,6 +37,12 @@ const DEFAULT_CANCEL_MESSAGE =
  * invalidation) so the page immediately reflects the new Cancelled status and
  * retracts the now-ineligible Cancel action, rather than showing stale data until a
  * manual refresh.
+ *
+ * The Customer field (spec-5-1's Scope decision 1) is a plain `routerLink` to
+ * `/customers/{customerId}/summary` -- the second of this story's two entry points
+ * into the read-only Customer Summary page. Works identically whether or not the
+ * customer has since been anonymized (the link still resolves; the summary page
+ * itself renders the anonymized placeholder).
  */
 @Component({
   selector: 'app-booking-detail-page',

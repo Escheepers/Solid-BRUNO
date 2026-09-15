@@ -69,8 +69,8 @@ development_status:
   4-5-booking-detail-view: done
   epic-4-retrospective: optional
 
-  epic-5: backlog
-  5-1-view-print-customer-summary: backlog
+  epic-5: done
+  5-1-view-print-customer-summary: done
   epic-5-retrospective: optional
 
   epic-6: backlog

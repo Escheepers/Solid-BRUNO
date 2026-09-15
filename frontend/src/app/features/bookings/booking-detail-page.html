@@ -28,7 +28,9 @@
             [class.text-anonymized-text]="b.customerIsAnonymized"
             [class.text-text-body]="!b.customerIsAnonymized"
           >
-            {{ customerDisplayName() }}
+            <a [routerLink]="['/customers', b.customerId, 'summary']" class="hover:underline">{{
+              customerDisplayName()
+            }}</a>
           </dd>
         </div>
         <div>
