@@ -20,6 +20,17 @@ public interface IBookingRepository
     Task<bool> ExistsForCustomerAsync(Guid customerId, CancellationToken cancellationToken);
 
     /// <summary>
+    /// The guard query behind <see cref="Vehicles.Commands.SoftDeleteVehicleCommandHandler"/>'s
+    /// has-active-booking check (spec-vehicle-deactivate-blocked-by-active-bookings): true if any
+    /// Booking row whose <c>Status</c> is <see cref="BookingStatus.Active"/> references
+    /// <paramref name="vehicleId"/>. Deliberately narrower than <see cref="ExistsForCustomerAsync"/>'s
+    /// any-status check and than <see cref="GetNonCancelledForVehicleAsync"/>'s not-Cancelled check --
+    /// only an Active (in-effect or future) booking means the vehicle is still physically committed to
+    /// a customer; a Completed booking is history and a Cancelled one never blocks anything.
+    /// </summary>
+    Task<bool> ExistsActiveForVehicleAsync(Guid vehicleId, CancellationToken cancellationToken);
+
+    /// <summary>
     /// One page of bookings, each joined with its referenced <see cref="Vehicle"/>/
     /// <see cref="Customer"/> row for <see cref="Dtos.BookingDto.FromDomain"/> to project (spec-4-1's
     /// Boundaries: Booking itself carries no navigation properties -- AD-1). Deliberately takes no

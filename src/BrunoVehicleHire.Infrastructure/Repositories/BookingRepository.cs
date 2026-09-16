@@ -21,6 +21,17 @@ public class BookingRepository(AppDbContext dbContext) : IBookingRepository
     }
 
     /// <summary>
+    /// Backs <see cref="IBookingRepository.ExistsActiveForVehicleAsync"/>: true if any Booking row for
+    /// <paramref name="vehicleId"/> is currently <see cref="BookingStatus.Active"/> -- no query filter
+    /// concerns, mirroring every other method here (Booking has none of its own).
+    /// </summary>
+    public async Task<bool> ExistsActiveForVehicleAsync(Guid vehicleId, CancellationToken cancellationToken)
+    {
+        return await dbContext.Bookings
+            .AnyAsync(b => b.VehicleId == vehicleId && b.Status == BookingStatus.Active, cancellationToken);
+    }
+
+    /// <summary>
     /// Joins each Booking to its referenced Vehicle/Customer row via <c>IgnoreQueryFilters()</c> on
     /// BOTH sides from day one (spec-4-1's Scope decision 4/AD-13) -- not deferred to a later story
     /// -- so a booking referencing an already-soft-deleted vehicle or an already-soft-deleted/

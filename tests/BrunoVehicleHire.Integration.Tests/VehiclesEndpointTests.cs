@@ -71,7 +71,12 @@ public class VehiclesEndpointTests : IAsyncLifetime
         // in this environment -- each test method gets its own WebApplicationFactory/xUnit test
         // class instance, but not necessarily an empty table, so start every test from a clean
         // slate regardless. IgnoreQueryFilters() so this also clears any already-soft-deleted rows
-        // left over from a prior test.
+        // left over from a prior test. Bookings/Customers are deleted first -- the Booking->Vehicle
+        // FK (Restrict) would otherwise reject deleting a referenced Vehicle row, mirroring
+        // BookingsEndpointTests's exact ordering; this class only started seeding Bookings/Customers
+        // for spec-vehicle-deactivate-blocked-by-active-bookings's own guard test.
+        await dbContext.Bookings.ExecuteDeleteAsync();
+        await dbContext.Customers.IgnoreQueryFilters().ExecuteDeleteAsync();
         await dbContext.Vehicles.IgnoreQueryFilters().ExecuteDeleteAsync();
     }
 
@@ -121,6 +126,24 @@ public class VehiclesEndpointTests : IAsyncLifetime
         using var scope = _factory.Services.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         dbContext.Vehicles.AddRange(vehicles);
+        await dbContext.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// Seeds an Active Booking for <paramref name="vehicle"/> against a freshly-seeded Customer
+    /// (spec-vehicle-deactivate-blocked-by-active-bookings) -- <c>Booking.Create</c> always starts
+    /// Active, matching the exact state that must block deactivation.
+    /// </summary>
+    private async Task SeedActiveBookingAsync(Vehicle vehicle)
+    {
+        var customer = Customer.Create("Jane", "Doe", $"jane.{Guid.NewGuid()}@example.com", "0821234567");
+        var booking = Booking.Create(
+            vehicle.Id, customer.Id, new DateOnly(2026, 10, 1), new DateOnly(2026, 10, 5), 1400m);
+
+        using var scope = _factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        dbContext.Customers.Add(customer);
+        dbContext.Bookings.Add(booking);
         await dbContext.SaveChangesAsync();
     }
 
@@ -598,6 +621,42 @@ public class VehiclesEndpointTests : IAsyncLifetime
         var response = await _client.SendAsync(request);
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task Deactivate_VehicleWithActiveBooking_Returns409WithExactDetailMessage_AndVehicleStillAppearsInDefaultList()
+    {
+        var vehicle = Vehicle.Create("CA151617", "Toyota", "Fortuner", 2023, 550m);
+        await SeedVehiclesAsync(vehicle);
+        await SeedActiveBookingAsync(vehicle);
+
+        using var request = AuthenticatedPost($"/api/vehicles/{vehicle.Id}/deactivate");
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+
+        var json = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(json);
+
+        document.RootElement.GetProperty("detail").GetString().Should().Be(
+            "This vehicle has an active or upcoming booking — cancel it first, or wait for it to complete.");
+
+        // Prove the vehicle really is still active -- both in the default list and in the raw row.
+        using var getRequest = AuthenticatedGet("/api/vehicles?page=1&pageSize=20&search=CA151617");
+        var getResponse = await _client.SendAsync(getRequest);
+
+        var getJson = await getResponse.Content.ReadAsStringAsync();
+        using var getDocument = JsonDocument.Parse(getJson);
+
+        getDocument.RootElement.GetProperty("totalCount").GetInt32().Should().Be(1);
+
+        using var verifyScope = _factory.Services.CreateScope();
+        var dbContext = verifyScope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var isDeleted = await dbContext.Vehicles
+            .Where(v => v.Id == vehicle.Id)
+            .Select(v => v.IsDeleted)
+            .SingleAsync();
+        isDeleted.Should().BeFalse();
     }
 
     [Fact]
