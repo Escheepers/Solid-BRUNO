@@ -1,5 +1,5 @@
 import { NgTemplateOutlet } from '@angular/common';
-import { Component, TemplateRef, computed, input, output } from '@angular/core';
+import { Component, TemplateRef, computed, input, output, signal } from '@angular/core';
 
 import { Skeleton } from '../skeleton/skeleton';
 
@@ -32,7 +32,32 @@ export interface ColumnDef<T> {
    * before via the `cell()` branch.
    */
   cellTemplate?: TemplateRef<{ $implicit: T }>;
+  /**
+   * Marks this column as sortable (spec-6-4's Accessibility Verification Pass --
+   * `EXPERIENCE.md`'s Component Patterns: "Sortable by clicking a column header
+   * where meaningful (date, price) -- the header is a real `<button>` with
+   * `aria-sort` on the `<th>`"). Only date/price columns opt in (per spec-6-4's
+   * Boundaries: "Only columns where EXPERIENCE.md calls sorting meaningful ...
+   * get `sortable: true` -- not every column"); every pre-existing column omits
+   * this and renders exactly as before (additive only).
+   */
+  sortable?: boolean;
+  /**
+   * The raw value `DataTable` sorts by when `sortable` is true -- distinct from
+   * `cell()`'s already-formatted display string (e.g. `"R1,400.00"`,
+   * `"1 Oct 2026"`), neither of which sorts correctly as plain text (currency
+   * grouping and month names both break lexicographic order). Falls back to
+   * `cell(row)` when omitted, which is only correct for an already-sortable
+   * plain-text column -- every current `sortable: true` column (date/price)
+   * supplies this explicitly.
+   */
+  sortValue?: (row: T) => string | number;
 }
+
+/** The two directions a sortable column can be actively sorted in; `aria-sort`
+ * also uses the literal string `'none'` for a sortable-but-inactive column,
+ * handled separately in `DataTable.ariaSortFor`. */
+type SortDirection = 'ascending' | 'descending';
 
 /**
  * One row-level action rendered as a trailing text-link cell (spec-2-2's Scope
@@ -60,7 +85,10 @@ export interface RowAction<T> {
  * least one action, so every pre-existing caller (columns/rows/etc. only) keeps
  * working unchanged. `rowMuted`/`rowKey`+`rowError` (spec-2-4) stay entity-agnostic
  * too: `DataTable` never learns what "soft-deleted" or "already active" means, only
- * renders what the caller's predicates/functions tell it to (SRP).
+ * renders what the caller's predicates/functions tell it to (SRP). `ColumnDef.sortable`
+ * (spec-6-4) adds an optional, per-page client-side sort over whichever column opts
+ * in -- see `ColumnDef.sortable`'s own doc comment; every pre-existing column/caller
+ * omits it and is unaffected.
  */
 @Component({
   selector: 'app-data-table',
@@ -80,6 +108,39 @@ export class DataTable<T> {
   readonly rowError = input<{ key: string; message: string } | null>(null);
 
   readonly pageChange = output<number>();
+
+  /**
+   * The single sortable column/direction active at a time (or `null` for the
+   * unsorted, as-received order) -- clicking a column header cycles
+   * none -> ascending -> descending -> none per spec-6-4's Boundaries.
+   * Deliberately keyed by `column.header` (already this table's per-column
+   * identity, per the existing `track column.header`) rather than a column
+   * index, so it survives `columns()` re-creation across change detection.
+   */
+  private readonly sortState = signal<{ header: string; direction: SortDirection } | null>(null);
+
+  /**
+   * `rows()` sorted per `sortState` -- client-side, over only the currently
+   * loaded page (spec-6-4's Design Notes: proportional to a verification pass,
+   * not new backend query params). Falls through to `rows()` unchanged when
+   * nothing is sorted, or when the sorted-by column is no longer present/
+   * sortable (defensive; `columns()` is caller-supplied and could change).
+   */
+  protected readonly sortedRows = computed<T[]>(() => {
+    const rows = this.rows();
+    const state = this.sortState();
+    if (!state) {
+      return rows;
+    }
+
+    const column = this.columns().find((c) => c.header === state.header && c.sortable);
+    if (!column) {
+      return rows;
+    }
+
+    const sign = state.direction === 'ascending' ? 1 : -1;
+    return [...rows].sort((a, b) => sign * this.compareRows(column, a, b));
+  });
 
   protected readonly hasAnyRowActions = computed(() =>
     this.rows().some((row) => this.actions()(row).length > 0),
@@ -127,5 +188,71 @@ export class DataTable<T> {
       return null;
     }
     return error.message;
+  }
+
+  /**
+   * Cycles this column's sort state: unsorted -> ascending -> descending ->
+   * unsorted (spec-6-4's Boundaries: "Ascending/descending/none cycle").
+   * Clicking a different sortable column while one is already active replaces
+   * it outright (only one column is ever sorted at a time) rather than
+   * stacking a multi-column sort, which nothing in this spec or `EXPERIENCE.md`
+   * asks for (YAGNI). A no-op for a non-sortable column -- guards the case
+   * where this is reached via the header's plain-text branch having no click
+   * handler at all, kept here too as defense-in-depth.
+   */
+  protected onSortClick(column: ColumnDef<T>): void {
+    if (!column.sortable) {
+      return;
+    }
+
+    const current = this.sortState();
+    if (!current || current.header !== column.header) {
+      this.sortState.set({ header: column.header, direction: 'ascending' });
+      return;
+    }
+
+    if (current.direction === 'ascending') {
+      this.sortState.set({ header: column.header, direction: 'descending' });
+      return;
+    }
+
+    this.sortState.set(null);
+  }
+
+  /** `null` for a non-sortable column (no `aria-sort` attribute at all --
+   * `attr.aria-sort` binding to `null` omits it entirely); `'none'` for a
+   * sortable column that isn't the active one; otherwise the active
+   * direction. Mirrors the exact `aria-sort` values `EXPERIENCE.md`/WAI-ARIA
+   * expect on a sortable `<th>`. */
+  protected ariaSortFor(column: ColumnDef<T>): SortDirection | 'none' | null {
+    if (!column.sortable) {
+      return null;
+    }
+
+    const state = this.sortState();
+    return state && state.header === column.header ? state.direction : 'none';
+  }
+
+  /** A persistent (not hover-only) visual indicator per spec-6-4's Boundaries --
+   * a neutral two-way glyph on a sortable-but-inactive column (so it reads as
+   * sortable at a glance), replaced by a directional arrow once active. */
+  protected sortIndicator(column: ColumnDef<T>): string {
+    const state = this.sortState();
+    if (!state || state.header !== column.header) {
+      return '⇅';
+    }
+    return state.direction === 'ascending' ? '▲' : '▼';
+  }
+
+  private compareRows(column: ColumnDef<T>, a: T, b: T): number {
+    const getValue = column.sortValue ?? column.cell;
+    return this.compareValues(getValue(a), getValue(b));
+  }
+
+  private compareValues(a: string | number, b: string | number): number {
+    if (typeof a === 'number' && typeof b === 'number') {
+      return a - b;
+    }
+    return String(a).localeCompare(String(b));
   }
 }

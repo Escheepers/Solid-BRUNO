@@ -1,4 +1,14 @@
-import { Component, computed, effect, inject, input, output, signal } from '@angular/core';
+import {
+  Component,
+  ElementRef,
+  ViewChild,
+  computed,
+  effect,
+  inject,
+  input,
+  output,
+  signal,
+} from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 
@@ -79,6 +89,8 @@ function daysBetween(startIso: string, endIso: string): number {
 export class BookingFormModal {
   readonly open = input.required<boolean>();
   readonly closeRequest = output<void>();
+
+  @ViewChild('customerSelect') private readonly customerSelectRef?: ElementRef<HTMLSelectElement>;
 
   private readonly toastService = inject(ToastService);
   private readonly fb = inject(FormBuilder);
@@ -209,6 +221,7 @@ export class BookingFormModal {
 
   protected onCustomerModalClose(): void {
     this.isCustomerModalOpen.set(false);
+    this.focusCustomerSelect();
   }
 
   /**
@@ -220,12 +233,36 @@ export class BookingFormModal {
    * this selection is genuine user-driven data the discard-guard should protect --
    * and closes the nested modal, leaving the vehicle/dates already entered
    * untouched (per the Boundaries: "creating a customer never loses the vehicle/
-   * dates already entered underneath").
+   * dates already entered underneath"). Focus-return to the Customer select
+   * happens once, in `onCustomerModalClose` below -- `CustomerFormModal`'s own
+   * `resetAndClose()` always emits `closeRequest` immediately after `created`
+   * on this path (see its `onSubmit`), so that handler already covers this
+   * case too; duplicating the focus call here would just call `.focus()` on
+   * the same element twice for no benefit (DRY).
    */
   protected onCustomerCreated(customer: Customer): void {
     this.form.controls.customerId.setValue(customer.id);
     this.form.controls.customerId.markAsDirty();
     this.isCustomerModalOpen.set(false);
+  }
+
+  /**
+   * Explicitly returns focus to this form's own Customer `<select>` once the
+   * nested "+ New Customer" `Modal` closes -- on both the create and cancel
+   * paths, since `CustomerFormModal` emits `closeRequest` on every path that
+   * actually closes it (spec-6-4's Accessibility Verification Pass;
+   * `EXPERIENCE.md`'s one carve-out from `FocusTrap`'s default "return to
+   * trigger" behavior: "the inner Modal ... returns it to the Customer picker
+   * field on close" -- after creating a customer inline, the useful next
+   * action is picking that customer, not re-clicking "+ New Customer").
+   * Deferred one macrotask so it runs after Angular's change detection has
+   * already closed the nested `Modal` and that `Modal`'s own
+   * `FocusTrap.deactivate()` has already returned focus to the "+ New
+   * Customer" button -- calling this synchronously here would run first and
+   * be immediately overwritten by that default.
+   */
+  private focusCustomerSelect(): void {
+    setTimeout(() => this.customerSelectRef?.nativeElement.focus());
   }
 
   /**

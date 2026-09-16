@@ -132,8 +132,12 @@ describe('BookingsPage', () => {
     flushPickerQueries();
     await settle();
 
+    // Start/End/Total render their persistent sort-indicator glyph (spec-6-4)
+    // alongside the label text -- stripped here since this test asserts column
+    // labels/order, not DataTable's own sortable-header rendering (covered by
+    // data-table.spec.ts).
     const headers = Array.from(fixture.nativeElement.querySelectorAll('thead th')).map((th) =>
-      (th as HTMLElement).textContent?.trim(),
+      (th as HTMLElement).textContent?.replace(/[⇅▲▼]/g, '').trim(),
     );
     // Every row always gets a "View" action (spec-4-5), so DataTable renders its trailing
     // (sr-only-labelled) Actions column regardless of this row's own Cancel eligibility.

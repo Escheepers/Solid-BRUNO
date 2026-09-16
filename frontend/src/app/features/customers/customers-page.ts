@@ -163,7 +163,12 @@ export class CustomersPage {
       cell: (customer) => customer.phoneNumber,
       cellClass: (customer) => (customer.isAnonymized ? ANONYMIZED_CELL_CLASS : ''),
     },
-    { header: 'Created', cell: (customer) => dateFormatter.format(customer.createdDate) },
+    {
+      header: 'Created',
+      cell: (customer) => dateFormatter.format(customer.createdDate),
+      sortable: true,
+      sortValue: (customer) => customer.createdDate.getTime(),
+    },
   ];
 
   /**

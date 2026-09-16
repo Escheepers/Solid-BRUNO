@@ -25,10 +25,10 @@
   </div>
 
   @if (isGenuinelyEmpty()) {
-    <p class="text-body text-text-muted">No customers yet &mdash; create one.</p>
+    <p class="text-body text-text-muted" aria-live="polite">No customers yet &mdash; create one.</p>
   } @else if (isFilteredEmpty()) {
     <div class="flex flex-col items-start gap-2">
-      <p class="text-body text-text-muted">No customers match these filters.</p>
+      <p class="text-body text-text-muted" aria-live="polite">No customers match these filters.</p>
       <button type="button" class="text-button text-primary" (click)="clearFilters()">
         Clear all filters
       </button>

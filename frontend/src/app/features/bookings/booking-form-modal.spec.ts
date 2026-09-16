@@ -419,6 +419,32 @@ describe('BookingFormModal', () => {
       expect(vehicleSelect().value).toBe('v1');
       expect(dateInputs()[0].value).toBe('2026-10-01');
       expect(dateInputs()[1].value).toBe('2026-10-05');
+      // spec-6-4: focus explicitly returns to the Customer select on this
+      // path, not wherever FocusTrap's default "return to trigger" (the
+      // "+ New Customer" button) would otherwise land it.
+      expect(document.activeElement).toBe(customerSelect());
+    });
+
+    it('returns focus to the Customer select when the nested modal is cancelled instead of completed', async () => {
+      await seedPickers();
+      fillValidForm();
+
+      newCustomerButton().focus();
+      newCustomerButton().click();
+      fixture.detectChanges();
+      expect(dialogs().length).toBe(2);
+
+      const nestedDialog = dialogs()[1];
+      nestedDialog.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }),
+      );
+      await settle();
+
+      expect(dialogs().length).toBe(1);
+      // spec-6-4: cancelling the nested modal returns focus to the Customer
+      // select too -- the same carve-out applies on both the "created" and
+      // "cancelled" paths, per EXPERIENCE.md.
+      expect(document.activeElement).toBe(customerSelect());
     });
   });
 

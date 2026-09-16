@@ -6,8 +6,23 @@
       <thead class="bg-surface-header">
         <tr>
           @for (column of columns(); track column.header) {
-            <th class="py-row-y px-row-x text-section-label uppercase text-text-faint" scope="col">
-              {{ column.header }}
+            <th
+              class="py-row-y px-row-x text-section-label uppercase text-text-faint"
+              scope="col"
+              [attr.aria-sort]="ariaSortFor(column)"
+            >
+              @if (column.sortable) {
+                <button
+                  type="button"
+                  class="flex items-center gap-1 text-section-label uppercase text-text-faint hover:text-text-body"
+                  (click)="onSortClick(column)"
+                >
+                  {{ column.header }}
+                  <span aria-hidden="true">{{ sortIndicator(column) }}</span>
+                </button>
+              } @else {
+                {{ column.header }}
+              }
             </th>
           }
           @if (hasAnyRowActions()) {
@@ -18,7 +33,7 @@
         </tr>
       </thead>
       <tbody>
-        @for (row of rows(); track $index) {
+        @for (row of sortedRows(); track $index) {
           <tr [class]="rowErrorMessage(row) ? 'bg-error-row-bg' : 'odd:bg-surface-alt'">
             @for (column of columns(); track column.header) {
               <td
@@ -59,7 +74,7 @@
   </div>
 
   <div class="flex items-center justify-between px-row-x py-row-y text-caption text-text-muted">
-    <span>Showing {{ rangeStart() }}&ndash;{{ rangeEnd() }} of {{ totalCount() }}</span>
+    <span aria-live="polite">Showing {{ rangeStart() }}&ndash;{{ rangeEnd() }} of {{ totalCount() }}</span>
     <div class="flex gap-3">
       <button
         type="button"

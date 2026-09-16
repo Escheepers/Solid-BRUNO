@@ -52,6 +52,7 @@
       </div>
       <select
         id="booking-customer"
+        #customerSelect
         formControlName="customerId"
         [attr.aria-invalid]="customerIdError() ? 'true' : null"
         [attr.aria-describedby]="'booking-customer-error'"

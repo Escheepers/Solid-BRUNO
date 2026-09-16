@@ -78,14 +78,19 @@ describe('TopAppBar', () => {
     expect(current[0].textContent?.trim()).toBe('Customers');
   });
 
-  it('marks the active link with the primary color, bold weight, and underline classes (not color alone)', async () => {
+  it('marks the active link with the link color, bold weight, and underline classes (not color alone)', async () => {
     await router.navigateByUrl('/bookings');
     fixture.detectChanges();
     await flushMicrotasks();
     fixture.detectChanges();
 
     const active = activeLinks()[0];
-    expect(active.classList.contains('text-primary')).toBe(true);
+    // spec-6-4: text-link (not text-primary) -- {colors.primary}'s dark-mode
+    // value fails AA contrast on this surface (3.58:1); {colors.link}'s
+    // dark-mode value is the design's own token for primary-blue text
+    // directly on a dark surface (7:1) and is value-identical to primary in
+    // light mode, so this is a contrast fix with no light-mode visual change.
+    expect(active.classList.contains('text-link')).toBe(true);
     expect(active.classList.contains('underline')).toBe(true);
     expect(Array.from(active.classList).some((c) => c.startsWith('font-bold'))).toBe(true);
   });

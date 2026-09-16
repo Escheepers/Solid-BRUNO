@@ -135,6 +135,15 @@ describe('DataTable', () => {
     expect(fixture.nativeElement.textContent).toContain('45');
   });
 
+  it('the "Showing X-Y of Z" summary carries aria-live="polite" (spec-6-4: FilterBar/DataTable result count)', () => {
+    fixture.detectChanges();
+
+    const region = Array.from<HTMLElement>(fixture.nativeElement.querySelectorAll('span')).find(
+      (span) => span.textContent?.includes('Showing'),
+    );
+    expect(region?.getAttribute('aria-live')).toBe('polite');
+  });
+
   it('does not render an actions column when no actions are provided', () => {
     fixture.detectChanges();
 
@@ -375,6 +384,198 @@ describe('DataTable', () => {
           expect((cell as HTMLElement).className).toContain('text-text-body');
         }
       }
+    });
+  });
+
+  /**
+   * spec-6-4's Accessibility Verification Pass: a sortable column's header must
+   * be a real, keyboard-activatable `<button>` with `aria-sort` reflecting
+   * current state, cycling none -> ascending -> descending -> none, sorting
+   * only the currently-loaded page of rows client-side. `EXPERIENCE.md`'s "Tab/
+   * Enter/Space" keyboard-operability claim rests on this being a genuine
+   * `<button>` element (Enter/Space-triggers-click is a browser default action
+   * for `<button>`, not something this component's own code could get wrong,
+   * and isn't reproducible in JSDOM -- verified live instead per this story's
+   * Verification section); the tests below assert the button is real, focusable,
+   * and non-disabled, and that clicking it (the same event a real Enter/Space
+   * keypress produces) has the correct effect.
+   */
+  describe('sortable columns', () => {
+    function header(label: string): HTMLElement {
+      return Array.from<HTMLElement>(fixture.nativeElement.querySelectorAll('th')).find((th) =>
+        th.textContent?.includes(label),
+      )!;
+    }
+
+    function sortButton(label: string): HTMLButtonElement {
+      return header(label).querySelector('button')!;
+    }
+
+    function rowNames(): string[] {
+      return tableRows().map((row) => row.querySelectorAll('td')[1]?.textContent?.trim() ?? '');
+    }
+
+    it('renders a non-sortable column header as plain text -- no button, no aria-sort attribute', () => {
+      fixture.detectChanges();
+
+      const idHeader = header('ID');
+      expect(idHeader.querySelector('button')).toBeNull();
+      expect(idHeader.hasAttribute('aria-sort')).toBe(false);
+    });
+
+    it('renders a sortable column header as a real, focusable, non-disabled <button>, initially aria-sort="none"', () => {
+      const sortableColumns: ColumnDef<Row>[] = [
+        { header: 'ID', cell: (row) => String(row.id) },
+        { header: 'Name', cell: (row) => row.name, sortable: true, sortValue: (row) => row.name },
+      ];
+      fixture.componentRef.setInput('columns', sortableColumns);
+      fixture.detectChanges();
+
+      const nameHeader = header('Name');
+      expect(nameHeader.getAttribute('aria-sort')).toBe('none');
+
+      const button = sortButton('Name');
+      expect(button.tagName).toBe('BUTTON');
+      expect(button.getAttribute('type')).toBe('button');
+      expect(button.disabled).toBe(false);
+      expect(button.tabIndex).not.toBe(-1);
+    });
+
+    it('cycles ascending -> descending -> none on repeated activation, re-sorting the current page\'s rows and updating aria-sort each time', () => {
+      const sortableColumns: ColumnDef<Row>[] = [
+        { header: 'ID', cell: (row) => String(row.id) },
+        { header: 'Name', cell: (row) => row.name, sortable: true, sortValue: (row) => row.name },
+      ];
+      fixture.componentRef.setInput('columns', sortableColumns);
+      fixture.componentRef.setInput('rows', [
+        { id: 1, name: 'beta' },
+        { id: 2, name: 'alpha' },
+        { id: 3, name: 'gamma' },
+      ]);
+      fixture.detectChanges();
+
+      expect(rowNames()).toEqual(['beta', 'alpha', 'gamma']); // as-received order
+
+      sortButton('Name').click();
+      fixture.detectChanges();
+      expect(header('Name').getAttribute('aria-sort')).toBe('ascending');
+      expect(rowNames()).toEqual(['alpha', 'beta', 'gamma']);
+
+      sortButton('Name').click();
+      fixture.detectChanges();
+      expect(header('Name').getAttribute('aria-sort')).toBe('descending');
+      expect(rowNames()).toEqual(['gamma', 'beta', 'alpha']);
+
+      sortButton('Name').click();
+      fixture.detectChanges();
+      expect(header('Name').getAttribute('aria-sort')).toBe('none');
+      expect(rowNames()).toEqual(['beta', 'alpha', 'gamma']); // back to as-received order
+    });
+
+    it('activating via click -- the same event a real Enter/Space keypress fires on a focused <button> -- sorts the column', () => {
+      const sortableColumns: ColumnDef<Row>[] = [
+        { header: 'ID', cell: (row) => String(row.id) },
+        { header: 'Name', cell: (row) => row.name, sortable: true, sortValue: (row) => row.name },
+      ];
+      fixture.componentRef.setInput('columns', sortableColumns);
+      fixture.componentRef.setInput('rows', [
+        { id: 1, name: 'beta' },
+        { id: 2, name: 'alpha' },
+      ]);
+      fixture.detectChanges();
+
+      const button = sortButton('Name');
+      button.focus();
+      expect(document.activeElement).toBe(button);
+
+      button.click();
+      fixture.detectChanges();
+
+      expect(header('Name').getAttribute('aria-sort')).toBe('ascending');
+      expect(rowNames()).toEqual(['alpha', 'beta']);
+    });
+
+    it('shows a persistent (not hover-only) visual indicator reflecting the active direction, and a neutral one when inactive', () => {
+      const sortableColumns: ColumnDef<Row>[] = [
+        { header: 'ID', cell: (row) => String(row.id) },
+        { header: 'Name', cell: (row) => row.name, sortable: true, sortValue: (row) => row.name },
+      ];
+      fixture.componentRef.setInput('columns', sortableColumns);
+      fixture.detectChanges();
+
+      expect(sortButton('Name').textContent).toContain('⇅');
+
+      sortButton('Name').click();
+      fixture.detectChanges();
+      expect(sortButton('Name').textContent).toContain('▲');
+
+      sortButton('Name').click();
+      fixture.detectChanges();
+      expect(sortButton('Name').textContent).toContain('▼');
+    });
+
+    it('sorts by the numeric sortValue rather than the formatted cell() string, avoiding lexicographic ordering', () => {
+      const priceColumns: ColumnDef<Row>[] = [
+        {
+          header: 'Price',
+          cell: (row) => `R${row.id}`, // "R1", "R2", "R10" -- wrong order as plain text
+          sortable: true,
+          sortValue: (row) => row.id,
+        },
+      ];
+      fixture.componentRef.setInput('columns', priceColumns);
+      fixture.componentRef.setInput('rows', [
+        { id: 2, name: 'b' },
+        { id: 10, name: 'j' },
+        { id: 1, name: 'a' },
+      ]);
+      fixture.detectChanges();
+
+      sortButton('Price').click();
+      fixture.detectChanges();
+
+      const cells = tableRows().map((row) => row.querySelector('td')?.textContent?.trim());
+      expect(cells).toEqual(['R1', 'R2', 'R10']);
+    });
+
+    it('falls back to cell(row) as the sort key when sortValue is omitted', () => {
+      const columnsNoSortValue: ColumnDef<Row>[] = [
+        { header: 'Name', cell: (row) => row.name, sortable: true },
+      ];
+      fixture.componentRef.setInput('columns', columnsNoSortValue);
+      fixture.componentRef.setInput('rows', [
+        { id: 1, name: 'beta' },
+        { id: 2, name: 'alpha' },
+      ]);
+      fixture.detectChanges();
+
+      sortButton('Name').click();
+      fixture.detectChanges();
+
+      const cells = tableRows().map((row) => row.querySelector('td')?.textContent?.trim());
+      expect(cells).toEqual(['alpha', 'beta']);
+    });
+
+    it('switches the active sort to a newly clicked column, replacing (not stacking on) the previous one', () => {
+      const twoSortableColumns: ColumnDef<Row>[] = [
+        { header: 'ID', cell: (row) => String(row.id), sortable: true, sortValue: (row) => row.id },
+        { header: 'Name', cell: (row) => row.name, sortable: true, sortValue: (row) => row.name },
+      ];
+      fixture.componentRef.setInput('columns', twoSortableColumns);
+      fixture.componentRef.setInput('rows', [
+        { id: 2, name: 'beta' },
+        { id: 1, name: 'alpha' },
+      ]);
+      fixture.detectChanges();
+
+      sortButton('ID').click();
+      fixture.detectChanges();
+      expect(header('ID').getAttribute('aria-sort')).toBe('ascending');
+
+      sortButton('Name').click();
+      fixture.detectChanges();
+      expect(header('ID').getAttribute('aria-sort')).toBe('none');
+      expect(header('Name').getAttribute('aria-sort')).toBe('ascending');
     });
   });
 });

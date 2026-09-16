@@ -102,9 +102,24 @@ export class BookingsPage implements OnInit {
             : `${booking.customerFirstName} ${booking.customerLastName}`,
         cellClass: (booking) => (booking.customerIsAnonymized ? ANONYMIZED_CELL_CLASS : ''),
       },
-      { header: 'Start', cell: (booking) => dateFormatter.format(booking.startDate) },
-      { header: 'End', cell: (booking) => dateFormatter.format(booking.endDate) },
-      { header: 'Total', cell: (booking) => currencyFormatter.format(booking.totalPrice) },
+      {
+        header: 'Start',
+        cell: (booking) => dateFormatter.format(booking.startDate),
+        sortable: true,
+        sortValue: (booking) => booking.startDate.getTime(),
+      },
+      {
+        header: 'End',
+        cell: (booking) => dateFormatter.format(booking.endDate),
+        sortable: true,
+        sortValue: (booking) => booking.endDate.getTime(),
+      },
+      {
+        header: 'Total',
+        cell: (booking) => currencyFormatter.format(booking.totalPrice),
+        sortable: true,
+        sortValue: (booking) => booking.totalPrice,
+      },
       {
         header: 'Status',
         cell: (booking) => booking.status,

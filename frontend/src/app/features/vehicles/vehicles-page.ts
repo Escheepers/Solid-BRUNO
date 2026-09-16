@@ -82,8 +82,18 @@ export class VehiclesPage {
     { header: 'Make', cell: (vehicle) => vehicle.make },
     { header: 'Model', cell: (vehicle) => vehicle.model },
     { header: 'Year', cell: (vehicle) => String(vehicle.year) },
-    { header: 'Daily Rate', cell: (vehicle) => currencyFormatter.format(vehicle.dailyRate) },
-    { header: 'Created', cell: (vehicle) => dateFormatter.format(vehicle.createdDate) },
+    {
+      header: 'Daily Rate',
+      cell: (vehicle) => currencyFormatter.format(vehicle.dailyRate),
+      sortable: true,
+      sortValue: (vehicle) => vehicle.dailyRate,
+    },
+    {
+      header: 'Created',
+      cell: (vehicle) => dateFormatter.format(vehicle.createdDate),
+      sortable: true,
+      sortValue: (vehicle) => vehicle.createdDate.getTime(),
+    },
   ];
 
   /**
