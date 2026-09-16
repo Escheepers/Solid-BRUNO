@@ -1,6 +1,5 @@
 import {
   Component,
-  ElementRef,
   ViewChild,
   computed,
   effect,
@@ -19,6 +18,7 @@ import { useCustomersQuery } from '../customers/customers.service';
 import { Vehicle, toVehicle } from '../vehicles/models/vehicle';
 import { useVehiclesQuery } from '../vehicles/vehicles.service';
 import { Button } from '../../shared/button/button';
+import { Combobox } from '../../shared/combobox/combobox';
 import { ConfirmDialog } from '../../shared/confirm-dialog/confirm-dialog';
 import { Input } from '../../shared/input/input';
 import { Modal } from '../../shared/modal/modal';
@@ -36,12 +36,14 @@ const BLANK_FORM_VALUE = {
 };
 
 /**
- * The largest page size the pickers can request (spec-4-1's Scope decision 6):
- * plain native `<select>`s populated from the existing paginated
- * `useVehiclesQuery`/`useCustomersQuery` rather than a new unpaginated "all active"
- * endpoint -- reasonable at this assessment's data volumes, and this is the app's
- * first-ever native `<select>` (no shared `Select` component exists yet -- YAGNI,
- * first consumer). Capped at 100, not a rounder 200 -- `GetVehiclesQueryValidator`/
+ * The largest page size the pickers can request (spec-4-1's Scope decision 6,
+ * unchanged by the later searchable-picker bugfix that swapped the pickers from
+ * plain native `<select>`s to `Combobox<T>`): populated from the existing
+ * paginated `useVehiclesQuery`/`useCustomersQuery` rather than a new unpaginated
+ * "all active" endpoint -- reasonable at this assessment's data volumes, and
+ * `Combobox` filters this same already-loaded in-memory page client-side rather
+ * than issuing a new server-side search. Capped at 100, not a rounder 200 --
+ * `GetVehiclesQueryValidator`/
  * `GetCustomersQueryValidator` both bound `PageSize` to `[1, 100]` (AD-10); a larger
  * value 400s the picker's own query, silently leaving both dropdowns empty (caught
  * live, not by any mocked-service unit test). `showInactive: false` on both queries
@@ -74,23 +76,27 @@ function daysBetween(startIso: string, endIso: string): number {
  * `submitAttempted`/`serverFieldErrors`/`serverErrorMessage` signals, the same
  * `onModalCloseRequest`/`ConfirmDialog` discard flow copied verbatim.
  *
- * The vehicle/customer `<select>`s are populated directly from `useVehiclesQuery`/
- * `useCustomersQuery` (Scope decision 6) -- no new endpoint, no new shared `Select`
- * component. Total Price is a `computed` signal over the form's own live value
+ * The vehicle/customer pickers are `Combobox<T>` (the searchable-picker bugfix,
+ * superseding spec-4-1's Scope decision 6's plain native `<select>`s) populated
+ * directly from `useVehiclesQuery`/`useCustomersQuery` -- no new endpoint. Total
+ * Price is a `computed` signal over the form's own live value
  * (`toSignal(form.valueChanges, ...)`) and the fetched vehicle list, recomputing
  * whenever vehicle/either date changes, rendered inside an `aria-live="polite"`
  * region per the Boundaries.
  */
 @Component({
   selector: 'app-booking-form-modal',
-  imports: [Modal, Input, Button, ReactiveFormsModule, ConfirmDialog, CustomerFormModal],
+  imports: [Modal, Input, Combobox, Button, ReactiveFormsModule, ConfirmDialog, CustomerFormModal],
   templateUrl: './booking-form-modal.html',
 })
 export class BookingFormModal {
   readonly open = input.required<boolean>();
   readonly closeRequest = output<void>();
 
-  @ViewChild('customerSelect') private readonly customerSelectRef?: ElementRef<HTMLSelectElement>;
+  /** Typed as `Combobox<Customer>` rather than an `ElementRef` -- spec-6-4's
+   * focus-return-to-Customer-picker fix now lands on the combobox's own
+   * focusable text-input element via its public `focus()` method. */
+  @ViewChild('customerSelect') private readonly customerComboboxRef?: Combobox<Customer>;
 
   private readonly toastService = inject(ToastService);
   private readonly fb = inject(FormBuilder);
@@ -187,6 +193,18 @@ export class BookingFormModal {
     return `${customer.firstName} ${customer.lastName}`;
   }
 
+  /** `Combobox<T>`'s `optionValue` -- the value actually written to the
+   * `vehicleId`/`customerId` form controls (unchanged from what the old native
+   * `<select>` wrote via each `<option [value]>`). Trivial, but `Combobox`'s
+   * `ColumnDef`-style function inputs need one per spec. */
+  protected vehicleIdOf(vehicle: Vehicle): string {
+    return vehicle.id;
+  }
+
+  protected customerIdOf(customer: Customer): string {
+    return customer.id;
+  }
+
   protected onSubmit(): void {
     this.serverErrorMessage.set(null);
     this.serverFieldErrors.set({});
@@ -247,7 +265,7 @@ export class BookingFormModal {
   }
 
   /**
-   * Explicitly returns focus to this form's own Customer `<select>` once the
+   * Explicitly returns focus to this form's own Customer combobox once the
    * nested "+ New Customer" `Modal` closes -- on both the create and cancel
    * paths, since `CustomerFormModal` emits `closeRequest` on every path that
    * actually closes it (spec-6-4's Accessibility Verification Pass;
@@ -262,7 +280,7 @@ export class BookingFormModal {
    * be immediately overwritten by that default.
    */
   private focusCustomerSelect(): void {
-    setTimeout(() => this.customerSelectRef?.nativeElement.focus());
+    setTimeout(() => this.customerComboboxRef?.focus());
   }
 
   /**

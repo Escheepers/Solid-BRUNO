@@ -131,11 +131,11 @@ describe('BookingFormModal', () => {
     return fixture.nativeElement.querySelector('[role="alertdialog"]');
   }
 
-  function vehicleSelect(): HTMLSelectElement {
+  function vehicleSelect(): HTMLInputElement {
     return fixture.nativeElement.querySelector('#booking-vehicle');
   }
 
-  function customerSelect(): HTMLSelectElement {
+  function customerSelect(): HTMLInputElement {
     return fixture.nativeElement.querySelector('#booking-customer');
   }
 
@@ -143,14 +143,31 @@ describe('BookingFormModal', () => {
     return Array.from(fixture.nativeElement.querySelectorAll('app-input input'));
   }
 
-  function setSelectValue(select: HTMLSelectElement, value: string): void {
-    select.value = value;
-    select.dispatchEvent(new Event('change'));
-  }
-
   function setInputValue(el: HTMLInputElement, value: string): void {
     el.value = value;
     el.dispatchEvent(new Event('input'));
+  }
+
+  /**
+   * Drives the `Combobox` the same way a real keyboard-or-mouse user would --
+   * opens the popup (ArrowDown), then clicks the option carrying the given
+   * `optionValue()` (its `data-value`, e.g. an id) -- replacing the old
+   * `select.value = ...; dispatchEvent(new Event('change'))` shortcut a plain
+   * `<select>` allowed.
+   */
+  function selectComboboxOption(comboboxInput: HTMLInputElement, value: string): void {
+    comboboxInput.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }),
+    );
+    fixture.detectChanges();
+
+    const option = comboboxInput
+      .closest('div')!
+      .querySelector(`[role="listbox"] [data-value="${value}"]`) as HTMLElement;
+
+    option.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+    option.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    fixture.detectChanges();
   }
 
   function totalPriceRegion(): HTMLElement {
@@ -158,8 +175,8 @@ describe('BookingFormModal', () => {
   }
 
   function fillValidForm(): void {
-    setSelectValue(vehicleSelect(), 'v1');
-    setSelectValue(customerSelect(), 'c1');
+    selectComboboxOption(vehicleSelect(), 'v1');
+    selectComboboxOption(customerSelect(), 'c1');
     const [startDate, endDate] = dateInputs();
     setInputValue(startDate, '2026-10-01');
     setInputValue(endDate, '2026-10-05');
@@ -184,13 +201,23 @@ describe('BookingFormModal', () => {
       [customerDto({ id: 'c1', firstName: 'Thabo', lastName: 'Nkosi' })],
     );
 
-    const vehicleOptions = Array.from<HTMLOptionElement>(vehicleSelect().querySelectorAll('option'));
+    vehicleSelect().dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }),
+    );
+    fixture.detectChanges();
+    const vehicleOptions = Array.from<HTMLElement>(
+      fixture.nativeElement.querySelectorAll('#booking-vehicle ~ [role="listbox"] [role="option"]'),
+    );
     expect(vehicleOptions.some((o) => o.textContent?.includes('Toyota Corolla — CA123456'))).toBe(
       true,
     );
 
-    const customerOptions = Array.from<HTMLOptionElement>(
-      customerSelect().querySelectorAll('option'),
+    customerSelect().dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }),
+    );
+    fixture.detectChanges();
+    const customerOptions = Array.from<HTMLElement>(
+      fixture.nativeElement.querySelectorAll('#booking-customer ~ [role="listbox"] [role="option"]'),
     );
     expect(customerOptions.some((o) => o.textContent?.includes('Thabo Nkosi'))).toBe(true);
   });
@@ -244,7 +271,7 @@ describe('BookingFormModal', () => {
 
       expect(totalPriceRegion().getAttribute('aria-live')).toBe('polite');
 
-      setSelectValue(vehicleSelect(), 'v1');
+      selectComboboxOption(vehicleSelect(), 'v1');
       const [startDate, endDate] = dateInputs();
       setInputValue(startDate, '2026-10-01');
       setInputValue(endDate, '2026-10-05');
@@ -264,7 +291,7 @@ describe('BookingFormModal', () => {
     it('shows the placeholder again when endDate is not after startDate', async () => {
       await seedPickers([vehicleDto({ id: 'v1', dailyRate: 350 })]);
 
-      setSelectValue(vehicleSelect(), 'v1');
+      selectComboboxOption(vehicleSelect(), 'v1');
       const [startDate, endDate] = dateInputs();
       setInputValue(startDate, '2026-10-05');
       setInputValue(endDate, '2026-10-05');
@@ -414,9 +441,12 @@ describe('BookingFormModal', () => {
       await settle();
 
       expect(dialogs().length).toBe(1);
-      expect(customerSelect().value).toBe('new-c');
+      // The combobox resolves the newly-selected customer's display label
+      // correctly (also exercises the "value set before its label is
+      // resolvable" case, since the refetch above lands after the `setValue`).
+      expect(customerSelect().value).toBe('New Guy');
       // Vehicle/dates entered before opening the nested modal are untouched.
-      expect(vehicleSelect().value).toBe('v1');
+      expect(vehicleSelect().value).toBe('Toyota Corolla — CA123456');
       expect(dateInputs()[0].value).toBe('2026-10-01');
       expect(dateInputs()[1].value).toBe('2026-10-05');
       // spec-6-4: focus explicitly returns to the Customer select on this
@@ -470,7 +500,7 @@ describe('BookingFormModal', () => {
       const closeSpy = vi.fn();
       fixture.componentInstance.closeRequest.subscribe(closeSpy);
 
-      setSelectValue(vehicleSelect(), 'v1');
+      selectComboboxOption(vehicleSelect(), 'v1');
       fixture.detectChanges();
 
       dialogs()[0].dispatchEvent(

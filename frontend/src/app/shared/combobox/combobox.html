@@ -1,0 +1,46 @@
+<div class="relative flex flex-col gap-1">
+  <input
+    #textInput
+    [id]="controlId()"
+    type="text"
+    role="combobox"
+    autocomplete="off"
+    [attr.aria-expanded]="isOpen()"
+    [attr.aria-controls]="listboxId"
+    [attr.aria-activedescendant]="activeOptionId()"
+    aria-autocomplete="list"
+    [attr.aria-invalid]="hasError() ? 'true' : null"
+    [attr.aria-describedby]="describedById()"
+    [value]="displayText()"
+    [disabled]="disabledState()"
+    class="w-full rounded-md border border-input-border bg-input-bg px-3 py-2 text-body text-text-body placeholder:text-text-faint focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-60"
+    (input)="onInput($event)"
+    (keydown)="onKeydown($event)"
+    (blur)="onBlur()"
+  />
+
+  @if (isOpen()) {
+    <ul
+      [id]="listboxId"
+      role="listbox"
+      class="absolute top-full left-0 z-10 mt-1 max-h-60 w-full overflow-auto rounded-md border border-border bg-surface shadow-lg"
+    >
+      @for (option of filteredOptions(); track optionValue()(option)) {
+        <li
+          [id]="optionId(option)"
+          role="option"
+          [attr.aria-selected]="optionValue()(option) === currentValue()"
+          [attr.data-value]="optionValue()(option)"
+          [class.bg-surface-alt]="optionId(option) === activeOptionId()"
+          class="cursor-pointer px-3 py-2 text-body text-text-body hover:bg-surface-alt"
+          (mousedown)="onOptionMousedown($event)"
+          (click)="selectOption(option)"
+        >
+          {{ optionLabel()(option) }}
+        </li>
+      } @empty {
+        <li class="px-3 py-2 text-body text-text-faint">No matches</li>
+      }
+    </ul>
+  }
+</div>

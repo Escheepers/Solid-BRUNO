@@ -16,18 +16,14 @@
         class="text-section-label uppercase tracking-wide text-text-faint"
         >Vehicle</label
       >
-      <select
-        id="booking-vehicle"
+      <app-combobox
+        controlId="booking-vehicle"
         formControlName="vehicleId"
-        [attr.aria-invalid]="vehicleIdError() ? 'true' : null"
-        [attr.aria-describedby]="'booking-vehicle-error'"
-        class="w-full rounded-md border border-input-border bg-input-bg px-3 py-2 text-body text-text-body focus:outline-none focus:ring-2 focus:ring-primary"
-      >
-        <option value="" disabled>Select a vehicle&hellip;</option>
-        @for (vehicle of vehicles(); track vehicle.id) {
-          <option [value]="vehicle.id">{{ vehicleLabel(vehicle) }}</option>
-        }
-      </select>
+        [options]="vehicles()"
+        [optionLabel]="vehicleLabel"
+        [optionValue]="vehicleIdOf"
+        [error]="vehicleIdError()"
+      />
       <div id="booking-vehicle-error" aria-live="polite" class="text-caption text-danger-text">
         @if (vehicleIdError()) {
           {{ vehicleIdError() }}
@@ -50,19 +46,15 @@
           + New Customer
         </button>
       </div>
-      <select
-        id="booking-customer"
+      <app-combobox
+        controlId="booking-customer"
         #customerSelect
         formControlName="customerId"
-        [attr.aria-invalid]="customerIdError() ? 'true' : null"
-        [attr.aria-describedby]="'booking-customer-error'"
-        class="w-full rounded-md border border-input-border bg-input-bg px-3 py-2 text-body text-text-body focus:outline-none focus:ring-2 focus:ring-primary"
-      >
-        <option value="" disabled>Select a customer&hellip;</option>
-        @for (customer of customers(); track customer.id) {
-          <option [value]="customer.id">{{ customerLabel(customer) }}</option>
-        }
-      </select>
+        [options]="customers()"
+        [optionLabel]="customerLabel"
+        [optionValue]="customerIdOf"
+        [error]="customerIdError()"
+      />
       <div id="booking-customer-error" aria-live="polite" class="text-caption text-danger-text">
         @if (customerIdError()) {
           {{ customerIdError() }}
