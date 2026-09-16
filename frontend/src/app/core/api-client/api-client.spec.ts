@@ -220,7 +220,11 @@ describe('ApiClient', () => {
       expect(error.detail).toBe("Vehicle 'does-not-exist' was not found.");
     });
 
-    it('normalizes a malformed (non-ProblemDetails) 404 body into a ServerError, not a NotFoundError', () => {
+    it('normalizes a malformed (non-ProblemDetails) 404 body into a NotFoundError with a generic message', () => {
+      // Per spec-not-found-and-routing-fixes: a 404 always means "doesn't exist,"
+      // regardless of body shape -- including ASP.NET's bodyless `{id:guid}`
+      // route-constraint rejection for a malformed id, which is indistinguishable
+      // from this malformed-body case from the frontend's point of view.
       let captured: unknown;
       apiClient.get<unknown>('vehicles/does-not-exist').subscribe({
         error: (err: unknown) => (captured = err),
@@ -229,8 +233,9 @@ describe('ApiClient', () => {
       const req = httpMock.expectOne('/api/vehicles/does-not-exist');
       req.flush('<html>Not Found</html>', { status: 404, statusText: 'Not Found' });
 
-      const error = captured as ServerError;
-      expect(error.kind).toBe('server-error');
+      const error = captured as NotFoundError;
+      expect(error.kind).toBe('not-found');
+      expect(error.detail).toBe('This record no longer exists.');
     });
   });
 });

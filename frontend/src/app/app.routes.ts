@@ -15,4 +15,5 @@ export const routes: Routes = [
   { path: 'vehicles/:id', component: VehicleDetailPage },
   { path: 'customers', component: CustomersPage },
   { path: 'customers/:id/summary', component: CustomerSummaryPage },
+  { path: '**', redirectTo: 'bookings' },
 ];

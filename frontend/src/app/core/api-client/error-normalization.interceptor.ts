@@ -5,6 +5,7 @@ import { ProblemDetails } from '../models/problem-details';
 import { NormalizedApiError } from './normalized-api-error';
 
 const GENERIC_SERVER_ERROR_MESSAGE = 'An unexpected error occurred. Please try again later.';
+const GENERIC_NOT_FOUND_MESSAGE = 'This record no longer exists.';
 
 /**
  * Type-guards an unknown error body against the exact ProblemDetails shape.
@@ -64,8 +65,9 @@ function normalize(error: unknown): NormalizedApiError {
     };
   }
 
-  if (error.status === 404 && isProblemDetails(error.error)) {
-    return { kind: 'not-found', detail: error.error.detail };
+  if (error.status === 404) {
+    const detail = isProblemDetails(error.error) ? error.error.detail : GENERIC_NOT_FOUND_MESSAGE;
+    return { kind: 'not-found', detail };
   }
 
   return {
@@ -78,10 +80,13 @@ function normalize(error: unknown): NormalizedApiError {
 /**
  * Normalizes every error response into exactly one of three shapes: a
  * `BusinessRuleError` (400 or 409 with a body matching the ProblemDetails shape), a
- * `NotFoundError` (404 with a body matching the ProblemDetails shape), or a
- * `ServerError` (5xx, a network/connection failure, a 404 whose body can't be
- * trusted, or any other body that can't be safely trusted as ProblemDetails). Never
- * assumes `error.error` is safely readable.
+ * `NotFoundError` (any 404, regardless of body shape -- a 404 always means "doesn't
+ * exist," including a bodyless rejection from an ASP.NET route constraint like
+ * `{id:guid}`, so unlike the 400/409 case this one doesn't require a parseable
+ * ProblemDetails body; the `detail` message falls back to a generic one when the
+ * body can't supply it), or a `ServerError` (5xx, a network/connection failure, or
+ * any other body that can't be safely trusted as ProblemDetails). Never assumes
+ * `error.error` is safely readable.
  */
 export const errorNormalizationInterceptor: HttpInterceptorFn = (req, next) =>
   next(req).pipe(catchError((error: unknown) => throwError(() => normalize(error))));
