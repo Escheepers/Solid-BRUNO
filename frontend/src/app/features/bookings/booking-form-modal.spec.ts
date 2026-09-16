@@ -346,6 +346,38 @@ describe('BookingFormModal', () => {
       expect(fixture.nativeElement.querySelector('[role="alert"]')).toBeNull();
     });
 
+    it('a 409 overlap error renders inline under the End Date field, not Vehicle', async () => {
+      await seedPickers();
+      fillValidForm();
+      await submitForm();
+
+      const req = httpMock.expectOne('/api/bookings');
+      req.flush(
+        {
+          type: 'urn:bruno:booking:overlap',
+          title: 'A domain rule was violated.',
+          status: 409,
+          detail: 'This vehicle is already booked 1 Oct – 5 Oct',
+        },
+        { status: 409, statusText: 'Conflict' },
+      );
+      await settle();
+
+      expect(fixture.nativeElement.textContent).toContain('This vehicle is already booked 1 Oct – 5 Oct');
+      expect(dialogs().length).toBe(1);
+      expect(fixture.nativeElement.querySelector('[role="alert"]')).toBeNull();
+
+      // The message renders next to End Date, not Vehicle -- proving it was mapped
+      // onto the endDate control rather than hardcoded onto vehicleId (the bug this
+      // spec fixes).
+      const endDateInput = dateInputs()[1];
+      const endDateContainer = endDateInput.closest('app-input');
+      expect(endDateContainer?.textContent).toContain('This vehicle is already booked 1 Oct – 5 Oct');
+
+      const vehicleErrorRegion = fixture.nativeElement.querySelector('#booking-vehicle-error');
+      expect(vehicleErrorRegion?.textContent?.trim()).toBe('');
+    });
+
     it('a 404 nonexistent/inactive customer falls through to a top-of-form banner, not a field error', async () => {
       await seedPickers();
       fillValidForm();
@@ -380,6 +412,54 @@ describe('BookingFormModal', () => {
       const banner = fixture.nativeElement.querySelector('[role="alert"]');
       expect(banner).not.toBeNull();
       expect(banner.textContent).toContain('An unexpected error occurred');
+    });
+  });
+
+  /**
+   * Covers spec-booking-form-error-handling-fixes.md's reactive-clear-on-change fix:
+   * a stale server-side field error must clear the moment the user corrects that
+   * exact field, without needing to resubmit -- and must NOT clear when a
+   * different field is edited instead.
+   */
+  describe('reactive field-error clearing', () => {
+    async function triggerSoftDeletedVehicleConflict(): Promise<void> {
+      fillValidForm();
+      await submitForm();
+
+      const req = httpMock.expectOne('/api/bookings');
+      req.flush(
+        {
+          type: 'urn:bruno:vehicle:is-deleted',
+          title: 'A domain rule was violated.',
+          status: 409,
+          detail: 'This vehicle is not available.',
+        },
+        { status: 409, statusText: 'Conflict' },
+      );
+      await settle();
+
+      expect(fixture.nativeElement.textContent).toContain('This vehicle is not available.');
+    }
+
+    it('clears the stale error immediately once the user corrects that same field, before any resubmit', async () => {
+      await seedPickers([vehicleDto({ id: 'v1' }), vehicleDto({ id: 'v2', make: 'Ford', model: 'Ranger' })]);
+      await triggerSoftDeletedVehicleConflict();
+
+      selectComboboxOption(vehicleSelect(), 'v2');
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.textContent).not.toContain('This vehicle is not available.');
+    });
+
+    it('leaves the error displayed when a different field is edited instead', async () => {
+      await seedPickers();
+      await triggerSoftDeletedVehicleConflict();
+
+      const [startDate] = dateInputs();
+      setInputValue(startDate, '2026-10-02');
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.textContent).toContain('This vehicle is not available.');
     });
   });
 

@@ -619,8 +619,9 @@ public class BookingsEndpointTests : IAsyncLifetime
     /// <summary>
     /// Covers every row of spec-4-3's I/O &amp; Edge-Case Matrix through the real API: a future
     /// Active booking cancels successfully and is never physically removed; an already-Completed,
-    /// already-Cancelled, or still-Active-but-past-EndDate booking each returns 409 with the exact
-    /// message for that state; a nonexistent id returns 404. Completed/past-Active rows are seeded via
+    /// already-Cancelled, or still-Active-but-past-StartDate booking each returns 409 with the exact
+    /// message for that state (StartDate-based rule per spec-booking-form-error-handling-fixes.md); a
+    /// nonexistent id returns 404. Completed/past-Active rows are seeded via
     /// <see cref="SeedBookingWithStatusAsync"/>, mirroring spec-4-2's own raw-SQL status-flip pattern.
     /// </summary>
     [Fact]
@@ -660,7 +661,7 @@ public class BookingsEndpointTests : IAsyncLifetime
         using var document = JsonDocument.Parse(json);
 
         document.RootElement.GetProperty("detail").GetString()
-            .Should().Be("Cannot cancel — booking already completed.");
+            .Should().Be("Cannot cancel — booking has already started.");
     }
 
     [Fact]
@@ -688,8 +689,9 @@ public class BookingsEndpointTests : IAsyncLifetime
     {
         var vehicle = await SeedActiveVehicleAsync();
         var customer = await SeedActiveCustomerAsync();
-        // Seeded as Active (the default status), but EndDate is already in the past relative to
-        // "today" -- proves the guard treats an unswept past-EndDate booking exactly like Completed.
+        // Seeded as Active (the default status), but StartDate/EndDate are both already in the past
+        // relative to "today" -- proves the guard treats an unswept past-StartDate booking exactly
+        // like Completed (bugfix: spec-booking-form-error-handling-fixes.md's StartDate-based rule).
         var booking = await SeedBookingAsync(
             vehicle, customer, new DateOnly(2020, 1, 1), new DateOnly(2020, 1, 5));
 
@@ -702,7 +704,7 @@ public class BookingsEndpointTests : IAsyncLifetime
         using var document = JsonDocument.Parse(json);
 
         document.RootElement.GetProperty("detail").GetString()
-            .Should().Be("Cannot cancel — booking already completed.");
+            .Should().Be("Cannot cancel — booking has already started.");
     }
 
     [Fact]

@@ -61,7 +61,7 @@ export function toBooking(dto: BookingDto): Booking {
 
 /**
  * Local midnight for "today" -- matches `toBooking`'s own `parseDateOnly` convention
- * (local midnight, not UTC midnight) so `booking.endDate >= startOfToday()` compares
+ * (local midnight, not UTC midnight) so `booking.startDate > startOfToday()` compares
  * two Dates anchored to the same wall-clock day, never off by a timezone offset.
  *
  * Moved here from `bookings-page.ts` (spec-4-5's Scope decision 3) -- a pure
@@ -76,10 +76,14 @@ export function startOfToday(): Date {
 /**
  * True only for a booking the backend would actually accept a Cancel request for
  * right now (spec-4-3's Boundaries: "never offering an action the backend would
- * always reject") -- Active status and a not-yet-past EndDate. Completed, Cancelled,
- * and past-EndDate-still-Active bookings all get no Cancel action at all; the 409
- * paths those states would hit are proven at the API/integration level as defensive
- * backstops for a stale UI/race, never exercised by clicking through this app.
+ * always reject") -- Active status and a not-yet-started StartDate (bugfix:
+ * spec-booking-form-error-handling-fixes.md corrected this from the backend's own
+ * old, too-lenient `EndDate`-based boundary -- a booking is only cancellable while
+ * it is genuinely still in the future). Completed, Cancelled, and
+ * already-started-still-Active bookings (mid-rental, past-EndDate-unswept, or
+ * StartDate exactly today) all get no Cancel action at all; the 409 paths those
+ * states would hit are proven at the API/integration level as defensive backstops
+ * for a stale UI/race, never exercised by clicking through this app.
  *
  * Moved here from `bookings-page.ts` and exported (spec-4-5's Scope decision 3) so
  * `BookingDetailPage` reuses this exact eligibility check rather than a second copy
@@ -87,5 +91,5 @@ export function startOfToday(): Date {
  * list's.
  */
 export function isCancellable(booking: Booking): boolean {
-  return booking.status === 'Active' && booking.endDate >= startOfToday();
+  return booking.status === 'Active' && booking.startDate > startOfToday();
 }

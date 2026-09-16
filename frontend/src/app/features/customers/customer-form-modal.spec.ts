@@ -396,6 +396,56 @@ describe('CustomerFormModal', () => {
     });
   });
 
+  /**
+   * Covers spec-booking-form-error-handling-fixes.md's reactive-clear-on-change fix:
+   * a stale server-side field error must clear the moment the user corrects that
+   * exact field, without needing to resubmit -- and must NOT clear when a
+   * different field is edited instead.
+   */
+  describe('reactive field-error clearing', () => {
+    async function triggerEmailConflict(): Promise<void> {
+      await settle();
+      fillValidForm();
+      await submitForm();
+
+      const req = httpMock.expectOne('/api/customers');
+      req.flush(
+        {
+          type: 'urn:bruno:customer:email',
+          title: 'A domain rule was violated.',
+          status: 409,
+          detail: 'This email address is already in use.',
+        },
+        { status: 409, statusText: 'Conflict' },
+      );
+      await settle();
+
+      expect(fixture.nativeElement.textContent).toContain('This email address is already in use.');
+    }
+
+    it('clears the stale error immediately once the user corrects that same field, before any resubmit', async () => {
+      await triggerEmailConflict();
+
+      const [, , email] = fields();
+      setValue(email, 'someone-new@example.com');
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.textContent).not.toContain(
+        'This email address is already in use.',
+      );
+    });
+
+    it('leaves the error displayed when a different field is edited instead', async () => {
+      await triggerEmailConflict();
+
+      const [firstName] = fields();
+      setValue(firstName, 'Zola');
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.textContent).toContain('This email address is already in use.');
+    });
+  });
+
   describe('discard guard', () => {
     it('an untouched form closes immediately on Escape, with no ConfirmDialog', async () => {
       await settle();

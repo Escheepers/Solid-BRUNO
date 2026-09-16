@@ -104,13 +104,18 @@ public class Booking
     /// <see cref="DomainRuleViolationException"/> if the booking is already ineligible: an
     /// already-<see cref="BookingStatus.Cancelled"/> booking throws with "Cannot cancel — booking
     /// already cancelled."; an already-<see cref="BookingStatus.Completed"/> booking, or a
-    /// still-<see cref="BookingStatus.Active"/> booking whose <see cref="EndDate"/> is on or before
-    /// today (per <paramref name="timeProvider"/>), throws the identical "Cannot cancel — booking
-    /// already completed." message -- a past-EndDate-but-not-yet-swept booking is ineligible for the
-    /// exact same reason a user would understand as "this booking is over," even though no sweep has
-    /// flipped its <see cref="Status"/> yet. No other field changes. <paramref name="timeProvider"/>
-    /// defaults to <see cref="TimeProvider.System"/> so tests can inject a fixed clock, mirroring
-    /// every other domain method's own convention.
+    /// still-<see cref="BookingStatus.Active"/> booking whose <see cref="StartDate"/> is on or before
+    /// today (per <paramref name="timeProvider"/>), throws the identical "Cannot cancel — booking has
+    /// already started." message -- a booking is only cancellable while it is genuinely still in the
+    /// future (bugfix: spec-booking-form-error-handling-fixes.md). This covers a mid-rental booking
+    /// (car already picked up), a past-EndDate-but-not-yet-swept booking, and a genuinely
+    /// <see cref="BookingStatus.Completed"/> booking identically -- all three have necessarily already
+    /// started. Since <see cref="EndDate"/> is always strictly after <see cref="StartDate"/> (enforced
+    /// by <see cref="ValidateInvariants"/> at construction), <c>StartDate &lt;= today</c> is a strictly
+    /// stronger check than the old <c>EndDate &lt;= today</c> one -- no previously-ineligible booking
+    /// becomes eligible. No other field changes. <paramref name="timeProvider"/> defaults to
+    /// <see cref="TimeProvider.System"/> so tests can inject a fixed clock, mirroring every other
+    /// domain method's own convention.
     /// </summary>
     public void Cancel(TimeProvider? timeProvider = null)
     {
@@ -123,10 +128,10 @@ public class Booking
         }
 
         var today = DateOnly.FromDateTime(timeProvider.GetUtcNow().UtcDateTime);
-        if (Status == BookingStatus.Completed || EndDate <= today)
+        if (Status == BookingStatus.Completed || StartDate <= today)
         {
             throw new DomainRuleViolationException(
-                nameof(Booking), nameof(Status), "Cannot cancel — booking already completed.");
+                nameof(Booking), nameof(Status), "Cannot cancel — booking has already started.");
         }
 
         Status = BookingStatus.Cancelled;

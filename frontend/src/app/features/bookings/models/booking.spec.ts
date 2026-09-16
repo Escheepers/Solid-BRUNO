@@ -1,5 +1,5 @@
 import { BookingDto } from '../../../core/models/booking-dto';
-import { Booking, isCancellable, toBooking } from './booking';
+import { Booking, isCancellable, startOfToday, toBooking } from './booking';
 
 describe('toBooking', () => {
   const dto: BookingDto = {
@@ -58,9 +58,11 @@ describe('toBooking', () => {
 
 /**
  * Moved here from `bookings-page.spec.ts` (spec-4-5's Scope decision 3 -- the
- * `isCancellable`/`startOfToday` extraction). A pure relocation of the same
- * assertions that exercised this logic while it lived in `bookings-page.ts`,
- * proving the move changed nothing about the eligibility rule itself.
+ * `isCancellable`/`startOfToday` extraction). Originally a pure relocation of the
+ * same assertions that exercised this logic while it lived in `bookings-page.ts`;
+ * updated by spec-booking-form-error-handling-fixes.md's bugfix from the old,
+ * too-lenient `EndDate`-based rule to the corrected `StartDate`-based one -- a
+ * booking is only cancellable while it is genuinely still in the future.
  */
 describe('isCancellable', () => {
   function booking(overrides: Partial<Booking> = {}): Booking {
@@ -74,7 +76,7 @@ describe('isCancellable', () => {
       customerFirstName: 'Thabo',
       customerLastName: 'Nkosi',
       customerIsAnonymized: false,
-      startDate: new Date('2026-10-01'),
+      startDate: new Date('2099-01-01'),
       endDate: new Date('2099-01-05'),
       totalPrice: 1400,
       status: 'Active',
@@ -83,8 +85,8 @@ describe('isCancellable', () => {
     };
   }
 
-  it('is true for an Active booking with a future EndDate', () => {
-    expect(isCancellable(booking({ status: 'Active', endDate: new Date('2099-01-05') }))).toBe(true);
+  it('is true for an Active booking with a future StartDate', () => {
+    expect(isCancellable(booking({ status: 'Active', startDate: new Date('2099-01-01') }))).toBe(true);
   });
 
   it('is false for a Completed booking', () => {
@@ -95,7 +97,25 @@ describe('isCancellable', () => {
     expect(isCancellable(booking({ status: 'Cancelled' }))).toBe(false);
   });
 
+  it('is false for a still-Active booking whose StartDate is already in the past (mid-rental)', () => {
+    // The bug this spec fixes: StartDate in the past but EndDate still in the future was
+    // previously and incorrectly considered cancellable under the old EndDate-based rule.
+    expect(
+      isCancellable(
+        booking({ status: 'Active', startDate: new Date('2020-01-01'), endDate: new Date('2099-01-05') }),
+      ),
+    ).toBe(false);
+  });
+
+  it('is false for a still-Active booking whose StartDate is exactly today', () => {
+    expect(isCancellable(booking({ status: 'Active', startDate: startOfToday() }))).toBe(false);
+  });
+
   it('is false for a still-Active booking whose EndDate is already in the past', () => {
-    expect(isCancellable(booking({ status: 'Active', endDate: new Date('2020-01-05') }))).toBe(false);
+    expect(
+      isCancellable(
+        booking({ status: 'Active', startDate: new Date('2020-01-01'), endDate: new Date('2020-01-05') }),
+      ),
+    ).toBe(false);
   });
 });

@@ -152,7 +152,7 @@ describe('BookingsPage', () => {
   it('offers a Cancel action for a future Active booking (spec-4-3)', async () => {
     await settle();
     expectBookingsRequest().flush(
-      pagedResult([bookingDto({ status: 'Active', endDate: '2099-01-05' })]),
+      pagedResult([bookingDto({ status: 'Active', startDate: '2099-01-01', endDate: '2099-01-05' })]),
     );
     flushPickerQueries();
     await settle();
@@ -194,9 +194,25 @@ describe('BookingsPage', () => {
     expect(buttons).toEqual(['View']);
   });
 
-  it('offers View but never Cancel for a still-Active booking whose EndDate is already in the past', async () => {
+  it('offers View but never Cancel for a still-Active booking whose StartDate is already in the past', async () => {
     await settle();
-    expectBookingsRequest().flush(pagedResult([bookingDto({ status: 'Active', endDate: '2020-01-05' })]));
+    expectBookingsRequest().flush(pagedResult([bookingDto({ status: 'Active', startDate: '2020-01-01', endDate: '2020-01-05' })]));
+    flushPickerQueries();
+    await settle();
+
+    const buttons = Array.from<HTMLButtonElement>(
+      fixture.nativeElement.querySelectorAll('tbody button'),
+    ).map((b) => b.textContent?.trim());
+    expect(buttons).toEqual(['View']);
+  });
+
+  it('offers View but never Cancel for a mid-rental booking (StartDate in the past, EndDate in the future)', async () => {
+    // The bug this spec fixes: this shape was previously (and incorrectly) offered Cancel under
+    // the old EndDate-based rule.
+    await settle();
+    expectBookingsRequest().flush(
+      pagedResult([bookingDto({ status: 'Active', startDate: '2020-01-01', endDate: '2099-01-05' })]),
+    );
     flushPickerQueries();
     await settle();
 
@@ -321,7 +337,7 @@ describe('BookingsPage', () => {
     async function seedOneCancellableRowAndOpenCancelDialog(): Promise<void> {
       await settle();
       expectBookingsRequest().flush(
-        pagedResult([bookingDto({ id: 'b9', status: 'Active', endDate: '2099-01-05' })]),
+        pagedResult([bookingDto({ id: 'b9', status: 'Active', startDate: '2099-01-01', endDate: '2099-01-05' })]),
       );
       flushPickerQueries();
       await settle();

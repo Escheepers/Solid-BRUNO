@@ -189,10 +189,12 @@ describe('BookingDetailPage', () => {
       );
     }
 
-    it('shows Cancel for an Active booking with a future EndDate', async () => {
+    it('shows Cancel for an Active booking with a future StartDate', async () => {
       createComponent('b1');
       await settle();
-      httpMock.expectOne('/api/bookings/b1').flush(bookingDto({ status: 'Active', endDate: '2099-01-05' }));
+      httpMock
+        .expectOne('/api/bookings/b1')
+        .flush(bookingDto({ status: 'Active', startDate: '2099-01-01', endDate: '2099-01-05' }));
       await settle();
 
       expect(cancelButton()).toBeTruthy();
@@ -216,10 +218,25 @@ describe('BookingDetailPage', () => {
       expect(cancelButton()).toBeFalsy();
     });
 
-    it('hides Cancel for a still-Active booking whose EndDate is already in the past', async () => {
+    it('hides Cancel for a still-Active booking whose StartDate is already in the past', async () => {
       createComponent('b1');
       await settle();
-      httpMock.expectOne('/api/bookings/b1').flush(bookingDto({ status: 'Active', endDate: '2020-01-05' }));
+      httpMock
+        .expectOne('/api/bookings/b1')
+        .flush(bookingDto({ status: 'Active', startDate: '2020-01-01', endDate: '2020-01-05' }));
+      await settle();
+
+      expect(cancelButton()).toBeFalsy();
+    });
+
+    it('hides Cancel for a mid-rental booking (StartDate in the past, EndDate in the future)', async () => {
+      // The bug this spec fixes: this shape was previously (and incorrectly) offered Cancel under
+      // the old EndDate-based rule.
+      createComponent('b1');
+      await settle();
+      httpMock
+        .expectOne('/api/bookings/b1')
+        .flush(bookingDto({ status: 'Active', startDate: '2020-01-01', endDate: '2099-01-05' }));
       await settle();
 
       expect(cancelButton()).toBeFalsy();
@@ -236,7 +253,7 @@ describe('BookingDetailPage', () => {
       await settle();
       httpMock
         .expectOne('/api/bookings/b9')
-        .flush(bookingDto({ id: 'b9', status: 'Active', endDate: '2099-01-05' }));
+        .flush(bookingDto({ id: 'b9', status: 'Active', startDate: '2099-01-01', endDate: '2099-01-05' }));
       await settle();
 
       const cancelButton = Array.from<HTMLButtonElement>(

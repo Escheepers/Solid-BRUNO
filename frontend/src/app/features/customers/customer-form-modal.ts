@@ -126,6 +126,34 @@ export class CustomerFormModal {
       }
       this.wasOpen = isOpen;
     });
+
+    this.wireClearFieldErrorOnChange();
+  }
+
+  /**
+   * Clears a field's own `serverFieldErrors` entry the moment its control's value
+   * actually changes (bugfix: spec-booking-form-error-handling-fixes.md) -- a stale
+   * 400/409 field error no longer lingers once the user has corrected that exact
+   * field, without waiting for another submit. Scoped per-control so editing one
+   * field never clears a different field's still-valid error. `populateForm()`'s
+   * own `form.reset(...)` also fires each control's `valueChanges` once, but that
+   * is always immediately followed there by an unconditional
+   * `serverFieldErrors.set({})`, so this handler running during a reset never
+   * leaves a stale or incorrectly-cleared error behind. Mirrors
+   * `BookingFormModal`'s exact same addition.
+   */
+  private wireClearFieldErrorOnChange(): void {
+    for (const name of Object.keys(this.form.controls) as CustomerFormFieldName[]) {
+      this.form.controls[name].valueChanges.subscribe(() => {
+        this.serverFieldErrors.update((errors) => {
+          if (!(name in errors)) {
+            return errors;
+          }
+          const { [name]: _removed, ...rest } = errors;
+          return rest;
+        });
+      });
+    }
   }
 
   protected onSubmit(): void {

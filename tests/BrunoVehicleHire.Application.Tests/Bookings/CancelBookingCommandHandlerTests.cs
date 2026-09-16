@@ -11,8 +11,10 @@ namespace BrunoVehicleHire.Application.Tests.Bookings;
 /// Proves <see cref="CancelBookingCommandHandler"/>'s orchestration: <c>GetByIdAsync</c> (mocked
 /// <see cref="IBookingRepository"/>) -> not-found check -> <c>booking.Cancel()</c> -> exactly one
 /// <see cref="IUnitOfWork.SaveChangesAsync"/>, plus the three domain-exception pass-through cases
-/// (already-Cancelled, already-Completed, past-EndDate-still-Active). Written before the handler
-/// existed (TDD) -- mirrors <c>SoftDeleteVehicleCommandHandlerTests</c>'s exact shape.
+/// (already-Cancelled, already-Completed, past-StartDate-still-Active -- updated by
+/// spec-booking-form-error-handling-fixes.md from the old past-EndDate-still-Active rule). Written
+/// before the handler existed (TDD) -- mirrors <c>SoftDeleteVehicleCommandHandlerTests</c>'s exact
+/// shape.
 /// </summary>
 public class CancelBookingCommandHandlerTests
 {
@@ -98,7 +100,7 @@ public class CancelBookingCommandHandlerTests
         var act = async () => await handler.Handle(command, CancellationToken.None);
 
         var exception = await act.Should().ThrowAsync<Domain.Exceptions.DomainRuleViolationException>();
-        exception.Which.Message.Should().Be("Cannot cancel — booking already completed.");
+        exception.Which.Message.Should().Be("Cannot cancel — booking has already started.");
 
         await unitOfWork.DidNotReceive().SaveChangesAsync(Arg.Any<CancellationToken>());
     }
@@ -119,7 +121,7 @@ public class CancelBookingCommandHandlerTests
         var act = async () => await handler.Handle(command, CancellationToken.None);
 
         var exception = await act.Should().ThrowAsync<Domain.Exceptions.DomainRuleViolationException>();
-        exception.Which.Message.Should().Be("Cannot cancel — booking already completed.");
+        exception.Which.Message.Should().Be("Cannot cancel — booking has already started.");
 
         await unitOfWork.DidNotReceive().SaveChangesAsync(Arg.Any<CancellationToken>());
     }

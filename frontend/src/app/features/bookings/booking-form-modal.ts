@@ -11,7 +11,7 @@ import {
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 
-import { NormalizedApiError } from '../../core/api-client/normalized-api-error';
+import { NormalizedApiError, fieldFromType } from '../../core/api-client/normalized-api-error';
 import { CustomerFormModal } from '../customers/customer-form-modal';
 import { Customer, toCustomer } from '../customers/models/customer';
 import { useCustomersQuery } from '../customers/customers.service';
@@ -183,6 +183,33 @@ export class BookingFormModal {
       }
       this.wasOpen = isOpen;
     });
+
+    this.wireClearFieldErrorOnChange();
+  }
+
+  /**
+   * Clears a field's own `serverFieldErrors` entry the moment its control's value
+   * actually changes (bugfix: spec-booking-form-error-handling-fixes.md) -- a stale
+   * 400/409 field error no longer lingers once the user has corrected that exact
+   * field, without waiting for another submit. Scoped per-control so editing one
+   * field never clears a different field's still-valid error. `populateForm()`'s
+   * own `form.reset(...)` also fires each control's `valueChanges` once, but that
+   * is always immediately followed there by an unconditional
+   * `serverFieldErrors.set({})`, so this handler running first (or at all) during a
+   * reset never leaves a stale or incorrectly-cleared error behind.
+   */
+  private wireClearFieldErrorOnChange(): void {
+    for (const name of Object.keys(this.form.controls) as BookingFormFieldName[]) {
+      this.form.controls[name].valueChanges.subscribe(() => {
+        this.serverFieldErrors.update((errors) => {
+          if (!(name in errors)) {
+            return errors;
+          }
+          const { [name]: _removed, ...rest } = errors;
+          return rest;
+        });
+      });
+    }
   }
 
   protected vehicleLabel(vehicle: Vehicle): string {
@@ -318,19 +345,23 @@ export class BookingFormModal {
   }
 
   /**
-   * Maps a `NormalizedApiError` per spec-4-1's I/O matrix:
+   * Maps a `NormalizedApiError` per spec-4-1's I/O matrix, extended by
+   * spec-booking-form-error-handling-fixes.md for the Overlap rule (spec-4-2):
    * - a 400 (`EndDate <= StartDate`) carries an `errors` dictionary keyed
    *   `EndDate` -> mapped onto the `endDate` control, same as every other form's
    *   400 handling.
    * - a 404 (nonexistent/inactive customer) falls through to the generic
    *   top-of-form banner, exactly as the I/O matrix specifies ("Falls through to
    *   ServerError") -- not field-mapped.
-   * - the one possible 409 this endpoint ever produces is the soft-deleted-vehicle
-   *   case (Scope decision 2) -- mapped directly onto `vehicleId` rather than via
-   *   `fieldFromType` (whose rule-name segment, `"IsDeleted"`, doesn't correspond
-   *   to any control here the way Customer/Vehicle's field-named rules do; this
-   *   endpoint has exactly one domain-rule violation, so no generic heuristic is
-   *   needed).
+   * - a 409 without an `errors` dictionary is one of two domain-rule violations
+   *   this endpoint can produce, distinguished via `fieldFromType` (already used
+   *   by `VehicleFormModal`/`CustomerFormModal`): the soft-deleted-vehicle rule
+   *   (`isDeleted`) maps onto `vehicleId`; the Overlap rule (`overlap`, added by
+   *   spec-4-2 after this form's original 409 handling was written -- the bug
+   *   this spec fixes) maps onto `endDate`, since the AC's "under the date
+   *   fields" lands on the trailing field of the pair, consistent with the
+   *   `EndDate <= StartDate` 400 above. An unrecognized rule name falls through
+   *   to the generic top-of-form banner rather than guessing a field.
    */
   private applyError(error: NormalizedApiError): void {
     if (error.kind === 'server-error') {
@@ -363,7 +394,14 @@ export class BookingFormModal {
       return;
     }
 
-    this.serverFieldErrors.set({ vehicleId: error.detail });
+    const rule = fieldFromType(error.type);
+    if (rule === 'isDeleted') {
+      this.serverFieldErrors.set({ vehicleId: error.detail });
+    } else if (rule === 'overlap') {
+      this.serverFieldErrors.set({ endDate: error.detail });
+    } else {
+      this.serverErrorMessage.set(error.detail);
+    }
   }
 
   private toControlName(pascalKey: string): string {

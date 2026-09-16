@@ -85,10 +85,14 @@ public class BookingTests
     }
 
     /// <summary>
-    /// Covers spec-4-3's Booking coverage row: <see cref="Booking.Cancel"/>'s success case, the
-    /// already-Cancelled and already-Completed guard cases, and the past-EndDate-still-Active case
-    /// (treated identically to already-Completed). Written test-first: every one of these failed
-    /// ("type/member does not exist" at compile time) before <c>Booking.Cancel</c> was implemented.
+    /// Covers spec-4-3's Booking coverage row, updated by
+    /// spec-booking-form-error-handling-fixes.md's bugfix: <see cref="Booking.Cancel"/>'s success
+    /// case, the already-Cancelled and already-Completed guard cases, and every now-ineligible
+    /// "already started" case (mid-rental, past-both-dates-still-Active, and exactly-today) --
+    /// all sharing the identical "has already started" message. Written test-first: every one of
+    /// these failed (either "type/member does not exist" at compile time, or a wrong-message/
+    /// wrong-eligibility assertion failure against the old <c>EndDate &lt;= today</c> rule) before
+    /// <c>Booking.Cancel</c>'s corrected <c>StartDate &lt;= today</c> rule was implemented.
     /// </summary>
     public class Cancel
     {
@@ -127,8 +131,8 @@ public class BookingTests
         [Fact]
         public void Cancel_AlreadyCompletedBooking_ThrowsWithExactMessage()
         {
-            // EndDate is still in the future -- only Status flips to Completed here, proving the
-            // guard checks Status independently of EndDate (the raw-SQL status-flip scenario).
+            // StartDate/EndDate are both still in the future -- only Status flips to Completed here,
+            // proving the guard checks Status independently of either date.
             var booking = ActiveFutureBooking();
             typeof(Booking).GetProperty(nameof(Booking.Status))!
                 .SetValue(booking, BookingStatus.Completed);
@@ -136,14 +140,31 @@ public class BookingTests
             var act = () => booking.Cancel(TodayBeforeBooking);
 
             var exception = Assert.Throws<DomainRuleViolationException>(act);
-            Assert.Equal("Cannot cancel — booking already completed.", exception.Message);
+            Assert.Equal("Cannot cancel — booking has already started.", exception.Message);
         }
 
         [Fact]
-        public void Cancel_StillActiveBookingWithPastEndDate_ThrowsSameMessageAsAlreadyCompleted()
+        public void Cancel_MidRentalBooking_StartDateInPastEndDateInFuture_ThrowsAsAlreadyStarted()
         {
-            // EndDate has already passed relative to "today", but Status hasn't been swept to
-            // Completed yet -- the AC requires this to be treated exactly like already-Completed.
+            // The bug this spec fixes: StartDate in the past (car already picked up) but EndDate
+            // still in the future -- previously and incorrectly eligible under the old
+            // EndDate <= today rule; now correctly rejected.
+            var booking = Booking.Create(
+                ValidVehicleId, ValidCustomerId, new DateOnly(2026, 9, 1), new DateOnly(2026, 9, 20), ValidTotalPrice);
+            var midRentalToday = new FixedTimeProvider(new DateTimeOffset(2026, 9, 15, 8, 0, 0, TimeSpan.Zero));
+
+            var act = () => booking.Cancel(midRentalToday);
+
+            var exception = Assert.Throws<DomainRuleViolationException>(act);
+            Assert.Equal("Cannot cancel — booking has already started.", exception.Message);
+        }
+
+        [Fact]
+        public void Cancel_StillActiveBookingWithBothDatesInPast_ThrowsAsAlreadyStarted()
+        {
+            // Both StartDate and EndDate have already passed relative to "today", but Status hasn't
+            // been swept to Completed yet -- subsumed by (not merely coincidentally covered by) the
+            // new StartDate <= today check, since StartDate is always strictly before EndDate.
             var booking = ActiveFutureBooking();
             var afterEndDate = new FixedTimeProvider(
                 new DateTimeOffset(2026, 10, 6, 8, 0, 0, TimeSpan.Zero));
@@ -151,21 +172,23 @@ public class BookingTests
             var act = () => booking.Cancel(afterEndDate);
 
             var exception = Assert.Throws<DomainRuleViolationException>(act);
-            Assert.Equal("Cannot cancel — booking already completed.", exception.Message);
+            Assert.Equal("Cannot cancel — booking has already started.", exception.Message);
         }
 
         [Fact]
-        public void Cancel_StillActiveBookingWhoseEndDateIsExactlyToday_ThrowsAsAlreadyCompleted()
+        public void Cancel_StillActiveBookingWhoseStartDateIsExactlyToday_ThrowsAsAlreadyStarted()
         {
-            // EndDate on/before today is ineligible per the Boundaries -- exactly-today counts as over.
+            // StartDate on/before today is ineligible per the Boundaries -- exactly-today counts as
+            // already started, the new rule's own boundary (replacing the old EndDate-exactly-today
+            // boundary this test used to cover).
             var booking = ActiveFutureBooking();
-            var onEndDate = new FixedTimeProvider(
-                new DateTimeOffset(2026, 10, 5, 8, 0, 0, TimeSpan.Zero));
+            var onStartDate = new FixedTimeProvider(
+                new DateTimeOffset(2026, 10, 1, 8, 0, 0, TimeSpan.Zero));
 
-            var act = () => booking.Cancel(onEndDate);
+            var act = () => booking.Cancel(onStartDate);
 
             var exception = Assert.Throws<DomainRuleViolationException>(act);
-            Assert.Equal("Cannot cancel — booking already completed.", exception.Message);
+            Assert.Equal("Cannot cancel — booking has already started.", exception.Message);
         }
     }
 

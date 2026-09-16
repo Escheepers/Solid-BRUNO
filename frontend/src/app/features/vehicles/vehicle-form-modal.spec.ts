@@ -341,6 +341,60 @@ describe('VehicleFormModal', () => {
     });
   });
 
+  /**
+   * Covers spec-booking-form-error-handling-fixes.md's reactive-clear-on-change fix:
+   * a stale server-side field error must clear the moment the user corrects that
+   * exact field, without needing to resubmit -- and must NOT clear when a
+   * different field is edited instead.
+   */
+  describe('reactive field-error clearing', () => {
+    async function triggerRegistrationNumberConflict(): Promise<void> {
+      await settle();
+      fillValidForm();
+      await submitForm();
+
+      const req = httpMock.expectOne('/api/vehicles');
+      req.flush(
+        {
+          type: 'urn:bruno:vehicle:registration-number',
+          title: 'A domain rule was violated.',
+          status: 409,
+          detail: 'This registration number is already in use.',
+        },
+        { status: 409, statusText: 'Conflict' },
+      );
+      await settle();
+
+      expect(fixture.nativeElement.textContent).toContain(
+        'This registration number is already in use.',
+      );
+    }
+
+    it('clears the stale error immediately once the user corrects that same field, before any resubmit', async () => {
+      await triggerRegistrationNumberConflict();
+
+      const [reg] = fields();
+      setValue(reg, 'CA111111');
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.textContent).not.toContain(
+        'This registration number is already in use.',
+      );
+    });
+
+    it('leaves the error displayed when a different field is edited instead', async () => {
+      await triggerRegistrationNumberConflict();
+
+      const [, make] = fields();
+      setValue(make, 'Volkswagen');
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.textContent).toContain(
+        'This registration number is already in use.',
+      );
+    });
+  });
+
   describe('discard guard', () => {
     it('an untouched form closes immediately on Escape, with no ConfirmDialog', async () => {
       await settle();
