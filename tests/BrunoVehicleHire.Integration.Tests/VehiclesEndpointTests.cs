@@ -387,6 +387,50 @@ public class VehiclesEndpointTests : IAsyncLifetime
             .Should().Be("This registration number is already in use.");
     }
 
+    /// <summary>
+    /// The QA-found race this fix exists for: two near-simultaneous Create requests for the SAME
+    /// registration number, neither of which existed before either request started, fired
+    /// concurrently via <see cref="Task.WhenAll(Task[])"/> against the real ASP.NET Core pipeline and
+    /// its own ephemeral Postgres container (mirrors <c>BookingMigrationTests</c>'s own concurrency
+    /// proof's spirit, but through the full HTTP stack rather than bypassing it). Before the fix, the
+    /// loser crashed with an unhandled 500 from the unique-index violation; after it, the loser must
+    /// get the identical 409 the sequential-duplicate case already returns.
+    /// </summary>
+    [Fact]
+    public async Task Post_TwoConcurrentRequestsWithSameRegistrationNumber_ExactlyOneSucceeds_TheOtherReturns409NotServerError()
+    {
+        object Body() => new
+        {
+            registrationNumber = "CA999111",
+            make = "Toyota",
+            model = "Hilux",
+            year = 2023,
+            dailyRate = 480m,
+        };
+
+        using var requestA = AuthenticatedPost("/api/vehicles", Body());
+        using var requestB = AuthenticatedPost("/api/vehicles", Body());
+
+        var responses = await Task.WhenAll(_client.SendAsync(requestA), _client.SendAsync(requestB));
+
+        responses.Should().NotContain(response => response.StatusCode == HttpStatusCode.InternalServerError);
+        responses.Count(response => response.StatusCode == HttpStatusCode.Created).Should().Be(
+            1, "exactly one of the two concurrently-racing creates must win");
+
+        var rejected = responses.Single(response => response.StatusCode != HttpStatusCode.Created);
+        rejected.StatusCode.Should().Be(HttpStatusCode.Conflict);
+
+        var json = await rejected.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(json);
+        document.RootElement.GetProperty("detail").GetString()
+            .Should().Be("This registration number is already in use.");
+
+        foreach (var response in responses)
+        {
+            response.Dispose();
+        }
+    }
+
     [Fact]
     public async Task Post_BlankMake_Returns400WithMakeInErrors()
     {
@@ -786,5 +830,44 @@ public class VehiclesEndpointTests : IAsyncLifetime
         var response = await _client.SendAsync(request);
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    /// <summary>
+    /// The QA-found race this fix exists for: two near-simultaneous Restore requests against the
+    /// SAME soft-deleted vehicle (e.g. a double-click), both reading <c>IsDeleted = true</c> before
+    /// either commits. Before the fix, both would silently succeed (double-processing); after it, the
+    /// xmin concurrency token makes the loser's <c>SaveChangesAsync</c> throw
+    /// <see cref="Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException"/>, which
+    /// <c>RestoreVehicleCommandHandler</c> catches, re-fetches, and re-calls <c>Vehicle.Restore()</c>
+    /// on -- now correctly seeing the vehicle as already active and throwing the identical 409 the
+    /// sequential-attempt case already returns.
+    /// </summary>
+    [Fact]
+    public async Task Restore_TwoConcurrentRequestsOnSameSoftDeletedVehicle_ExactlyOneSucceeds_TheOtherReturns409()
+    {
+        var vehicle = Vehicle.Create("CA353637", "Isuzu", "D-Max", 2023, 470m);
+        vehicle.SoftDelete();
+        await SeedVehiclesAsync(vehicle);
+
+        using var requestA = AuthenticatedPost($"/api/vehicles/{vehicle.Id}/restore");
+        using var requestB = AuthenticatedPost($"/api/vehicles/{vehicle.Id}/restore");
+
+        var responses = await Task.WhenAll(_client.SendAsync(requestA), _client.SendAsync(requestB));
+
+        responses.Should().NotContain(response => response.StatusCode == HttpStatusCode.InternalServerError);
+        responses.Count(response => response.StatusCode == HttpStatusCode.NoContent).Should().Be(
+            1, "exactly one of the two concurrently-racing restores must win");
+
+        var rejected = responses.Single(response => response.StatusCode != HttpStatusCode.NoContent);
+        rejected.StatusCode.Should().Be(HttpStatusCode.Conflict);
+
+        var json = await rejected.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(json);
+        document.RootElement.GetProperty("detail").GetString().Should().Be("Already active.");
+
+        foreach (var response in responses)
+        {
+            response.Dispose();
+        }
     }
 }

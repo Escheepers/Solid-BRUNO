@@ -717,6 +717,47 @@ public class BookingsEndpointTests : IAsyncLifetime
     }
 
     /// <summary>
+    /// The QA-found race this fix exists for: two near-simultaneous Cancel requests against the SAME
+    /// Active, eligible booking (e.g. a double-click), both reading <c>Status = Active</c> before
+    /// either commits. Before the fix, both would silently succeed (double-processing); after it, the
+    /// xmin concurrency token makes the loser's <c>SaveChangesAsync</c> throw
+    /// <see cref="Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException"/>, which
+    /// <c>CancelBookingCommandHandler</c> catches, re-fetches, and re-calls <c>Booking.Cancel()</c>
+    /// on -- now correctly seeing the booking as already cancelled and throwing the identical 409 the
+    /// sequential-attempt case already returns.
+    /// </summary>
+    [Fact]
+    public async Task Cancel_TwoConcurrentRequestsOnSameActiveBooking_ExactlyOneSucceeds_TheOtherReturns409()
+    {
+        var vehicle = await SeedActiveVehicleAsync();
+        var customer = await SeedActiveCustomerAsync();
+        var booking = await SeedBookingAsync(
+            vehicle, customer, new DateOnly(2026, 10, 1), new DateOnly(2026, 10, 5));
+
+        using var requestA = AuthenticatedPost($"/api/bookings/{booking.Id}/cancel");
+        using var requestB = AuthenticatedPost($"/api/bookings/{booking.Id}/cancel");
+
+        var responses = await Task.WhenAll(_client.SendAsync(requestA), _client.SendAsync(requestB));
+
+        responses.Should().NotContain(response => response.StatusCode == HttpStatusCode.InternalServerError);
+        responses.Count(response => response.StatusCode == HttpStatusCode.NoContent).Should().Be(
+            1, "exactly one of the two concurrently-racing cancels must win");
+
+        var rejected = responses.Single(response => response.StatusCode != HttpStatusCode.NoContent);
+        rejected.StatusCode.Should().Be(HttpStatusCode.Conflict);
+
+        var json = await rejected.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(json);
+        document.RootElement.GetProperty("detail").GetString()
+            .Should().Be("Cannot cancel — booking already cancelled.");
+
+        foreach (var response in responses)
+        {
+            response.Dispose();
+        }
+    }
+
+    /// <summary>
     /// Covers spec-4-5's own I/O &amp; Edge-Case Matrix through the real API: a valid booking id
     /// resolves the full detail shape (vehicle, customer, dates, TotalPrice, Status); a booking whose
     /// customer has since been anonymized still resolves with <c>customerIsAnonymized</c> true, the

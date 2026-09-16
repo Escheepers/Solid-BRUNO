@@ -62,6 +62,19 @@ public class AppDbContext : DbContext
             // AD-13: soft-deleted vehicles never surface through EF Core queries anywhere in the
             // app -- query-time only, so this needs no new migration.
             entity.HasQueryFilter(v => !v.IsDeleted);
+
+            // Optimistic-concurrency guard: Postgres' own xmin system column, already present on
+            // every row, mapped as an EF Core concurrency token -- no schema migration needed.
+            // Npgsql.EntityFrameworkCore.PostgreSQL 10.x removed the old `UseXminAsConcurrencyToken()`
+            // convenience method (present only up to 8.x) in favor of its own model-finalizing
+            // convention (NpgsqlPostgresModelFinalizingConvention.ProcessRowVersionProperty), which
+            // detects any uint shadow property configured as a concurrency token with
+            // ValueGeneratedOnAddOrUpdate -- exactly what IsRowVersion() configures below -- and maps
+            // it directly onto the real system column instead of creating a new one. Lets
+            // RestoreVehicleCommandHandler detect and correctly react to a concurrent double-click
+            // that would otherwise silently double-process (see Design Notes).
+            entity.Property<uint>("xmin")
+                .IsRowVersion();
         });
 
         // AD-12's first real implementation: Email/PhoneNumber are encrypted transparently via a
@@ -151,6 +164,12 @@ public class AppDbContext : DbContext
             entity.HasIndex(b => b.VehicleId);
 
             entity.HasIndex(b => b.CustomerId);
+
+            // Optimistic-concurrency guard: mirrors Vehicle's own xmin mapping exactly -- lets
+            // CancelBookingCommandHandler detect and correctly react to a concurrent double-click
+            // that would otherwise silently double-process (see Design Notes).
+            entity.Property<uint>("xmin")
+                .IsRowVersion();
         });
     }
 

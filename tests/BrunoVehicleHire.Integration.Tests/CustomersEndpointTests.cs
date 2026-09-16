@@ -310,6 +310,49 @@ public class CustomersEndpointTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.Conflict);
     }
 
+    /// <summary>
+    /// The QA-found race this fix exists for: two near-simultaneous Create requests for the SAME
+    /// email address, neither of which existed before either request started, fired concurrently via
+    /// <see cref="Task.WhenAll(Task[])"/> against the real ASP.NET Core pipeline and its own
+    /// ephemeral Postgres container (mirrors <c>VehiclesEndpointTests</c>'s own equivalent proof).
+    /// Before the fix, the loser crashed with an unhandled 500 from the EmailHash unique-index
+    /// violation; after it, the loser must get the identical 409 the sequential-duplicate case
+    /// already returns.
+    /// </summary>
+    [Fact]
+    public async Task Post_TwoConcurrentRequestsWithSameEmail_ExactlyOneSucceeds_TheOtherReturns409NotServerError()
+    {
+        object Body() => new
+        {
+            firstName = "Race",
+            lastName = "Condition",
+            email = "race.condition@example.com",
+            phoneNumber = "0821239876",
+        };
+
+        using var requestA = AuthenticatedPost("/api/customers", Body());
+        using var requestB = AuthenticatedPost("/api/customers", Body());
+
+        var responses = await Task.WhenAll(_client.SendAsync(requestA), _client.SendAsync(requestB));
+
+        responses.Should().NotContain(response => response.StatusCode == HttpStatusCode.InternalServerError);
+        responses.Count(response => response.StatusCode == HttpStatusCode.Created).Should().Be(
+            1, "exactly one of the two concurrently-racing creates must win");
+
+        var rejected = responses.Single(response => response.StatusCode != HttpStatusCode.Created);
+        rejected.StatusCode.Should().Be(HttpStatusCode.Conflict);
+
+        var json = await rejected.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(json);
+        document.RootElement.GetProperty("detail").GetString()
+            .Should().Be("This email address is already in use.");
+
+        foreach (var response in responses)
+        {
+            response.Dispose();
+        }
+    }
+
     [Fact]
     public async Task Post_MalformedEmail_Returns400WithEmailInErrors()
     {
