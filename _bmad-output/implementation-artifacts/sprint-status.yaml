@@ -75,7 +75,7 @@ development_status:
 
   epic-6: in-progress
   6-1-seed-data-readme: done
-  6-2-code-coverage-reports: backlog
+  6-2-code-coverage-reports: done
   6-3-optional-stretch-observability-logs-to-grafana-loki: backlog
   6-4-accessibility-verification-pass: backlog
   epic-6-retrospective: optional

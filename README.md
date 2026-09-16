@@ -131,6 +131,31 @@ dotnet test
 
 Runs the full suite: Domain, Application, and Infrastructure unit tests, plus the Integration.Tests project — the latter spins up real, ephemeral PostgreSQL containers via Testcontainers for anything that needs a genuine relational database (unique constraints, foreign keys, the AD-7 overlap exclusion constraint, and the AD-12 PII value converter), so it takes a few minutes and requires Docker to be running.
 
+## Code coverage reports
+
+Both reports below are **local, on-demand artifacts** — generated on request, browsed locally, and `.gitignore`d. Neither is wired to a CI pipeline (this project has none).
+
+### Backend
+
+```bash
+dotnet tool restore                                            # first time only -- installs ReportGenerator locally, from .config/dotnet-tools.json
+dotnet test --collect:"XPlat Code Coverage" --results-directory ./TestResults
+dotnet reportgenerator -reports:"./TestResults/**/coverage.cobertura.xml" -targetdir:"./coverage/backend" -reporttypes:Html
+```
+
+Open `coverage/backend/index.html` in a browser. Coverage is collected via [Coverlet](https://github.com/coverlet-coverage/coverlet) (already referenced in every test project) and rendered by [ReportGenerator](https://github.com/danielpalme/ReportGenerator).
+
+### Frontend
+
+```bash
+cd frontend
+npm run test:coverage   # ng test --coverage --watch=false
+```
+
+Open `frontend/coverage/frontend/index.html` in a browser. This is Angular's own Istanbul-based coverage reporter — no extra tooling needed.
+
+> **Note:** epics.md's Story 6.2 names the frontend flag `--code-coverage` — this project's `ng test` runs on Vitest (Angular 22's default test runner), whose actual, already-working flag (used throughout this build) is `--coverage`. The command above is what genuinely works in this repo.
+
 ## Assumptions made
 
 These are the explicit assumptions logged against the brief (`SPEC.md`), carried through unchanged:
