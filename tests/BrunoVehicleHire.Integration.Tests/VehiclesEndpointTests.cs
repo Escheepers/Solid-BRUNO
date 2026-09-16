@@ -48,6 +48,12 @@ public class VehiclesEndpointTests : IAsyncLifetime
                 {
                     ["ConnectionStrings:Postgres"] = _postgres.GetConnectionString(),
                     ["ApiKey:Key"] = ConfiguredKey,
+                    // spec-6-1: this factory runs under "Development" below, whose
+                    // appsettings.Development.json enables seeding by default -- without this
+                    // override every test in this class would get contaminated with ~15
+                    // vehicles/customers and ~25+ bookings on startup, breaking exact-count
+                    // assertions (Design Notes).
+                    ["Seed:Enabled"] = "false",
                 });
             });
         });

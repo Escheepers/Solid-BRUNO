@@ -7,6 +7,9 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- spec-6-1: DatabaseSeeder generates synthetic, but realistic, Vehicles/Customers/Bookings for
+         a fresh clone; never a source of real PII (SPEC.md's own logged assumption). -->
+    <PackageReference Include="Bogus" Version="35.6.5" />
     <!-- The full implementation package (not just .Abstractions): the AppDbContext runtime
          consumer needs IDataProtector/IDataProtectionProvider's actual implementation. -->
     <PackageReference Include="Microsoft.AspNetCore.DataProtection" Version="10.0.12" />

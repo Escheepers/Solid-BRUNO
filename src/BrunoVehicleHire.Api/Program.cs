@@ -9,6 +9,7 @@ using BrunoVehicleHire.Domain.Exceptions;
 using BrunoVehicleHire.Infrastructure.BackgroundServices;
 using BrunoVehicleHire.Infrastructure.Persistence;
 using BrunoVehicleHire.Infrastructure.Repositories;
+using BrunoVehicleHire.Infrastructure.Seeding;
 using FluentValidation;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
@@ -67,6 +68,11 @@ builder.Services.AddScoped<ICustomerRepository, CustomerRepository>();
 builder.Services.AddScoped<IBookingRepository, BookingRepository>();
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 
+// spec-6-1: registered unconditionally (cheap -- it's just a class), but only ever RESOLVED and
+// CALLED below when Seed:Enabled is true. Scoped to match AppDbContext's own lifetime, since
+// DatabaseSeeder takes a constructor-injected AppDbContext.
+builder.Services.AddScoped<ISeeder, DatabaseSeeder>();
+
 // AD-17: BookingCompletionSweepService is a singleton BackgroundService, so its constructor-injected
 // TimeProvider must be resolvable from the root container -- registered once, here, as the real
 // system clock (tests that need a fixed clock call RunSweepAsync directly against their own instance,
@@ -122,6 +128,18 @@ using (var scope = app.Services.CreateScope())
 {
     var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     dbContext.Database.Migrate();
+
+    // spec-6-1: gated by the Seed:Enabled CONFIG flag, not environment name (Design Notes) -- every
+    // existing WebApplicationFactory<Program>-based integration test already runs under
+    // "Development", the same environment name a real evaluator's `dotnet run` uses, so environment
+    // name alone can't tell "real local run" apart from "test run". Each of those test files
+    // overrides Seed:Enabled to false the same way they already override ConnectionStrings:Postgres/
+    // ApiKey:Key. appsettings.json defaults this to false; appsettings.Development.json turns it on.
+    if (builder.Configuration.GetValue<bool>("Seed:Enabled"))
+    {
+        var seeder = scope.ServiceProvider.GetRequiredService<ISeeder>();
+        seeder.SeedIfEmptyAsync(CancellationToken.None).GetAwaiter().GetResult();
+    }
 }
 
 // Configure the HTTP request pipeline.
