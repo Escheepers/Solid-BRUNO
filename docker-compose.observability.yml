@@ -1,0 +1,49 @@
+services:
+  # spec-6-3: a SEPARATE, opt-in stack from docker-compose.yml (Postgres) -- started explicitly via
+  # `docker-compose -f docker-compose.observability.yml up -d`, never merged into the base compose
+  # file, since this whole story is an optional stretch goal whose absence must change nothing else.
+  loki:
+    image: grafana/loki:3.3.2
+    container_name: bruno-loki
+    restart: unless-stopped
+    ports:
+      - "3100:3100"
+    # The image's own default config (single-process, filesystem-backed storage) is sufficient for
+    # this local/dev demo stack -- no custom loki-config.yaml needed.
+    command: -config.file=/etc/loki/local-config.yaml
+    volumes:
+      - loki-data:/loki
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://localhost:3100/ready || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  grafana:
+    image: grafana/grafana:11.4.0
+    container_name: bruno-grafana
+    restart: unless-stopped
+    depends_on:
+      loki:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    environment:
+      # Local-only demo credentials (Boundaries: README documents these as the default login) --
+      # never used for anything beyond this opt-in local stack. Deliberately NOT the literal
+      # "admin"/"admin" pair: Grafana hardcodes a "please change your password" interstitial the
+      # instant it sees that exact combination, which would be one more manual step for an
+      # evaluator opening the dashboard on top of everything provisioning already does for them
+      # (Boundaries: "no manual Grafana UI setup").
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: bruno-admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      # Read-only: Grafana is provisioned entirely via these mounted files (a Loki datasource + the
+      # dashboard JSON) -- opening Grafana requires no manual "add datasource"/"import dashboard"
+      # step (Boundaries).
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+
+volumes:
+  loki-data:

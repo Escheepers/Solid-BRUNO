@@ -44,6 +44,7 @@ An architecture fitness test (`ArchitectureFitnessTests`, via NetArchTest) mecha
 | Database | PostgreSQL 18 (`btree_gist` extension), run via `docker-compose` |
 | Frontend | Angular 22, TanStack Query (`@tanstack/angular-query-experimental`) |
 | Testing | xUnit, FluentAssertions, Testcontainers.PostgreSql, NetArchTest.Rules |
+| Observability *(optional, Story 6.3)* | Serilog + Serilog.Sinks.Grafana.Loki, Grafana/Loki via `docker-compose.observability.yml` |
 
 ## How to run it
 
@@ -156,6 +157,33 @@ Open `frontend/coverage/frontend/index.html` in a browser. This is Angular's own
 
 > **Note:** epics.md's Story 6.2 names the frontend flag `--code-coverage` — this project's `ng test` runs on Vitest (Angular 22's default test runner), whose actual, already-working flag (used throughout this build) is `--coverage`. The command above is what genuinely works in this repo.
 
+## Observability (optional)
+
+This is Story 6.3, an explicitly optional stretch goal — **its absence changes nothing else about this submission.** The backend logs via [Serilog](https://serilog.net/) unconditionally (console output, replacing the ASP.NET Core default provider as a drop-in for every existing `ILogger<T>` call site), but shipping those structured logs to [Grafana Loki](https://grafana.com/oss/loki/) for visualization is a separate, opt-in step:
+
+```bash
+docker-compose -f docker-compose.observability.yml up -d
+```
+
+This starts Loki (port 3100) and Grafana (port 3000) as their own stack — deliberately **not** merged into the base `docker-compose.yml` (Postgres only), so running the app normally never requires it. Grafana is pre-provisioned entirely via mounted files (a Loki datasource plus one dashboard, `Bruno Vehicle Hire API Overview`, with a request-rate panel) — no manual "add datasource"/"import dashboard" steps.
+
+To actually ship logs there, also set `Serilog:Loki:Enabled` to `true` before running the backend (it defaults to `false`, so a plain `dotnet run` never attempts a Loki connection and never produces connection-refused retry noise):
+
+```bash
+cd src/BrunoVehicleHire.Api
+Serilog__Loki__Enabled=true dotnet run   # PowerShell: $env:Serilog__Loki__Enabled="true"; dotnet run
+```
+
+Then open **`http://localhost:3000`** (login `admin` / `bruno-admin`) and browse to the provisioned dashboard — its request-rate panel starts rendering real, non-zero data the moment the API receives any traffic at all (e.g. just browsing the Angular UI or hitting Swagger), no deliberately-triggered condition required.
+
+No PII-scrubbing infrastructure was added: the app already never logs request/response bodies or raw entity objects (`UseSerilogRequestLogging()`'s output is method/path/status/elapsed-time only), proven by an automated test (`CustomerLoggingPiiTests`) that captures every log event from a real create-customer request and asserts the plaintext email never appears in any of them.
+
+When you're done, tear the stack back down:
+
+```bash
+docker-compose -f docker-compose.observability.yml down
+```
+
 ## Assumptions made
 
 These are the explicit assumptions logged against the brief (`SPEC.md`), carried through unchanged:
@@ -184,5 +212,7 @@ frontend/
   src/app/core       -- API client, auth interceptor, shared models
   src/app/features   -- one folder per feature: vehicles, customers, bookings, customer-summary
   src/app/shared     -- shared UI components (data-table, modal, badge, toast, ...)
-docker-compose.yml   -- PostgreSQL (+ btree_gist init script)
+docker-compose.yml               -- PostgreSQL (+ btree_gist init script)
+docker-compose.observability.yml -- optional, opt-in: Loki + Grafana (Story 6.3)
+observability/grafana/           -- Grafana provisioning (datasource + dashboard JSON)
 ```

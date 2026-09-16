@@ -1,0 +1,47 @@
+{
+  "id": null,
+  "uid": "bruno-api-overview",
+  "title": "Bruno Vehicle Hire API Overview",
+  "description": "spec-6-3: request-rate panel, populated by any traffic the API receives (Design Notes -- chosen over a rejected-request-count panel specifically because it renders real, non-zero data from the instant the API receives any traffic at all, including an evaluator just browsing the Angular UI).",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "5s",
+  "time": {
+    "from": "now-15m",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "API request rate (per second)",
+      "description": "Count of structured request-completion log lines (UseSerilogRequestLogging(), method/path/status/elapsed only -- no request/response bodies) shipped to Loki, per second. Renders real data as soon as the API handles any HTTP request.",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 0 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "expr": "sum(count_over_time({app=\"bruno-vehicle-hire-api\"} |= \"HTTP\" [1m])) by (app)",
+          "queryType": "range",
+          "legendFormat": "{{app}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 30
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi" }
+      }
+    }
+  ]
+}

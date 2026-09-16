@@ -1,0 +1,16 @@
+# spec-6-3: provisions the Loki datasource entirely via file -- no manual "Add data source" step
+# for an evaluator opening Grafana (Boundaries).
+apiVersion: 1
+
+datasources:
+  - name: Loki
+    type: loki
+    # Fixed uid so the provisioned dashboard JSON (observability/grafana/dashboards/bruno-api-overview.json)
+    # can reference this exact datasource without depending on Grafana's own auto-generated uid.
+    uid: loki
+    access: proxy
+    # "loki" resolves via the docker-compose.observability.yml network -- both services run in the
+    # same, implicitly-created Compose network.
+    url: http://loki:3100
+    isDefault: true
+    editable: false

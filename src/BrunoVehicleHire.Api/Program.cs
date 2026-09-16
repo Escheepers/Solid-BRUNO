@@ -16,8 +16,45 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi;
+using Serilog;
+using Serilog.Events;
+using Serilog.Sinks.Grafana.Loki;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// spec-6-3: Serilog replaces the default ASP.NET Core logging provider -- a drop-in for every
+// existing ILogger<T> call site (e.g. BookingCompletionSweepService's error log), no call site
+// changes needed. Clear the default Console/Debug/EventSource providers WebApplication.
+// CreateBuilder() already registered -- otherwise, combined with `writeToProviders: true` below,
+// every event would print twice (once via Serilog's own Console sink, once forwarded back through
+// the still-registered default Console provider).
+builder.Logging.ClearProviders();
+
+// Console logging is unconditional; the Loki sink is only added when Serilog:Loki:Enabled is true
+// (default false), so a plain `dotnet run` with no observability stack running produces zero
+// connection-refused retry noise.
+// `writeToProviders: true` additionally routes every event through any standard
+// Microsoft.Extensions.Logging ILoggerProvider registered via builder.Logging -- none remains
+// registered by the app itself after ClearProviders() above, but it lets the PII-in-logs test
+// (CustomerLoggingPiiTests) attach its own in-memory ILoggerProvider via WebApplicationFactory and
+// observe every event a real request produces, without Program.cs needing any test-specific
+// knowledge.
+builder.Host.UseSerilog((context, loggerConfiguration) =>
+{
+    loggerConfiguration
+        .MinimumLevel.Information()
+        .MinimumLevel.Override("Microsoft.AspNetCore", LogEventLevel.Warning)
+        .Enrich.FromLogContext()
+        .WriteTo.Console();
+
+    if (context.Configuration.GetValue<bool>("Serilog:Loki:Enabled"))
+    {
+        var lokiUrl = context.Configuration["Serilog:Loki:Url"] ?? "http://localhost:3100";
+        loggerConfiguration.WriteTo.GrafanaLoki(
+            lokiUrl,
+            labels: [new LokiLabel { Key = "app", Value = "bruno-vehicle-hire-api" }]);
+    }
+}, writeToProviders: true);
 
 // Add services to the container.
 builder.Services.Configure<ApiKeyOptions>(builder.Configuration.GetSection("ApiKey"));
@@ -143,8 +180,14 @@ using (var scope = app.Services.CreateScope())
 }
 
 // Configure the HTTP request pipeline.
-// UseExceptionHandler() is the first pipeline middleware (AD-8/Story 1.5) so GlobalExceptionHandler
-// can catch exceptions thrown by any later middleware, not just endpoint handlers.
+// UseSerilogRequestLogging() is the very first middleware so its timer and final logged status
+// code span the entire pipeline, including whatever GlobalExceptionHandler rewrites the response
+// to for a caught exception -- the source of the dashboard's request-rate panel (spec-6-3).
+app.UseSerilogRequestLogging();
+
+// UseExceptionHandler() is the first exception-catching middleware (AD-8/Story 1.5) so
+// GlobalExceptionHandler can catch exceptions thrown by any later middleware, not just endpoint
+// handlers.
 app.UseExceptionHandler();
 
 if (app.Environment.IsDevelopment())

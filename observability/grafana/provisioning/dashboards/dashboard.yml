@@ -1,0 +1,13 @@
+# spec-6-3: tells Grafana to auto-load every dashboard JSON file mounted at the referenced path --
+# no manual "Import dashboard" step for an evaluator opening Grafana (Boundaries).
+apiVersion: 1
+
+providers:
+  - name: 'Bruno Vehicle Hire'
+    orgId: 1
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 10
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards

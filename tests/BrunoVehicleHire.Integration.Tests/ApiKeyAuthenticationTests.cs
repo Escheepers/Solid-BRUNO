@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Net;
 using System.Text.Json;
 using BrunoVehicleHire.Api.Auth;
+using BrunoVehicleHire.Integration.Tests.TestSupport;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -161,37 +162,5 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
 
         _capturedLogMessages.Should().NotContain(m => m.Contains(wrongKey, StringComparison.Ordinal));
         _capturedLogMessages.Should().NotContain(m => m.Contains(ConfiguredKey, StringComparison.Ordinal));
-    }
-
-    /// <summary>
-    /// A minimal <see cref="ILoggerProvider"/> that captures every formatted log message emitted
-    /// anywhere in the pipeline during a test run, so the "no raw key anywhere in the logs"
-    /// requirement can be checked against real end-to-end request handling, not just the handler
-    /// in isolation.
-    /// </summary>
-    private sealed class CapturingLoggerProvider(ConcurrentBag<string> messages) : ILoggerProvider
-    {
-        public ILogger CreateLogger(string categoryName) => new CapturingLogger(messages);
-
-        public void Dispose()
-        {
-        }
-
-        private sealed class CapturingLogger(ConcurrentBag<string> messages) : ILogger
-        {
-            public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
-
-            public bool IsEnabled(LogLevel logLevel) => true;
-
-            public void Log<TState>(
-                LogLevel logLevel,
-                EventId eventId,
-                TState state,
-                Exception? exception,
-                Func<TState, Exception?, string> formatter)
-            {
-                messages.Add(formatter(state, exception));
-            }
-        }
     }
 }
