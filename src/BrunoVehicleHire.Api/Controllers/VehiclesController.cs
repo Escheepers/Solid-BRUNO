@@ -1,4 +1,5 @@
 using BrunoVehicleHire.Application.Vehicles.Commands;
+using BrunoVehicleHire.Application.Vehicles.Dtos;
 using BrunoVehicleHire.Application.Vehicles.Queries;
 using MediatR;
 using Microsoft.AspNetCore.Mvc;
@@ -38,6 +39,7 @@ public class VehiclesController(ISender sender) : ControllerBase
     /// unfiltered lookup so the detail page can show its active/soft-deleted state.
     /// </summary>
     [HttpGet("{id:guid}")]
+    [ProducesResponseType(typeof(VehicleDto), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetById(Guid id, CancellationToken cancellationToken)
     {
         var dto = await sender.Send(new GetVehicleByIdQuery(id), cancellationToken);
@@ -46,6 +48,7 @@ public class VehiclesController(ISender sender) : ControllerBase
     }
 
     [HttpPost]
+    [ProducesResponseType(typeof(VehicleDto), StatusCodes.Status201Created)]
     public async Task<IActionResult> Create(
         [FromBody] CreateVehicleCommand command,
         CancellationToken cancellationToken)
@@ -61,6 +64,7 @@ public class VehiclesController(ISender sender) : ControllerBase
     /// near-duplicate request DTO purely to split route-bound from body-bound fields.
     /// </summary>
     [HttpPut("{id:guid}")]
+    [ProducesResponseType(typeof(VehicleDto), StatusCodes.Status200OK)]
     public async Task<IActionResult> Update(
         Guid id,
         [FromBody] UpdateVehicleCommand command,

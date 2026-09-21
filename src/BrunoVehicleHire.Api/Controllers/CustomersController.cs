@@ -1,4 +1,5 @@
 using BrunoVehicleHire.Application.Customers.Commands;
+using BrunoVehicleHire.Application.Customers.Dtos;
 using BrunoVehicleHire.Application.Customers.Queries;
 using BrunoVehicleHire.Application.CustomerSummaries.Queries;
 using MediatR;
@@ -33,6 +34,7 @@ public class CustomersController(ISender sender) : ControllerBase
     }
 
     [HttpPost]
+    [ProducesResponseType(typeof(CustomerDto), StatusCodes.Status201Created)]
     public async Task<IActionResult> Create(
         [FromBody] CreateCustomerCommand command,
         CancellationToken cancellationToken)
@@ -49,6 +51,7 @@ public class CustomersController(ISender sender) : ControllerBase
     /// <c>VehiclesController.Update</c>'s exact shape.
     /// </summary>
     [HttpPut("{id:guid}")]
+    [ProducesResponseType(typeof(CustomerDto), StatusCodes.Status200OK)]
     public async Task<IActionResult> Update(
         Guid id,
         [FromBody] UpdateCustomerCommand command,

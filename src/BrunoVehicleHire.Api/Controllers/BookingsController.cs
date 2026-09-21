@@ -1,4 +1,5 @@
 using BrunoVehicleHire.Application.Bookings.Commands;
+using BrunoVehicleHire.Application.Bookings.Dtos;
 using BrunoVehicleHire.Application.Bookings.Queries;
 using MediatR;
 using Microsoft.AspNetCore.Mvc;
@@ -40,6 +41,7 @@ public class BookingsController(ISender sender) : ControllerBase
     /// never checked here.
     /// </summary>
     [HttpGet("{id:guid}")]
+    [ProducesResponseType(typeof(BookingDto), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetById(Guid id, CancellationToken cancellationToken)
     {
         var dto = await sender.Send(new GetBookingByIdQuery(id), cancellationToken);
@@ -48,6 +50,7 @@ public class BookingsController(ISender sender) : ControllerBase
     }
 
     [HttpPost]
+    [ProducesResponseType(typeof(BookingDto), StatusCodes.Status201Created)]
     public async Task<IActionResult> Create(
         [FromBody] CreateBookingCommand command,
         CancellationToken cancellationToken)
