@@ -1,5 +1,6 @@
 import {
   Component,
+  DestroyRef,
   ViewChild,
   computed,
   effect,
@@ -8,7 +9,7 @@ import {
   output,
   signal,
 } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 
 import { NormalizedApiError, fieldFromType } from '../../core/api-client/normalized-api-error';
@@ -100,6 +101,7 @@ export class BookingFormModal {
 
   private readonly toastService = inject(ToastService);
   private readonly fb = inject(FormBuilder);
+  private readonly destroyRef = inject(DestroyRef);
 
   protected readonly form = this.fb.nonNullable.group({
     vehicleId: ['', Validators.required],
@@ -196,11 +198,16 @@ export class BookingFormModal {
    * own `form.reset(...)` also fires each control's `valueChanges` once, but that
    * is always immediately followed there by an unconditional
    * `serverFieldErrors.set({})`, so this handler running first (or at all) during a
-   * reset never leaves a stale or incorrectly-cleared error behind.
+   * reset never leaves a stale or incorrectly-cleared error behind. Each subscription
+   * is piped through `takeUntilDestroyed(this.destroyRef)` (audit fix: this had no
+   * teardown at all before, an unmanaged-subscription violation regardless of this
+   * app's current usage pattern of never actually destroying a mounted Modal instance)
+   * -- `destroyRef` is injected as its own class field precisely so this call site
+   * doesn't have to care whether it runs inside or outside an injection context.
    */
   private wireClearFieldErrorOnChange(): void {
     for (const name of Object.keys(this.form.controls) as BookingFormFieldName[]) {
-      this.form.controls[name].valueChanges.subscribe(() => {
+      this.form.controls[name].valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => {
         this.serverFieldErrors.update((errors) => {
           if (!(name in errors)) {
             return errors;

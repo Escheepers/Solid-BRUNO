@@ -14,6 +14,18 @@ export interface VehiclesQueryParams {
   showInactive: boolean;
 }
 
+export interface CreateVehiclePayload {
+  registrationNumber: string;
+  make: string;
+  model: string;
+  year: number;
+  dailyRate: number;
+}
+
+/** Identical shape to `CreateVehiclePayload` -- kept as its own named type so `useUpdateVehicleMutation`'s
+ * call site reads clearly, mirroring `CreateCustomerPayload`/`UpdateCustomerPayload`'s own naming. */
+export type UpdateVehiclePayload = CreateVehiclePayload;
+
 /** Matches `useVehiclesQuery`'s query-key convention (AD-3) exactly, minus the params. */
 const VEHICLES_LIST_QUERY_KEY = ['vehicles', 'list'] as const;
 
@@ -69,8 +81,52 @@ export function useVehicleQuery(id: () => string | undefined) {
 }
 
 /**
+ * Wraps `injectMutation` over `ApiClient.post<VehicleDto, CreateVehiclePayload>('vehicles', ...)`
+ * -- mirrors `useCreateCustomerMutation`'s exact shape (audit fix: this hook and
+ * `useUpdateVehicleMutation` below used to be inlined directly in `VehicleFormModal`, unlike every
+ * other form's create/update mutations, which already lived in their own `*.service.ts`; moved here
+ * for consistency, with no change to the underlying HTTP call or invalidation behaviour). On success,
+ * invalidates `['vehicles', 'list']` (AD-3) so the list re-fetches and the newly-created vehicle appears.
+ */
+export function useCreateVehicleMutation() {
+  const apiClient = inject(ApiClient);
+  const queryClient = inject(QueryClient);
+
+  return injectMutation<VehicleDto, NormalizedApiError, CreateVehiclePayload>(() => ({
+    mutationFn: (payload) =>
+      firstValueFrom(apiClient.post<VehicleDto, CreateVehiclePayload>('vehicles', payload)),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: VEHICLES_LIST_QUERY_KEY }),
+  }));
+}
+
+/**
+ * Wraps `injectMutation` over `ApiClient.put<VehicleDto, UpdateVehiclePayload>('vehicles/{id}', ...)`
+ * -- the update counterpart to `useCreateVehicleMutation` above, mirroring
+ * `useUpdateCustomerMutation`'s exact shape. `VehicleFormModal` selects between this and
+ * `useCreateVehicleMutation` based on whether it was opened for create or edit (its own concern, not
+ * this service's -- SRP). On success, invalidates `['vehicles', 'list']` (AD-3) exactly like the
+ * create mutation, so the list re-fetches and shows the edited values.
+ */
+export function useUpdateVehicleMutation() {
+  const apiClient = inject(ApiClient);
+  const queryClient = inject(QueryClient);
+
+  return injectMutation<
+    VehicleDto,
+    NormalizedApiError,
+    { vehicleId: string; payload: UpdateVehiclePayload }
+  >(() => ({
+    mutationFn: ({ vehicleId, payload }) =>
+      firstValueFrom(
+        apiClient.put<VehicleDto, UpdateVehiclePayload>(`vehicles/${vehicleId}`, payload),
+      ),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: VEHICLES_LIST_QUERY_KEY }),
+  }));
+}
+
+/**
  * Wraps `injectMutation` over `ApiClient.post('vehicles/{id}/deactivate', ...)` -- mirrors the
- * `injectMutation` pattern `VehicleFormModal`'s create/update mutation already established.
+ * `injectMutation` pattern `useCreateVehicleMutation`/`useUpdateVehicleMutation` above establish.
  * `ApiClient.post<T, B>` requires a body argument, so `undefined` is passed explicitly for this
  * body-less action. On success, invalidates `['vehicles', 'list']` (AD-3) so the list re-fetches
  * and the deactivated vehicle disappears via the existing soft-delete query filter -- no new

@@ -1,5 +1,14 @@
-import { Component, computed, effect, inject, input, output, signal } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
+import {
+  Component,
+  DestroyRef,
+  computed,
+  effect,
+  inject,
+  input,
+  output,
+  signal,
+} from '@angular/core';
+import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 
 import { NormalizedApiError, fieldFromType } from '../../core/api-client/normalized-api-error';
@@ -76,6 +85,7 @@ export class CustomerFormModal {
 
   private readonly toastService = inject(ToastService);
   private readonly fb = inject(FormBuilder);
+  private readonly destroyRef = inject(DestroyRef);
 
   protected readonly form = this.fb.nonNullable.group({
     firstName: ['', Validators.required],
@@ -140,11 +150,16 @@ export class CustomerFormModal {
    * is always immediately followed there by an unconditional
    * `serverFieldErrors.set({})`, so this handler running during a reset never
    * leaves a stale or incorrectly-cleared error behind. Mirrors
-   * `BookingFormModal`'s exact same addition.
+   * `BookingFormModal`'s exact same addition. Each subscription is piped through
+   * `takeUntilDestroyed(this.destroyRef)` (audit fix: this had no teardown at all
+   * before, an unmanaged-subscription violation regardless of this app's current
+   * usage pattern of never actually destroying a mounted Modal instance) -- `destroyRef`
+   * is injected as its own class field precisely so this call site doesn't have to
+   * care whether it runs inside or outside an injection context.
    */
   private wireClearFieldErrorOnChange(): void {
     for (const name of Object.keys(this.form.controls) as CustomerFormFieldName[]) {
-      this.form.controls[name].valueChanges.subscribe(() => {
+      this.form.controls[name].valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => {
         this.serverFieldErrors.update((errors) => {
           if (!(name in errors)) {
             return errors;

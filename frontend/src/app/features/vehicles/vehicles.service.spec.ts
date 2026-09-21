@@ -7,8 +7,10 @@ import { apiKeyInterceptor } from '../../core/api-client/api-key.interceptor';
 import { errorNormalizationInterceptor } from '../../core/api-client/error-normalization.interceptor';
 import { VehicleDto } from '../../core/models/vehicle-dto';
 import {
+  useCreateVehicleMutation,
   useDeactivateVehicleMutation,
   useRestoreVehicleMutation,
+  useUpdateVehicleMutation,
   useVehicleQuery,
 } from './vehicles.service';
 
@@ -100,6 +102,157 @@ describe('useVehicleQuery', () => {
 
     expect(query.isError()).toBe(true);
     expect(query.error()?.kind).toBe('not-found');
+  });
+});
+
+describe('useCreateVehicleMutation', () => {
+  let httpMock: HttpTestingController;
+  let queryClient: QueryClient;
+
+  beforeEach(() => {
+    queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+
+    TestBed.configureTestingModule({
+      providers: [
+        provideHttpClient(withInterceptors([apiKeyInterceptor, errorNormalizationInterceptor])),
+        provideHttpClientTesting(),
+        provideTanStackQuery(queryClient),
+      ],
+    });
+
+    httpMock = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => {
+    httpMock.verify();
+    TestBed.resetTestingModule();
+  });
+
+  it('POSTs the payload to vehicles', async () => {
+    const mutation = TestBed.runInInjectionContext(() => useCreateVehicleMutation());
+
+    mutation.mutate({
+      registrationNumber: 'CA999999',
+      make: 'Ford',
+      model: 'Ranger',
+      year: 2023,
+      dailyRate: 450,
+    });
+    await flushMicrotasks();
+
+    const req = httpMock.expectOne('/api/vehicles');
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual({
+      registrationNumber: 'CA999999',
+      make: 'Ford',
+      model: 'Ranger',
+      year: 2023,
+      dailyRate: 450,
+    });
+
+    req.flush(vehicleDto({ registrationNumber: 'CA999999' }), {
+      status: 201,
+      statusText: 'Created',
+    });
+  });
+
+  it('invalidates the vehicles list query key on success', async () => {
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+    const mutation = TestBed.runInInjectionContext(() => useCreateVehicleMutation());
+
+    mutation.mutate({
+      registrationNumber: 'CA999999',
+      make: 'Ford',
+      model: 'Ranger',
+      year: 2023,
+      dailyRate: 450,
+    });
+    await flushMicrotasks();
+
+    const req = httpMock.expectOne('/api/vehicles');
+    req.flush(vehicleDto(), { status: 201, statusText: 'Created' });
+    await flushMicrotasks();
+
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['vehicles', 'list'] });
+  });
+});
+
+describe('useUpdateVehicleMutation', () => {
+  let httpMock: HttpTestingController;
+  let queryClient: QueryClient;
+
+  beforeEach(() => {
+    queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+
+    TestBed.configureTestingModule({
+      providers: [
+        provideHttpClient(withInterceptors([apiKeyInterceptor, errorNormalizationInterceptor])),
+        provideHttpClientTesting(),
+        provideTanStackQuery(queryClient),
+      ],
+    });
+
+    httpMock = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => {
+    httpMock.verify();
+    TestBed.resetTestingModule();
+  });
+
+  it('PUTs the payload to vehicles/{vehicleId}', async () => {
+    const mutation = TestBed.runInInjectionContext(() => useUpdateVehicleMutation());
+
+    mutation.mutate({
+      vehicleId: 'v42',
+      payload: {
+        registrationNumber: 'CA123456',
+        make: 'Toyota',
+        model: 'Corolla',
+        year: 2022,
+        dailyRate: 500,
+      },
+    });
+    await flushMicrotasks();
+
+    const req = httpMock.expectOne('/api/vehicles/v42');
+    expect(req.request.method).toBe('PUT');
+    expect(req.request.body).toEqual({
+      registrationNumber: 'CA123456',
+      make: 'Toyota',
+      model: 'Corolla',
+      year: 2022,
+      dailyRate: 500,
+    });
+
+    req.flush(vehicleDto({ id: 'v42', dailyRate: 500 }));
+  });
+
+  it('invalidates the vehicles list query key on success', async () => {
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+    const mutation = TestBed.runInInjectionContext(() => useUpdateVehicleMutation());
+
+    mutation.mutate({
+      vehicleId: 'v42',
+      payload: {
+        registrationNumber: 'CA123456',
+        make: 'Toyota',
+        model: 'Corolla',
+        year: 2022,
+        dailyRate: 500,
+      },
+    });
+    await flushMicrotasks();
+
+    const req = httpMock.expectOne('/api/vehicles/v42');
+    req.flush(vehicleDto({ id: 'v42', dailyRate: 500 }));
+    await flushMicrotasks();
+
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['vehicles', 'list'] });
   });
 });
 

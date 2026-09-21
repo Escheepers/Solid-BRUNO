@@ -1,32 +1,30 @@
-import { Component, computed, effect, inject, input, output, signal } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
+import {
+  Component,
+  DestroyRef,
+  computed,
+  effect,
+  inject,
+  input,
+  output,
+  signal,
+} from '@angular/core';
+import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
-import { QueryClient, injectMutation } from '@tanstack/angular-query-experimental';
-import { firstValueFrom } from 'rxjs';
 
-import { ApiClient } from '../../core/api-client/api-client';
 import { NormalizedApiError, fieldFromType } from '../../core/api-client/normalized-api-error';
-import { VehicleDto } from '../../core/models/vehicle-dto';
 import { Button } from '../../shared/button/button';
 import { ConfirmDialog } from '../../shared/confirm-dialog/confirm-dialog';
 import { Input } from '../../shared/input/input';
 import { Modal } from '../../shared/modal/modal';
 import { ToastService } from '../../shared/toast/toast.service';
 import { Vehicle } from './models/vehicle';
+import {
+  CreateVehiclePayload,
+  useCreateVehicleMutation,
+  useUpdateVehicleMutation,
+} from './vehicles.service';
 
 type VehicleFormFieldName = 'registrationNumber' | 'make' | 'model' | 'year' | 'dailyRate';
-
-interface VehiclePayload {
-  registrationNumber: string;
-  make: string;
-  model: string;
-  year: number;
-  dailyRate: number;
-}
-
-/** Matches `useVehiclesQuery`'s query-key convention (AD-3) exactly, minus the params
- * — `invalidateQueries` matches every params variant sharing this key prefix. */
-const VEHICLES_LIST_QUERY_KEY = ['vehicles', 'list'] as const;
 
 const BLANK_FORM_VALUE = {
   registrationNumber: '',
@@ -51,6 +49,14 @@ const BLANK_FORM_VALUE = {
  * than `required`, matching the backend, which validates it as a domain invariant
  * (409), not a FluentValidation shape check (spec-2-1's Design Notes).
  *
+ * Create and update each go through their own service-level mutation
+ * (`useCreateVehicleMutation`/`useUpdateVehicleMutation`, both already owning their
+ * own list-invalidation), mirroring `CustomerFormModal`/`BookingFormModal`'s exact
+ * same pattern (audit fix: these used to be inlined directly in this component,
+ * the one form whose create/update mutations hadn't yet moved to their own
+ * `*.service.ts` — moved here purely for consistency, no change to the underlying
+ * HTTP call, invalidation, or error-handling behaviour).
+ *
  * The discard-guard (spec-2-2) lives entirely here, not in `Modal`: intercepting
  * `Modal`'s `closeRequest`, if the form is dirty a `ConfirmDialog` is shown instead
  * of changing `Modal`'s `open` state at all — `Modal` never actually closes (and
@@ -69,10 +75,9 @@ export class VehicleFormModal {
   readonly vehicle = input<Vehicle | null>(null);
   readonly closeRequest = output<void>();
 
-  private readonly apiClient = inject(ApiClient);
-  private readonly queryClient = inject(QueryClient);
   private readonly toastService = inject(ToastService);
   private readonly fb = inject(FormBuilder);
+  private readonly destroyRef = inject(DestroyRef);
 
   protected readonly form = this.fb.nonNullable.group({
     registrationNumber: ['', Validators.required],
@@ -96,6 +101,13 @@ export class VehicleFormModal {
   protected readonly modalTitle = computed(() => (this.vehicle() ? 'Edit Vehicle' : '+ New Vehicle'));
   protected readonly submitLabel = computed(() =>
     this.vehicle() ? 'Save Changes' : 'Create Vehicle',
+  );
+
+  protected readonly createMutation = useCreateVehicleMutation();
+  protected readonly updateMutation = useUpdateVehicleMutation();
+
+  protected readonly isSubmitting = computed(
+    () => this.createMutation.isPending() || this.updateMutation.isPending(),
   );
 
   private wasOpen = false;
@@ -133,11 +145,16 @@ export class VehicleFormModal {
    * is always immediately followed there by an unconditional
    * `serverFieldErrors.set({})`, so this handler running during a reset never
    * leaves a stale or incorrectly-cleared error behind. Mirrors
-   * `BookingFormModal`'s exact same addition.
+   * `BookingFormModal`'s exact same addition. Each subscription is piped through
+   * `takeUntilDestroyed(this.destroyRef)` (audit fix: this had no teardown at all
+   * before, an unmanaged-subscription violation regardless of this app's current
+   * usage pattern of never actually destroying a mounted Modal instance) -- `destroyRef`
+   * is injected as its own class field precisely so this call site doesn't have to
+   * care whether it runs inside or outside an injection context.
    */
   private wireClearFieldErrorOnChange(): void {
     for (const name of Object.keys(this.form.controls) as VehicleFormFieldName[]) {
-      this.form.controls[name].valueChanges.subscribe(() => {
+      this.form.controls[name].valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => {
         this.serverFieldErrors.update((errors) => {
           if (!(name in errors)) {
             return errors;
@@ -149,25 +166,6 @@ export class VehicleFormModal {
     }
   }
 
-  protected readonly mutation = injectMutation<VehicleDto, NormalizedApiError, VehiclePayload>(
-    () => ({
-      mutationFn: (payload) => {
-        const vehicle = this.vehicle();
-        return vehicle
-          ? firstValueFrom(
-              this.apiClient.put<VehicleDto, VehiclePayload>(`vehicles/${vehicle.id}`, payload),
-            )
-          : firstValueFrom(this.apiClient.post<VehicleDto, VehiclePayload>('vehicles', payload));
-      },
-      onSuccess: () => {
-        this.queryClient.invalidateQueries({ queryKey: VEHICLES_LIST_QUERY_KEY });
-        this.toastService.success(this.vehicle() ? 'Vehicle updated.' : 'Vehicle created.');
-        this.resetAndClose();
-      },
-      onError: (error) => this.applyError(error),
-    }),
-  );
-
   protected onSubmit(): void {
     this.serverErrorMessage.set(null);
     this.serverFieldErrors.set({});
@@ -178,12 +176,36 @@ export class VehicleFormModal {
     }
 
     const value = this.form.getRawValue();
-    this.mutation.mutate({
+    const payload: CreateVehiclePayload = {
       registrationNumber: value.registrationNumber,
       make: value.make,
       model: value.model,
       year: Number(value.year),
       dailyRate: Number(value.dailyRate),
+    };
+
+    const vehicle = this.vehicle();
+
+    if (vehicle) {
+      this.updateMutation.mutate(
+        { vehicleId: vehicle.id, payload },
+        {
+          onSuccess: () => {
+            this.toastService.success('Vehicle updated.');
+            this.resetAndClose();
+          },
+          onError: (error: NormalizedApiError) => this.applyError(error),
+        },
+      );
+      return;
+    }
+
+    this.createMutation.mutate(payload, {
+      onSuccess: () => {
+        this.toastService.success('Vehicle created.');
+        this.resetAndClose();
+      },
+      onError: (error: NormalizedApiError) => this.applyError(error),
     });
   }
 
