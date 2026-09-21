@@ -21,7 +21,7 @@ public class AppDbContextFactory : IDesignTimeDbContextFactory<AppDbContext>
     {
         var optionsBuilder = new DbContextOptionsBuilder<AppDbContext>();
         optionsBuilder.UseNpgsql(
-            "Host=localhost;Port=5432;Database=brunovehiclehire;Username=bruno;Password=bruno_dev_password");
+            "Host=localhost;Port=5432;Database=brunovehiclehire;Username=bruno;Password=design-time-only-unused");
 
         var designTimeKeyDirectory = new DirectoryInfo(
             Path.Combine(Path.GetTempPath(), "BrunoVehicleHire.DesignTimeDataProtectionKeys"));

@@ -20,8 +20,15 @@ obj/
 # Local Data Protection key ring (host-run Api, see docker-compose.yml)
 /src/BrunoVehicleHire.Api/dataprotection-keys/
 
+# Local secrets (see .env.example)
+/.env
+
 # Angular (frontend/)
 frontend/node_modules/
 frontend/dist/
 frontend/.angular/
 frontend/coverage/
+
+# Local dev environment file with a real (dev-only) API key -- see environment.development.ts.example
+frontend/src/environments/environment.development.ts
+!frontend/src/environments/environment.development.ts.example

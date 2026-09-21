@@ -73,7 +73,33 @@ dotnet user-secrets set "MediatR:LicenseKey" "<your-key>"
 
 If you skip this step, the app still runs — MediatR logs a one-time warning that the Community edition is "allowed for development and testing scenarios" — but a real license key is one minute of setup and removes the warning.
 
-### 3. Run the backend
+### 3. Set the dev API key and DB connection string via user-secrets
+
+Like the MediatR license key above, the local dev API key and the Postgres connection string (with its password) are sourced via `dotnet user-secrets` rather than committed to `appsettings.Development.json`. Set them to the same placeholder values used throughout local dev and this README:
+
+```bash
+cd src/BrunoVehicleHire.Api
+dotnet user-secrets set "ApiKey:Key" "local-dev-only-key-change-me"
+dotnet user-secrets set "ConnectionStrings:Postgres" "Host=localhost;Port=5432;Database=brunovehiclehire;Username=bruno;Password=bruno_dev_password"
+```
+
+### 4. Create the `.env` file for docker-compose
+
+`docker-compose.yml` reads the Postgres password from a gitignored `.env` file at the repo root rather than committing it. Copy the provided template (already using the same placeholder password as above):
+
+```bash
+cp .env.example .env
+```
+
+### 5. Create the frontend's dev environment file
+
+`frontend/src/environments/environment.development.ts` is gitignored (it carries the dev API key). Copy the provided template (already using the same placeholder key as above):
+
+```bash
+cp frontend/src/environments/environment.development.ts.example frontend/src/environments/environment.development.ts
+```
+
+### 6. Run the backend
 
 ```bash
 cd src/BrunoVehicleHire.Api
@@ -86,7 +112,7 @@ On startup this:
 
 The API listens on `https://localhost:7291` (and `http://localhost:5297`). Swagger UI is at **`https://localhost:7291/swagger`** — use its "Authorize" button to supply the API key (see below) and exercise every endpoint directly.
 
-### 4. Run the frontend
+### 7. Run the frontend
 
 ```bash
 cd frontend
@@ -94,11 +120,11 @@ npm install   # first time only
 npm start     # ng serve
 ```
 
-The Angular app is at **`http://localhost:4200`**. Its dev server proxies `/api/*` requests to the backend (`frontend/proxy.conf.json`, targeting `https://localhost:7291`) and already attaches the `X-Api-Key` header automatically (`frontend/src/app/core/api-client/api-key.interceptor.ts`), reading the key from `frontend/src/environments/environment.ts` — which is pre-set to match `appsettings.Development.json`'s dev key, so no extra configuration is needed for a local run.
+The Angular app is at **`http://localhost:4200`**. Its dev server proxies `/api/*` requests to the backend (`frontend/proxy.conf.json`, targeting `https://localhost:7291`) and already attaches the `X-Api-Key` header automatically (`frontend/src/app/core/api-client/api-key.interceptor.ts`), reading the key from `frontend/src/environments/environment.ts` (replaced with `environment.development.ts` at build time) — pre-set to match the dev API key from step 3, so no extra configuration beyond copying the file in step 5 is needed for a local run.
 
 ### The API key, if calling the API directly
 
-Every endpoint (except Swagger's own UI assets) requires an `X-Api-Key` header. The local development key is `local-dev-only-key-change-me` (`appsettings.Development.json`) — e.g.:
+Every endpoint (except Swagger's own UI assets) requires an `X-Api-Key` header. The local development key is `local-dev-only-key-change-me` (set via `dotnet user-secrets`, see step 3) — e.g.:
 
 ```bash
 curl https://localhost:7291/api/vehicles -H "X-Api-Key: local-dev-only-key-change-me"
