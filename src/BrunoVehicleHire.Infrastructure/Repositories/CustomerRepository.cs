@@ -30,9 +30,10 @@ public class CustomerRepository(AppDbContext dbContext) : ICustomerRepository
 
         if (!string.IsNullOrWhiteSpace(search))
         {
+            var escapedSearch = LikePatternEscaper.Escape(search);
             query = query.Where(c =>
-                EF.Functions.ILike(c.FirstName, $"%{search}%") ||
-                EF.Functions.ILike(c.LastName, $"%{search}%"));
+                EF.Functions.ILike(c.FirstName, $"%{escapedSearch}%", LikePatternEscaper.EscapeCharacter) ||
+                EF.Functions.ILike(c.LastName, $"%{escapedSearch}%", LikePatternEscaper.EscapeCharacter));
         }
 
         var totalCount = await query.CountAsync(cancellationToken);

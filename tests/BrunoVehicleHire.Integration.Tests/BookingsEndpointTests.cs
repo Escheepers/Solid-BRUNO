@@ -522,6 +522,64 @@ public class BookingsEndpointTests : IAsyncLifetime
     }
 
     /// <summary>
+    /// Regression test for the adversarial-found bug (spec-search-wildcard-escaping): the raw
+    /// <c>search</c> string used to be interpolated straight into the <c>ILIKE</c> pattern, so a
+    /// bare <c>"%"</c> became the pattern <c>"%%%"</c> (matches anything -- confirmed live: 59/59
+    /// bookings on the running app) and a bare <c>"_"</c> became <c>"%_%"</c> (also matches any
+    /// non-empty string). Both must now match only rows whose joined Vehicle/Customer fields
+    /// contain that character literally. Mirrors
+    /// <see cref="VehiclesEndpointTests.Get_SearchWithLiteralPercentOrUnderscore_TreatsThemLiterally_NeverAsWildcards"/>.
+    /// </summary>
+    [Fact]
+    public async Task Get_SearchWithLiteralPercentOrUnderscore_TreatsThemLiterally_NeverAsWildcards()
+    {
+        var percentVehicle = await SeedActiveVehicleAsync(registrationNumber: "CA400001");
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var tracked = await dbContext.Vehicles.SingleAsync(v => v.Id == percentVehicle.Id);
+            tracked.Update("CA400001", "50% Off Deals", "Corolla", 2023, 350m);
+            await dbContext.SaveChangesAsync();
+        }
+
+        var underscoreVehicle = await SeedActiveVehicleAsync(registrationNumber: "CA_400003");
+        var decoyVehicle = await SeedActiveVehicleAsync(registrationNumber: "CAX400003");
+        var plainVehicle = await SeedActiveVehicleAsync(registrationNumber: "CA400002");
+        var customer = await SeedActiveCustomerAsync();
+
+        var percentBooking = await SeedBookingAsync(percentVehicle, customer);
+        var underscoreBooking = await SeedBookingAsync(
+            underscoreVehicle, customer, new DateOnly(2026, 11, 1), new DateOnly(2026, 11, 3));
+        await SeedBookingAsync(decoyVehicle, customer, new DateOnly(2026, 11, 5), new DateOnly(2026, 11, 7));
+        await SeedBookingAsync(plainVehicle, customer, new DateOnly(2026, 11, 9), new DateOnly(2026, 11, 11));
+
+        // A bare "%" must match only the booking whose vehicle has a literal "%" -- not every
+        // booking (4 seeded here).
+        using var percentOnlyRequest =
+            AuthenticatedGet($"/api/bookings?page=1&pageSize=20&search={Uri.EscapeDataString("%")}");
+        var percentOnlyResponse = await _client.SendAsync(percentOnlyRequest);
+        var percentOnlyJson = await percentOnlyResponse.Content.ReadAsStringAsync();
+        using var percentOnlyDocument = JsonDocument.Parse(percentOnlyJson);
+
+        percentOnlyDocument.RootElement.GetProperty("totalCount").GetInt32().Should().Be(1);
+        percentOnlyDocument.RootElement.GetProperty("items")[0].GetProperty("id").GetGuid()
+            .Should().Be(percentBooking.Id);
+
+        // A bare "_" must match only the booking whose vehicle registration has a literal "_" --
+        // not the same-length decoy registration "CAX400003" that a single-char wildcard would
+        // otherwise also match.
+        using var underscoreOnlyRequest =
+            AuthenticatedGet($"/api/bookings?page=1&pageSize=20&search={Uri.EscapeDataString("_")}");
+        var underscoreOnlyResponse = await _client.SendAsync(underscoreOnlyRequest);
+        var underscoreOnlyJson = await underscoreOnlyResponse.Content.ReadAsStringAsync();
+        using var underscoreOnlyDocument = JsonDocument.Parse(underscoreOnlyJson);
+
+        underscoreOnlyDocument.RootElement.GetProperty("totalCount").GetInt32().Should().Be(1);
+        underscoreOnlyDocument.RootElement.GetProperty("items")[0].GetProperty("id").GetGuid()
+            .Should().Be(underscoreBooking.Id);
+    }
+
+    /// <summary>
     /// Proves <c>search</c> and the pre-existing <c>vehicleId</c> filter compose (AND, not that either
     /// overrides the other) -- Vehicle Detail's own booking-history call site never sets <c>search</c>,
     /// so its behavior stays completely unaffected by this story.

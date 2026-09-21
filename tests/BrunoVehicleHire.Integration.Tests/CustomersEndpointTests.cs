@@ -202,6 +202,60 @@ public class CustomersEndpointTests : IAsyncLifetime
         firstNames.Should().NotContain("Carol");
     }
 
+    /// <summary>
+    /// Regression test for the adversarial-found bug (spec-search-wildcard-escaping): the raw
+    /// <c>search</c> string used to be interpolated straight into the <c>ILIKE</c> pattern, so a
+    /// bare <c>"%"</c> became the pattern <c>"%%%"</c> (matches anything) and a bare <c>"_"</c>
+    /// became <c>"%_%"</c> (also matches any non-empty string, since <c>_</c> matches any single
+    /// character). Both must now match only rows containing that character literally. Mirrors
+    /// <see cref="VehiclesEndpointTests.Get_SearchWithLiteralPercentOrUnderscore_TreatsThemLiterally_NeverAsWildcards"/>.
+    /// </summary>
+    [Fact]
+    public async Task Get_SearchWithLiteralPercentOrUnderscore_TreatsThemLiterally_NeverAsWildcards()
+    {
+        var percentCustomer = Customer.Create("50%", "Off", "percent@example.com", "0821110001");
+        var underscoreCustomer = Customer.Create("CA_123", "Test", "underscore@example.com", "0821110002");
+        var decoyCustomer = Customer.Create("CAX123", "Similar", "decoy@example.com", "0821110003");
+        var plainCustomer = Customer.Create("Alice", "Anderson", "alice.plain@example.com", "0821110004");
+
+        await SeedCustomersAsync(percentCustomer, underscoreCustomer, decoyCustomer, plainCustomer);
+
+        // A bare "%" must match only the row with a literal "%" -- not every row (4 seeded here).
+        using var percentOnlyRequest =
+            AuthenticatedGet($"/api/customers?page=1&pageSize=20&search={Uri.EscapeDataString("%")}");
+        var percentOnlyResponse = await _client.SendAsync(percentOnlyRequest);
+        var percentOnlyJson = await percentOnlyResponse.Content.ReadAsStringAsync();
+        using var percentOnlyDocument = JsonDocument.Parse(percentOnlyJson);
+
+        percentOnlyDocument.RootElement.GetProperty("totalCount").GetInt32().Should().Be(1);
+        percentOnlyDocument.RootElement.GetProperty("items")[0].GetProperty("firstName").GetString()
+            .Should().Be("50%");
+
+        // A bare "_" must match only the row with a literal "_" -- not the same-length decoy
+        // first name "CAX123" that a single-char wildcard would otherwise also match.
+        using var underscoreOnlyRequest =
+            AuthenticatedGet($"/api/customers?page=1&pageSize=20&search={Uri.EscapeDataString("_")}");
+        var underscoreOnlyResponse = await _client.SendAsync(underscoreOnlyRequest);
+        var underscoreOnlyJson = await underscoreOnlyResponse.Content.ReadAsStringAsync();
+        using var underscoreOnlyDocument = JsonDocument.Parse(underscoreOnlyJson);
+
+        underscoreOnlyDocument.RootElement.GetProperty("totalCount").GetInt32().Should().Be(1);
+        underscoreOnlyDocument.RootElement.GetProperty("items")[0].GetProperty("firstName").GetString()
+            .Should().Be("CA_123");
+
+        // The full literal first name containing "_" must match itself exactly, and must NOT also
+        // match the decoy "CAX123" (same length, "_" replaced with a real character).
+        using var underscoreFullRequest =
+            AuthenticatedGet($"/api/customers?page=1&pageSize=20&search={Uri.EscapeDataString("CA_123")}");
+        var underscoreFullResponse = await _client.SendAsync(underscoreFullRequest);
+        var underscoreFullJson = await underscoreFullResponse.Content.ReadAsStringAsync();
+        using var underscoreFullDocument = JsonDocument.Parse(underscoreFullJson);
+
+        underscoreFullDocument.RootElement.GetProperty("totalCount").GetInt32().Should().Be(1);
+        underscoreFullDocument.RootElement.GetProperty("items")[0].GetProperty("firstName").GetString()
+            .Should().Be("CA_123");
+    }
+
     [Theory]
     [InlineData("page=0&pageSize=20")]
     [InlineData("page=1&pageSize=500")]

@@ -29,10 +29,11 @@ public class VehicleRepository(AppDbContext dbContext) : IVehicleRepository
 
         if (!string.IsNullOrWhiteSpace(search))
         {
+            var escapedSearch = LikePatternEscaper.Escape(search);
             query = query.Where(v =>
-                EF.Functions.ILike(v.Make, $"%{search}%") ||
-                EF.Functions.ILike(v.Model, $"%{search}%") ||
-                EF.Functions.ILike(v.RegistrationNumber, $"%{search}%"));
+                EF.Functions.ILike(v.Make, $"%{escapedSearch}%", LikePatternEscaper.EscapeCharacter) ||
+                EF.Functions.ILike(v.Model, $"%{escapedSearch}%", LikePatternEscaper.EscapeCharacter) ||
+                EF.Functions.ILike(v.RegistrationNumber, $"%{escapedSearch}%", LikePatternEscaper.EscapeCharacter));
         }
 
         var totalCount = await query.CountAsync(cancellationToken);

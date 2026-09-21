@@ -258,6 +258,70 @@ public class VehiclesEndpointTests : IAsyncLifetime
         registrations.Should().NotContain("CA666666");
     }
 
+    /// <summary>
+    /// Regression test for the adversarial-found bug (spec-search-wildcard-escaping): the raw
+    /// <c>search</c> string used to be interpolated straight into the <c>ILIKE</c> pattern, so a
+    /// bare <c>"%"</c> became the pattern <c>"%%%"</c> (matches anything) and a bare <c>"_"</c>
+    /// became <c>"%_%"</c> (also matches any non-empty string, since <c>_</c> matches any single
+    /// character). Both must now match only rows containing that character literally.
+    /// </summary>
+    [Fact]
+    public async Task Get_SearchWithLiteralPercentOrUnderscore_TreatsThemLiterally_NeverAsWildcards()
+    {
+        var percentVehicle = Vehicle.Create("CA400001", "50% Off Deals", "Corolla", 2023, 350m);
+        var underscoreVehicle = Vehicle.Create("CA_400003", "Honda", "Civic", 2024, 400m);
+        var decoyVehicle = Vehicle.Create("CAX400003", "Mazda", "3", 2021, 280m);
+        var plainVehicle = Vehicle.Create("CA400002", "Toyota", "Corolla", 2023, 350m);
+
+        await SeedVehiclesAsync(percentVehicle, underscoreVehicle, decoyVehicle, plainVehicle);
+
+        // A bare "%" must match only the row with a literal "%" -- not every row (4 seeded here).
+        using var percentOnlyRequest =
+            AuthenticatedGet($"/api/vehicles?page=1&pageSize=20&search={Uri.EscapeDataString("%")}");
+        var percentOnlyResponse = await _client.SendAsync(percentOnlyRequest);
+        var percentOnlyJson = await percentOnlyResponse.Content.ReadAsStringAsync();
+        using var percentOnlyDocument = JsonDocument.Parse(percentOnlyJson);
+
+        percentOnlyDocument.RootElement.GetProperty("totalCount").GetInt32().Should().Be(1);
+        percentOnlyDocument.RootElement.GetProperty("items")[0].GetProperty("registrationNumber").GetString()
+            .Should().Be("CA400001");
+
+        // A literal "%" substring match still works as an ordinary substring search.
+        using var percentSubstringRequest =
+            AuthenticatedGet($"/api/vehicles?page=1&pageSize=20&search={Uri.EscapeDataString("50%")}");
+        var percentSubstringResponse = await _client.SendAsync(percentSubstringRequest);
+        var percentSubstringJson = await percentSubstringResponse.Content.ReadAsStringAsync();
+        using var percentSubstringDocument = JsonDocument.Parse(percentSubstringJson);
+
+        percentSubstringDocument.RootElement.GetProperty("totalCount").GetInt32().Should().Be(1);
+        percentSubstringDocument.RootElement.GetProperty("items")[0].GetProperty("registrationNumber").GetString()
+            .Should().Be("CA400001");
+
+        // A bare "_" must match only the row with a literal "_" -- not the same-length decoy
+        // registration number "CAX400003" that a single-char wildcard would otherwise also match.
+        using var underscoreOnlyRequest =
+            AuthenticatedGet($"/api/vehicles?page=1&pageSize=20&search={Uri.EscapeDataString("_")}");
+        var underscoreOnlyResponse = await _client.SendAsync(underscoreOnlyRequest);
+        var underscoreOnlyJson = await underscoreOnlyResponse.Content.ReadAsStringAsync();
+        using var underscoreOnlyDocument = JsonDocument.Parse(underscoreOnlyJson);
+
+        underscoreOnlyDocument.RootElement.GetProperty("totalCount").GetInt32().Should().Be(1);
+        underscoreOnlyDocument.RootElement.GetProperty("items")[0].GetProperty("registrationNumber").GetString()
+            .Should().Be("CA_400003");
+
+        // The full literal registration number containing "_" must match itself exactly, and must
+        // NOT also match the decoy "CAX400003" (same length, "_" replaced with a real character).
+        using var underscoreFullRequest =
+            AuthenticatedGet($"/api/vehicles?page=1&pageSize=20&search={Uri.EscapeDataString("CA_400003")}");
+        var underscoreFullResponse = await _client.SendAsync(underscoreFullRequest);
+        var underscoreFullJson = await underscoreFullResponse.Content.ReadAsStringAsync();
+        using var underscoreFullDocument = JsonDocument.Parse(underscoreFullJson);
+
+        underscoreFullDocument.RootElement.GetProperty("totalCount").GetInt32().Should().Be(1);
+        underscoreFullDocument.RootElement.GetProperty("items")[0].GetProperty("registrationNumber").GetString()
+            .Should().Be("CA_400003");
+    }
+
     [Fact]
     public async Task Get_MissingApiKey_Returns401_FallbackPolicyStillApplies()
     {

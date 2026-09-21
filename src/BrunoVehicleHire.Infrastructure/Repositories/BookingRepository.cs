@@ -68,12 +68,13 @@ public class BookingRepository(AppDbContext dbContext) : IBookingRepository
 
         if (!string.IsNullOrWhiteSpace(search))
         {
+            var escapedSearch = LikePatternEscaper.Escape(search);
             joinedQuery = joinedQuery.Where(row =>
-                EF.Functions.ILike(row.vehicle.Make, $"%{search}%") ||
-                EF.Functions.ILike(row.vehicle.Model, $"%{search}%") ||
-                EF.Functions.ILike(row.vehicle.RegistrationNumber, $"%{search}%") ||
-                EF.Functions.ILike(row.customer.FirstName, $"%{search}%") ||
-                EF.Functions.ILike(row.customer.LastName, $"%{search}%"));
+                EF.Functions.ILike(row.vehicle.Make, $"%{escapedSearch}%", LikePatternEscaper.EscapeCharacter) ||
+                EF.Functions.ILike(row.vehicle.Model, $"%{escapedSearch}%", LikePatternEscaper.EscapeCharacter) ||
+                EF.Functions.ILike(row.vehicle.RegistrationNumber, $"%{escapedSearch}%", LikePatternEscaper.EscapeCharacter) ||
+                EF.Functions.ILike(row.customer.FirstName, $"%{escapedSearch}%", LikePatternEscaper.EscapeCharacter) ||
+                EF.Functions.ILike(row.customer.LastName, $"%{escapedSearch}%", LikePatternEscaper.EscapeCharacter));
         }
 
         var totalCount = await joinedQuery.CountAsync(cancellationToken);
