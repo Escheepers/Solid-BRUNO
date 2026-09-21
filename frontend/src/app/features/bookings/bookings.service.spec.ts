@@ -63,7 +63,7 @@ describe('useBookingsQuery', () => {
     TestBed.resetTestingModule();
   });
 
-  it('GETs bookings with only page/pageSize params (no search/showInactive, per Scope decision 3)', async () => {
+  it('GETs bookings with only page/pageSize params when no vehicleId/search is supplied', async () => {
     TestBed.runInInjectionContext(() => useBookingsQuery(() => ({ page: 2, pageSize: 20 })));
     await flushMicrotasks();
 
@@ -73,6 +73,44 @@ describe('useBookingsQuery', () => {
     expect(req.request.method).toBe('GET');
     expect(req.request.params.keys().sort()).toEqual(['page', 'pageSize']);
     req.flush({ items: [bookingDto()], totalCount: 1, page: 2, pageSize: 20 });
+  });
+
+  it('includes search in the request when supplied (spec-bookings-search)', async () => {
+    TestBed.runInInjectionContext(() =>
+      useBookingsQuery(() => ({ page: 1, pageSize: 20, search: 'Ferrari' })),
+    );
+    await flushMicrotasks();
+
+    const req = httpMock.expectOne(
+      (r) => r.url === '/api/bookings' && r.params.get('search') === 'Ferrari',
+    );
+    expect(req.request.params.keys().sort()).toEqual(['page', 'pageSize', 'search']);
+    req.flush({ items: [], totalCount: 0, page: 1, pageSize: 20 });
+  });
+
+  it('omits search from the request when it is empty/whitespace-only', async () => {
+    TestBed.runInInjectionContext(() =>
+      useBookingsQuery(() => ({ page: 1, pageSize: 20, search: '   ' })),
+    );
+    await flushMicrotasks();
+
+    const req = httpMock.expectOne((r) => r.url === '/api/bookings');
+    expect(req.request.params.keys().sort()).toEqual(['page', 'pageSize']);
+    req.flush({ items: [], totalCount: 0, page: 1, pageSize: 20 });
+  });
+
+  it('includes both vehicleId and search in the request when both are supplied (composable filters)', async () => {
+    TestBed.runInInjectionContext(() =>
+      useBookingsQuery(() => ({ page: 1, pageSize: 20, vehicleId: 'v1', search: 'Nkosi' })),
+    );
+    await flushMicrotasks();
+
+    const req = httpMock.expectOne(
+      (r) =>
+        r.url === '/api/bookings' && r.params.get('vehicleId') === 'v1' && r.params.get('search') === 'Nkosi',
+    );
+    expect(req.request.params.keys().sort()).toEqual(['page', 'pageSize', 'search', 'vehicleId']);
+    req.flush({ items: [], totalCount: 0, page: 1, pageSize: 20 });
   });
 
   it('resolves with the fetched PagedResult<BookingDto> on success', async () => {

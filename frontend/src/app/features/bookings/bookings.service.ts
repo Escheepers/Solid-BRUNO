@@ -18,6 +18,14 @@ export interface BookingsQueryParams {
    * rather than a second, near-duplicate query (DRY).
    */
   vehicleId?: string;
+  /**
+   * Optional free-text search (spec-bookings-search), matching a booking's Vehicle
+   * Make/Model/RegistrationNumber or Customer's first/last name (a single search
+   * box, OR'd across all five fields server-side). Additive and independent of
+   * `vehicleId` -- Vehicle Detail's own booking-history call site never supplies
+   * this, so its behavior stays completely unaffected.
+   */
+  search?: string;
 }
 
 /**
@@ -44,32 +52,37 @@ export const BOOKINGS_LIST_QUERY_KEY = ['bookings', 'list'] as const;
  * Wraps `injectQuery` over `ApiClient.get<PagedResult<BookingDto>>('bookings', ...)`,
  * mirroring `useVehiclesQuery`/`useCustomersQuery`'s exact shape -- minus `search`/
  * `showInactive` (spec-4-1's Scope decision 3: no free-text search or inactive
- * filter for this story's list; `GetBookingsQuery` takes only `page`/`pageSize`/
- * `vehicleId`). Query-key convention (AD-3):
- * `['bookings', 'list', { page, pageSize, vehicleId }]`. `params` is a function (not
- * a plain object) so `injectQuery`'s reactive context re-runs the query whenever any
- * Signal it reads (page/pageSize/vehicleId) changes.
+ * filter for this story's list; `GetBookingsQuery` also takes an optional `search`,
+ * see below). Query-key convention (AD-3):
+ * `['bookings', 'list', { page, pageSize, vehicleId, search }]`. `params` is a
+ * function (not a plain object) so `injectQuery`'s reactive context re-runs the
+ * query whenever any Signal it reads (page/pageSize/vehicleId/search) changes.
  *
- * `vehicleId` (spec-4-5's Scope decision 1) is omitted from the actual HTTP request
- * entirely when absent -- rather than sent as the literal string `"undefined"` --
- * so `BookingsPage`'s own unfiltered call (which never supplies it) keeps issuing
- * the exact same `?page=&pageSize=` request it always has. Vehicle Detail's
- * booking-history section (spec-4-5) is the first caller to supply it.
+ * `vehicleId` (spec-4-5's Scope decision 1) and `search` (spec-bookings-search) are
+ * each omitted from the actual HTTP request entirely when absent/empty -- rather
+ * than sent as the literal string `"undefined"` or an empty `search=` -- so
+ * `BookingsPage`'s own unfiltered call (which never supplies `vehicleId`, and
+ * supplies `search` only once the user has typed something) keeps issuing the exact
+ * same `?page=&pageSize=` request it always has until a filter is actually set.
+ * Vehicle Detail's booking-history section (spec-4-5) is the first caller to supply
+ * `vehicleId`, and never supplies `search`.
  */
 export function useBookingsQuery(params: () => BookingsQueryParams) {
   const apiClient = inject(ApiClient);
 
   return injectQuery(() => {
-    const { page, pageSize, vehicleId } = params();
+    const { page, pageSize, vehicleId, search } = params();
 
     return {
-      queryKey: ['bookings', 'list', { page, pageSize, vehicleId }] as const,
+      queryKey: ['bookings', 'list', { page, pageSize, vehicleId, search }] as const,
       queryFn: () =>
         firstValueFrom(
-          apiClient.get<PagedResult<BookingDto>>(
-            'bookings',
-            vehicleId ? { page, pageSize, vehicleId } : { page, pageSize },
-          ),
+          apiClient.get<PagedResult<BookingDto>>('bookings', {
+            page,
+            pageSize,
+            ...(vehicleId ? { vehicleId } : {}),
+            ...(search?.trim() ? { search } : {}),
+          }),
         ),
     };
   });

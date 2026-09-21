@@ -24,9 +24,11 @@ public class BookingsController(ISender sender) : ControllerBase
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
         [FromQuery] Guid? vehicleId = null,
+        [FromQuery] string? search = null,
         CancellationToken cancellationToken = default)
     {
-        var result = await sender.Send(new GetBookingsQuery(page, pageSize, vehicleId), cancellationToken);
+        var result = await sender.Send(
+            new GetBookingsQuery(page, pageSize, vehicleId, search), cancellationToken);
 
         return Ok(result);
     }

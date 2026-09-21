@@ -36,19 +36,23 @@ public class BookingRepository(AppDbContext dbContext) : IBookingRepository
     /// BOTH sides from day one (spec-4-1's Scope decision 4/AD-13) -- not deferred to a later story
     /// -- so a booking referencing an already-soft-deleted vehicle or an already-soft-deleted/
     /// anonymized customer still renders correctly in this list today, rather than silently dropping
-    /// the row via EF Core's global query filter on the join. The total count is taken from the
-    /// <c>Bookings</c> table alone, filtered by <paramref name="vehicleId"/> when set (never the
-    /// join): the FK constraints on VehicleId/CustomerId (<c>AppDbContext</c>,
-    /// <c>DeleteBehavior.Restrict</c>) guarantee every Booking row always has a matching
-    /// Vehicle/Customer row to join to, soft-deleted or not, so the inner join can never drop a row
-    /// -- computing the count from the join instead would just be a slower, equivalent query.
-    /// <paramref name="vehicleId"/> is <c>null</c> for the unfiltered Bookings list, or set for
-    /// Vehicle Detail's booking-history section (spec-4-5's Scope decision 1). Ordered by
-    /// <c>CreatedDate</c> then <c>Id</c> for a stable page boundary across requests, mirroring
-    /// <c>VehicleRepository</c>/<c>CustomerRepository</c>'s exact ordering.
+    /// the row via EF Core's global query filter on the join. <paramref name="vehicleId"/> is
+    /// <c>null</c> for the unfiltered Bookings list, or set for Vehicle Detail's booking-history
+    /// section (spec-4-5's Scope decision 1) -- filtered on the un-joined <c>Bookings</c> table before
+    /// the join, since it needs no Vehicle/Customer field. <paramref name="search"/>
+    /// (spec-bookings-search) case-insensitively substring-matches the joined Vehicle's
+    /// Make/Model/RegistrationNumber or Customer's FirstName/LastName (OR'd across all five fields via
+    /// <see cref="EF.Functions"/>' <c>ILike</c>, mirroring <c>VehicleRepository.GetPagedAsync</c>'s
+    /// exact pattern), applied only when non-null/non-whitespace. Because <paramref name="search"/>
+    /// needs the join's Vehicle/Customer columns, the total count is now taken from the same joined
+    /// (and, when set, search-filtered) query the paged rows are sliced from -- one query shape for
+    /// both, rather than the unfiltered-count-from-Bookings-alone shortcut this method used before
+    /// <paramref name="search"/> existed. Ordered by <c>CreatedDate</c> then <c>Id</c> for a stable
+    /// page boundary across requests, mirroring <c>VehicleRepository</c>/<c>CustomerRepository</c>'s
+    /// exact ordering.
     /// </summary>
     public async Task<(IReadOnlyList<(Booking Booking, Vehicle Vehicle, Customer Customer)> Items, int TotalCount)>
-        GetPagedAsync(int page, int pageSize, Guid? vehicleId, CancellationToken cancellationToken)
+        GetPagedAsync(int page, int pageSize, Guid? vehicleId, string? search, CancellationToken cancellationToken)
     {
         var bookingsQuery = dbContext.Bookings.AsQueryable();
         if (vehicleId is not null)
@@ -56,14 +60,27 @@ public class BookingRepository(AppDbContext dbContext) : IBookingRepository
             bookingsQuery = bookingsQuery.Where(b => b.VehicleId == vehicleId);
         }
 
-        var totalCount = await bookingsQuery.CountAsync(cancellationToken);
+        var joinedQuery =
+            from booking in bookingsQuery
+            join vehicle in dbContext.Vehicles.IgnoreQueryFilters() on booking.VehicleId equals vehicle.Id
+            join customer in dbContext.Customers.IgnoreQueryFilters() on booking.CustomerId equals customer.Id
+            select new { booking, vehicle, customer };
 
-        var rows = await (
-                from booking in bookingsQuery
-                join vehicle in dbContext.Vehicles.IgnoreQueryFilters() on booking.VehicleId equals vehicle.Id
-                join customer in dbContext.Customers.IgnoreQueryFilters() on booking.CustomerId equals customer.Id
-                orderby booking.CreatedDate, booking.Id
-                select new { booking, vehicle, customer })
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            joinedQuery = joinedQuery.Where(row =>
+                EF.Functions.ILike(row.vehicle.Make, $"%{search}%") ||
+                EF.Functions.ILike(row.vehicle.Model, $"%{search}%") ||
+                EF.Functions.ILike(row.vehicle.RegistrationNumber, $"%{search}%") ||
+                EF.Functions.ILike(row.customer.FirstName, $"%{search}%") ||
+                EF.Functions.ILike(row.customer.LastName, $"%{search}%"));
+        }
+
+        var totalCount = await joinedQuery.CountAsync(cancellationToken);
+
+        var rows = await joinedQuery
+            .OrderBy(row => row.booking.CreatedDate)
+            .ThenBy(row => row.booking.Id)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .ToListAsync(cancellationToken);

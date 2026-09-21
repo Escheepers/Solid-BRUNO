@@ -36,7 +36,7 @@ public class GetBookingsQueryHandlerTests
             vehicleTwo.Id, customerTwo.Id, new DateOnly(2026, 11, 1), new DateOnly(2026, 11, 3), 700m);
 
         var repository = Substitute.For<IBookingRepository>();
-        repository.GetPagedAsync(2, 10, null, Arg.Any<CancellationToken>())
+        repository.GetPagedAsync(2, 10, null, null, Arg.Any<CancellationToken>())
             .Returns((
                 new List<(Booking, Vehicle, Customer)>
                 {
@@ -62,14 +62,14 @@ public class GetBookingsQueryHandlerTests
         result.Items[1].Id.Should().Be(bookingTwo.Id);
         result.Items[1].CustomerIsAnonymized.Should().BeTrue();
 
-        await repository.Received(1).GetPagedAsync(2, 10, null, Arg.Any<CancellationToken>());
+        await repository.Received(1).GetPagedAsync(2, 10, null, null, Arg.Any<CancellationToken>());
     }
 
     [Fact]
     public async Task Handle_NoResults_ReturnsEmptyItemsWithZeroTotalCount()
     {
         var repository = Substitute.For<IBookingRepository>();
-        repository.GetPagedAsync(1, 20, null, Arg.Any<CancellationToken>())
+        repository.GetPagedAsync(1, 20, null, null, Arg.Any<CancellationToken>())
             .Returns((new List<(Booking, Vehicle, Customer)>(), 0));
 
         var handler = new GetBookingsQueryHandler(repository);
@@ -94,7 +94,7 @@ public class GetBookingsQueryHandlerTests
             vehicle.Id, customer.Id, new DateOnly(2026, 10, 1), new DateOnly(2026, 10, 5), 1400m);
 
         var repository = Substitute.For<IBookingRepository>();
-        repository.GetPagedAsync(1, 20, vehicle.Id, Arg.Any<CancellationToken>())
+        repository.GetPagedAsync(1, 20, vehicle.Id, null, Arg.Any<CancellationToken>())
             .Returns((new List<(Booking, Vehicle, Customer)> { (booking, vehicle, customer) }, 1));
 
         var handler = new GetBookingsQueryHandler(repository);
@@ -103,20 +103,61 @@ public class GetBookingsQueryHandlerTests
 
         result.Items.Should().ContainSingle(b => b.Id == booking.Id);
 
-        await repository.Received(1).GetPagedAsync(1, 20, vehicle.Id, Arg.Any<CancellationToken>());
+        await repository.Received(1).GetPagedAsync(1, 20, vehicle.Id, null, Arg.Any<CancellationToken>());
     }
 
     [Fact]
     public async Task Handle_VehicleIdOmitted_DefaultsToNullFilter()
     {
         var repository = Substitute.For<IBookingRepository>();
-        repository.GetPagedAsync(1, 20, null, Arg.Any<CancellationToken>())
+        repository.GetPagedAsync(1, 20, null, null, Arg.Any<CancellationToken>())
             .Returns((new List<(Booking, Vehicle, Customer)>(), 0));
 
         var handler = new GetBookingsQueryHandler(repository);
 
         await handler.Handle(new GetBookingsQuery(1, 20), CancellationToken.None);
 
-        await repository.Received(1).GetPagedAsync(1, 20, null, Arg.Any<CancellationToken>());
+        await repository.Received(1).GetPagedAsync(1, 20, null, null, Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
+    /// Proves the optional <c>Search</c> filter (spec-bookings-search) is passed straight through to
+    /// <see cref="IBookingRepository.GetPagedAsync"/> unchanged -- the handler applies no filtering
+    /// logic of its own, mirroring <see cref="Handle_VehicleIdSupplied_PassesItStraightThroughToRepository"/>'s
+    /// exact reasoning for the sibling optional filter.
+    /// </summary>
+    [Fact]
+    public async Task Handle_SearchSupplied_PassesItStraightThroughToRepository()
+    {
+        var vehicle = SomeVehicle();
+        var customer = SomeCustomer();
+        var booking = Booking.Create(
+            vehicle.Id, customer.Id, new DateOnly(2026, 10, 1), new DateOnly(2026, 10, 5), 1400m);
+
+        var repository = Substitute.For<IBookingRepository>();
+        repository.GetPagedAsync(1, 20, null, "Ferrari", Arg.Any<CancellationToken>())
+            .Returns((new List<(Booking, Vehicle, Customer)> { (booking, vehicle, customer) }, 1));
+
+        var handler = new GetBookingsQueryHandler(repository);
+
+        var result = await handler.Handle(new GetBookingsQuery(1, 20, Search: "Ferrari"), CancellationToken.None);
+
+        result.Items.Should().ContainSingle(b => b.Id == booking.Id);
+
+        await repository.Received(1).GetPagedAsync(1, 20, null, "Ferrari", Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Handle_SearchOmitted_DefaultsToNullFilter()
+    {
+        var repository = Substitute.For<IBookingRepository>();
+        repository.GetPagedAsync(1, 20, null, null, Arg.Any<CancellationToken>())
+            .Returns((new List<(Booking, Vehicle, Customer)>(), 0));
+
+        var handler = new GetBookingsQueryHandler(repository);
+
+        await handler.Handle(new GetBookingsQuery(1, 20), CancellationToken.None);
+
+        await repository.Received(1).GetPagedAsync(1, 20, null, null, Arg.Any<CancellationToken>());
     }
 }

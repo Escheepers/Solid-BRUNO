@@ -8,8 +8,26 @@
     <app-button (click)="openCreateModal()">+ New Booking</app-button>
   </div>
 
-  @if (isEmpty()) {
-    <p class="text-body text-text-muted">No bookings yet &mdash; create one.</p>
+  <div class="flex items-center gap-4">
+    <input
+      type="search"
+      placeholder="Search bookings..."
+      aria-label="Search bookings"
+      class="w-full max-w-sm rounded-md border border-input-border bg-input-bg px-4 py-2 text-body text-text-body placeholder:text-text-faint"
+      [value]="searchInput()"
+      (input)="onSearchInput($any($event.target).value)"
+    />
+  </div>
+
+  @if (isGenuinelyEmpty()) {
+    <p class="text-body text-text-muted" aria-live="polite">No bookings yet &mdash; create one.</p>
+  } @else if (isFilteredEmpty()) {
+    <div class="flex flex-col items-start gap-2">
+      <p class="text-body text-text-muted" aria-live="polite">No bookings match this search.</p>
+      <button type="button" class="text-button text-primary" (click)="clearFilters()">
+        Clear search
+      </button>
+    </div>
   } @else {
     <app-data-table
       [columns]="columns"

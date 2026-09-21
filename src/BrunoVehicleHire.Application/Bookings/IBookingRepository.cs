@@ -34,18 +34,25 @@ public interface IBookingRepository
     /// One page of bookings, each joined with its referenced <see cref="Vehicle"/>/
     /// <see cref="Customer"/> row for <see cref="Dtos.BookingDto.FromDomain"/> to project (spec-4-1's
     /// Boundaries: Booking itself carries no navigation properties -- AD-1). Deliberately takes no
-    /// <c>search</c>/<c>includeInactive</c> parameter, unlike <c>IVehicleRepository</c>/
-    /// <c>ICustomerRepository</c>'s <c>GetPagedAsync</c> (Scope decision 3) -- every booking is
-    /// always returned regardless of its Vehicle/Customer's active state (Scope decision 4).
-    /// <paramref name="vehicleId"/> is an additive, optional filter (spec-4-5's Scope decision 1):
-    /// when <c>null</c>, every booking is returned exactly as before; when set, only bookings for
-    /// that vehicle are returned -- backs both the unfiltered Bookings list and Vehicle Detail's
-    /// booking-history section.
+    /// <c>includeInactive</c> parameter, unlike <c>IVehicleRepository</c>/<c>ICustomerRepository</c>'s
+    /// <c>GetPagedAsync</c> -- every booking is always returned regardless of its Vehicle/Customer's
+    /// active state (Scope decision 4). <paramref name="vehicleId"/> is an additive, optional filter
+    /// (spec-4-5's Scope decision 1): when <c>null</c>, every booking is returned exactly as before;
+    /// when set, only bookings for that vehicle are returned -- backs both the unfiltered Bookings
+    /// list and Vehicle Detail's booking-history section. <paramref name="search"/>
+    /// (spec-bookings-search) is a second, independent optional filter: when <c>null</c>/whitespace,
+    /// no additional filtering is applied; when set, only bookings whose joined Vehicle's
+    /// Make/Model/RegistrationNumber or Customer's FirstName/LastName case-insensitively contain the
+    /// term are returned (OR'd across all five fields), mirroring
+    /// <c>IVehicleRepository.GetPagedAsync</c>'s own <c>ILike</c>-based search exactly. Composable
+    /// with <paramref name="vehicleId"/> -- Vehicle Detail's own call site always passes <c>search</c>
+    /// as <c>null</c>.
     /// </summary>
     Task<(IReadOnlyList<(Booking Booking, Vehicle Vehicle, Customer Customer)> Items, int TotalCount)> GetPagedAsync(
         int page,
         int pageSize,
         Guid? vehicleId,
+        string? search,
         CancellationToken cancellationToken);
 
     /// <summary>

@@ -1,5 +1,7 @@
-import { Component, OnInit, TemplateRef, ViewChild, computed, inject, signal } from '@angular/core';
+import { Component, OnInit, TemplateRef, ViewChild, computed, inject, linkedSignal, signal } from '@angular/core';
+import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { Router } from '@angular/router';
+import { debounceTime, distinctUntilChanged } from 'rxjs';
 
 import { NormalizedApiError } from '../../core/api-client/normalized-api-error';
 import { Badge } from '../../shared/badge/badge';
@@ -14,6 +16,7 @@ import { useBookingsQuery, useCancelBookingMutation } from './bookings.service';
 import { Booking, isCancellable, toBooking } from './models/booking';
 
 const PAGE_SIZE = 20;
+const SEARCH_DEBOUNCE_MS = 300;
 
 /** Mirrors `CustomersPage`'s `ANONYMIZED_CELL_CLASS` precedent exactly -- the one
  * shared class string for a row whose customer is anonymized (spec-3-5's
@@ -24,12 +27,15 @@ const DEFAULT_CANCEL_MESSAGE =
   'This booking will stay in records as Cancelled. This is not reversible.';
 
 /**
- * Story 4.1's real Bookings feature (extended by spec-4-3's Cancel action), replacing
- * Story 1.6's placeholder: a paginated `DataTable` (Vehicle/Customer/Start/End/Total/
- * Status columns, plus a per-row Cancel action for an eligible booking) and the
- * `BookingFormModal` for create. No search/filter bar exists yet (Scope decision 3 --
- * nothing in this story's AC names a field to search), so this is deliberately
- * simpler than `CustomersPage`/`VehiclesPage`'s debounced-search shape.
+ * Story 4.1's real Bookings feature (extended by spec-4-3's Cancel action and
+ * spec-bookings-search's search box), replacing Story 1.6's placeholder: a debounced
+ * search input, a paginated `DataTable` (Vehicle/Customer/Start/End/Total/Status
+ * columns, plus a per-row Cancel action for an eligible booking) and the
+ * `BookingFormModal` for create. The search Signal is debounced via `toObservable`
+ * -> `debounceTime` -> `distinctUntilChanged` -> `toSignal` (no manual
+ * `setTimeout`) per AD-3, mirroring `VehiclesPage`/`CustomersPage`'s exact chain --
+ * a single search box OR-matching a booking's Vehicle Make/Model/RegistrationNumber
+ * or Customer's first/last name, not five separate fields.
  *
  * The Status column is the one column that can't be expressed as a plain string
  * (`ColumnDef.cell`) -- it renders a real `Badge` component per row, via
@@ -62,12 +68,30 @@ export class BookingsPage implements OnInit {
   private readonly cancelMutation = useCancelBookingMutation();
 
   protected readonly pageSize = PAGE_SIZE;
-  protected readonly page = signal(1);
   protected readonly isFormModalOpen = signal(false);
+
+  protected readonly searchInput = signal('');
+
+  /** Mirrors `VehiclesPage`'s exact debounced-search chain (AD-3): `toObservable` ->
+   * `debounceTime` -> `distinctUntilChanged` -> `toSignal`, so only the debounced
+   * value participates in the query key below. */
+  protected readonly debouncedSearch = toSignal(
+    toObservable(this.searchInput).pipe(debounceTime(SEARCH_DEBOUNCE_MS), distinctUntilChanged()),
+    { initialValue: '' },
+  );
+
+  /** Resets to page 1 whenever `debouncedSearch` changes, mirroring `VehiclesPage`'s
+   * exact `linkedSignal` reasoning -- a filtered search shouldn't stay on a stale
+   * page number from the previous (unfiltered or differently-filtered) result set. */
+  protected readonly page = linkedSignal({
+    source: this.debouncedSearch,
+    computation: () => 1,
+  });
 
   protected readonly query = useBookingsQuery(() => ({
     page: this.page(),
     pageSize: this.pageSize,
+    search: this.debouncedSearch(),
   }));
 
   protected readonly cancelAction: ConfirmableAction<Booking> = createConfirmableAction<
@@ -135,11 +159,30 @@ export class BookingsPage implements OnInit {
 
   protected readonly totalCount = computed(() => this.query.data()?.totalCount ?? 0);
 
-  protected readonly isEmpty = computed(
+  private readonly hasSearchFilter = computed(() => this.debouncedSearch().trim().length > 0);
+  private readonly isEmptyResult = computed(
     () => !this.query.isPending() && this.totalCount() === 0,
   );
 
+  /** No bookings exist at all, and no search is active -- mirrors `VehiclesPage`'s
+   * exact `isGenuinelyEmpty`/`isFilteredEmpty` split. */
+  protected readonly isGenuinelyEmpty = computed(
+    () => this.isEmptyResult() && !this.hasSearchFilter(),
+  );
+  /** Bookings exist, but the current search term matches none of them. */
+  protected readonly isFilteredEmpty = computed(
+    () => this.isEmptyResult() && this.hasSearchFilter(),
+  );
+
   protected readonly rowKey = (booking: Booking): string => booking.id;
+
+  protected onSearchInput(value: string): void {
+    this.searchInput.set(value);
+  }
+
+  protected clearFilters(): void {
+    this.searchInput.set('');
+  }
 
   protected onPageChange(page: number): void {
     this.page.set(page);

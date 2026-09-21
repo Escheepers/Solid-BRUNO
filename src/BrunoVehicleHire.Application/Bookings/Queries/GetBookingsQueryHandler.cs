@@ -16,7 +16,7 @@ public class GetBookingsQueryHandler(IBookingRepository repository)
     public async Task<PagedResult<BookingDto>> Handle(GetBookingsQuery request, CancellationToken cancellationToken)
     {
         var (items, totalCount) = await repository.GetPagedAsync(
-            request.Page, request.PageSize, request.VehicleId, cancellationToken);
+            request.Page, request.PageSize, request.VehicleId, request.Search, cancellationToken);
 
         var dtos = items
             .Select(item => BookingDto.FromDomain(item.Booking, item.Vehicle, item.Customer))

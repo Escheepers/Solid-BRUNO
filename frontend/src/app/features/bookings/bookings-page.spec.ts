@@ -101,8 +101,27 @@ describe('BookingsPage', () => {
     });
   }
 
-  function expectBookingsRequest() {
-    return httpMock.expectOne((req) => req.url === '/api/bookings');
+  /** `matchSearch` is `undefined` to match regardless of the `search` param,
+   * `null` to require it be absent entirely (spec-bookings-search's omit-when-empty
+   * behavior -- unlike `VehiclesPage`, which always sends `search=`), or a string to
+   * require that exact value. */
+  function expectBookingsRequest(matchSearch?: string | null) {
+    return httpMock.expectOne(
+      (req) =>
+        req.url === '/api/bookings' &&
+        (matchSearch === undefined ||
+          (matchSearch === null ? req.params.get('search') === null : req.params.get('search') === matchSearch)),
+    );
+  }
+
+  function searchInput(): HTMLInputElement {
+    return fixture.nativeElement.querySelector('input[type="search"]');
+  }
+
+  function setSearch(value: string): void {
+    const input = searchInput();
+    input.value = value;
+    input.dispatchEvent(new Event('input'));
   }
 
   it('shows Skeleton rows (via DataTable) while the first request is in flight', async () => {
@@ -327,6 +346,107 @@ describe('BookingsPage', () => {
     const req = httpMock.expectOne((r) => r.url === '/api/bookings' && r.params.get('page') === '2');
     req.flush(pagedResult([bookingDto()], { totalCount: 100, page: 2 }));
     await settle();
+  });
+
+  describe('search (spec-bookings-search)', () => {
+    it('issues the initial request with no search param at all', async () => {
+      await settle();
+
+      const req = expectBookingsRequest(null);
+      expect(req.request.params.keys()).not.toContain('search');
+      req.flush(pagedResult([]));
+      flushPickerQueries();
+      await settle();
+    });
+
+    it('debounces the search input, issuing exactly one re-fetch ~300ms after the user stops typing', async () => {
+      await settle();
+      expectBookingsRequest().flush(pagedResult([bookingDto()]));
+      flushPickerQueries();
+      await settle();
+
+      setSearch('f');
+      fixture.detectChanges();
+      setSearch('fe');
+      fixture.detectChanges();
+      setSearch('fer');
+      fixture.detectChanges();
+
+      // No fetch yet -- rapid keystrokes shouldn't trigger a request per keystroke.
+      httpMock.expectNone((req) => req.url === '/api/bookings' && req.params.get('search') === 'fer');
+
+      await new Promise((resolve) => setTimeout(resolve, 350));
+      await settle();
+
+      expectBookingsRequest('fer').flush(pagedResult([]));
+    });
+
+    it('resets to page 1 when the (debounced) search term changes', async () => {
+      await settle();
+      expectBookingsRequest().flush(pagedResult([bookingDto()], { totalCount: 100 }));
+      flushPickerQueries();
+      await settle();
+
+      const nextButton = Array.from<HTMLButtonElement>(
+        fixture.nativeElement.querySelectorAll('button'),
+      ).find((b) => b.textContent?.trim() === 'Next');
+      nextButton!.click();
+      await settle();
+
+      httpMock.expectOne((r) => r.url === '/api/bookings' && r.params.get('page') === '2')
+        .flush(pagedResult([bookingDto()], { totalCount: 100, page: 2 }));
+      await settle();
+
+      setSearch('nkosi');
+      fixture.detectChanges();
+
+      await new Promise((resolve) => setTimeout(resolve, 350));
+      await settle();
+
+      const req = expectBookingsRequest('nkosi');
+      expect(req.request.params.get('page')).toBe('1');
+      req.flush(pagedResult([bookingDto()]));
+    });
+
+    it('shows "No bookings match this search" with a working "Clear search" action when a search yields zero results', async () => {
+      await settle();
+      expectBookingsRequest().flush(pagedResult([bookingDto()]));
+      flushPickerQueries();
+      await settle();
+
+      setSearch('zzz-nomatch');
+      fixture.detectChanges();
+
+      await new Promise((resolve) => setTimeout(resolve, 350));
+      await settle();
+
+      expectBookingsRequest('zzz-nomatch').flush(pagedResult([]));
+      await settle();
+
+      expect(fixture.nativeElement.textContent).toContain('No bookings match this search');
+      const clearButton = Array.from<HTMLButtonElement>(
+        fixture.nativeElement.querySelectorAll('button'),
+      ).find((b) => b.textContent?.includes('Clear search'));
+      expect(clearButton).toBeTruthy();
+
+      clearButton!.click();
+      fixture.detectChanges();
+
+      await new Promise((resolve) => setTimeout(resolve, 350));
+      await settle();
+
+      expectBookingsRequest(null).flush(pagedResult([bookingDto()]));
+    });
+
+    it('still shows "No bookings yet" (not the filtered-empty message) when there is no search and no bookings exist', async () => {
+      await settle();
+      expectBookingsRequest(null).flush(pagedResult([]));
+      flushPickerQueries();
+      await settle();
+
+      expect(fixture.nativeElement.textContent).toContain('No bookings yet');
+      expect(fixture.nativeElement.textContent).not.toContain('No bookings match this search');
+    });
   });
 
   describe('cancel row action', () => {

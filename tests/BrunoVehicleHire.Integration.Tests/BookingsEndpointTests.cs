@@ -353,6 +353,201 @@ public class BookingsEndpointTests : IAsyncLifetime
         document.RootElement.GetProperty("totalCount").GetInt32().Should().Be(2);
     }
 
+    /// <summary>
+    /// Covers spec-bookings-search's own I/O &amp; Edge-Case Matrix through the real API: a term
+    /// matching a vehicle's Make/Model/RegistrationNumber returns only that vehicle's bookings; a term
+    /// matching a customer's FirstName/LastName returns only that customer's bookings; an ambiguous
+    /// term matching both an unrelated vehicle and an unrelated customer returns the union (OR, not
+    /// AND); an empty/whitespace search behaves identically to no search at all; and the pre-existing
+    /// <c>vehicleId</c> filter (Vehicle Detail's booking-history section, which never sets
+    /// <c>search</c>) remains completely unaffected.
+    /// </summary>
+    [Fact]
+    public async Task Get_SearchMatchesVehicleMake_ReturnsOnlyThatVehiclesBookings()
+    {
+        var ferrari = await SeedActiveVehicleAsync(registrationNumber: "CA111111");
+        var toyota = await SeedActiveVehicleAsync(registrationNumber: "CA222222");
+        var customer = await SeedActiveCustomerAsync();
+
+        using var scope = _factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var trackedFerrari = await dbContext.Vehicles.SingleAsync(v => v.Id == ferrari.Id);
+        trackedFerrari.Update("CA111111", "Ferrari", "F8", 2024, 5000m);
+        await dbContext.SaveChangesAsync();
+
+        var ferrariBooking = await SeedBookingAsync(ferrari, customer);
+        await SeedBookingAsync(toyota, customer, new DateOnly(2026, 11, 1), new DateOnly(2026, 11, 3));
+
+        using var request = AuthenticatedGet("/api/bookings?page=1&pageSize=20&search=ferrari");
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var json = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(json);
+
+        document.RootElement.GetProperty("totalCount").GetInt32().Should().Be(1);
+        document.RootElement.GetProperty("items")[0].GetProperty("id").GetGuid().Should().Be(ferrariBooking.Id);
+    }
+
+    [Fact]
+    public async Task Get_SearchMatchesVehicleRegistrationNumber_ReturnsOnlyThatVehiclesBookings()
+    {
+        var vehicleOne = await SeedActiveVehicleAsync(registrationNumber: "CA999999");
+        var vehicleTwo = await SeedActiveVehicleAsync(registrationNumber: "CA222222");
+        var customer = await SeedActiveCustomerAsync();
+        var bookingOne = await SeedBookingAsync(vehicleOne, customer);
+        await SeedBookingAsync(vehicleTwo, customer, new DateOnly(2026, 11, 1), new DateOnly(2026, 11, 3));
+
+        using var request = AuthenticatedGet("/api/bookings?page=1&pageSize=20&search=CA9999");
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var json = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(json);
+
+        document.RootElement.GetProperty("totalCount").GetInt32().Should().Be(1);
+        document.RootElement.GetProperty("items")[0].GetProperty("id").GetGuid().Should().Be(bookingOne.Id);
+    }
+
+    [Fact]
+    public async Task Get_SearchMatchesCustomerName_ReturnsOnlyThatCustomersBookings()
+    {
+        var vehicle = await SeedActiveVehicleAsync();
+        var nkosi = await SeedActiveCustomerAsync();
+        var otherCustomer = await SeedActiveCustomerAsync();
+
+        using var scope = _factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var trackedNkosi = await dbContext.Customers.SingleAsync(c => c.Id == nkosi.Id);
+        trackedNkosi.Update("Thabo", "Nkosi", trackedNkosi.Email, trackedNkosi.PhoneNumber);
+        await dbContext.SaveChangesAsync();
+
+        var nkosiBooking = await SeedBookingAsync(vehicle, nkosi);
+        await SeedBookingAsync(vehicle, otherCustomer, new DateOnly(2026, 11, 1), new DateOnly(2026, 11, 3));
+
+        using var request = AuthenticatedGet("/api/bookings?page=1&pageSize=20&search=nkosi");
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var json = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(json);
+
+        document.RootElement.GetProperty("totalCount").GetInt32().Should().Be(1);
+        document.RootElement.GetProperty("items")[0].GetProperty("id").GetGuid().Should().Be(nkosiBooking.Id);
+    }
+
+    [Fact]
+    public async Task Get_SearchMatchesBothAnUnrelatedVehicleAndCustomer_ReturnsTheUnion()
+    {
+        var vehicle = await SeedActiveVehicleAsync(registrationNumber: "CA111111");
+        var unrelatedVehicle = await SeedActiveVehicleAsync(registrationNumber: "CA222222");
+        var unrelatedCustomer = await SeedActiveCustomerAsync();
+
+        using var scope = _factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var trackedVehicle = await dbContext.Vehicles.SingleAsync(v => v.Id == unrelatedVehicle.Id);
+        trackedVehicle.Update("CA222222", "Nkosi Motors", "Cruiser", 2024, 900m);
+        await dbContext.SaveChangesAsync();
+
+        var matchingCustomer = await SeedActiveCustomerAsync();
+        using (var innerScope = _factory.Services.CreateScope())
+        {
+            var innerDbContext = innerScope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var trackedCustomer = await innerDbContext.Customers.SingleAsync(c => c.Id == matchingCustomer.Id);
+            trackedCustomer.Update("Thabo", "Nkosi", trackedCustomer.Email, trackedCustomer.PhoneNumber);
+            await innerDbContext.SaveChangesAsync();
+        }
+
+        var vehicleMatchBooking = await SeedBookingAsync(unrelatedVehicle, unrelatedCustomer);
+        var customerMatchBooking = await SeedBookingAsync(
+            vehicle, matchingCustomer, new DateOnly(2026, 11, 1), new DateOnly(2026, 11, 3));
+
+        using var request = AuthenticatedGet("/api/bookings?page=1&pageSize=20&search=nkosi");
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var json = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(json);
+
+        document.RootElement.GetProperty("totalCount").GetInt32().Should().Be(2);
+        var ids = document.RootElement.GetProperty("items").EnumerateArray()
+            .Select(item => item.GetProperty("id").GetGuid())
+            .ToList();
+        ids.Should().BeEquivalentTo(new[] { vehicleMatchBooking.Id, customerMatchBooking.Id });
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task Get_EmptyOrWhitespaceSearch_ReturnsEveryBookingUnfiltered(string search)
+    {
+        var vehicleOne = await SeedActiveVehicleAsync(registrationNumber: "CA111111");
+        var vehicleTwo = await SeedActiveVehicleAsync(registrationNumber: "CA222222");
+        var customer = await SeedActiveCustomerAsync();
+        await SeedBookingAsync(vehicleOne, customer);
+        await SeedBookingAsync(vehicleTwo, customer, new DateOnly(2026, 11, 1), new DateOnly(2026, 11, 3));
+
+        using var request = AuthenticatedGet(
+            $"/api/bookings?page=1&pageSize=20&search={Uri.EscapeDataString(search)}");
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var json = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(json);
+
+        document.RootElement.GetProperty("totalCount").GetInt32().Should().Be(2);
+    }
+
+    [Fact]
+    public async Task Get_NoMatchingSearchTerm_ReturnsEmptyResult()
+    {
+        var vehicle = await SeedActiveVehicleAsync();
+        var customer = await SeedActiveCustomerAsync();
+        await SeedBookingAsync(vehicle, customer);
+
+        using var request = AuthenticatedGet("/api/bookings?page=1&pageSize=20&search=nonexistentterm");
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var json = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(json);
+
+        document.RootElement.GetProperty("totalCount").GetInt32().Should().Be(0);
+    }
+
+    /// <summary>
+    /// Proves <c>search</c> and the pre-existing <c>vehicleId</c> filter compose (AND, not that either
+    /// overrides the other) -- Vehicle Detail's own booking-history call site never sets <c>search</c>,
+    /// so its behavior stays completely unaffected by this story.
+    /// </summary>
+    [Fact]
+    public async Task Get_VehicleIdSetAndSearchNull_BehavesExactlyAsBeforeThisStory()
+    {
+        var vehicleOne = await SeedActiveVehicleAsync(registrationNumber: "CA111111");
+        var vehicleTwo = await SeedActiveVehicleAsync(registrationNumber: "CA222222");
+        var customer = await SeedActiveCustomerAsync();
+        var bookingForVehicleOne = await SeedBookingAsync(vehicleOne, customer);
+        await SeedBookingAsync(vehicleTwo, customer, new DateOnly(2026, 11, 1), new DateOnly(2026, 11, 3));
+
+        using var request = AuthenticatedGet($"/api/bookings?page=1&pageSize=20&vehicleId={vehicleOne.Id}");
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var json = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(json);
+
+        document.RootElement.GetProperty("totalCount").GetInt32().Should().Be(1);
+        document.RootElement.GetProperty("items")[0].GetProperty("id").GetGuid()
+            .Should().Be(bookingForVehicleOne.Id);
+    }
+
     [Fact]
     public async Task Post_ValidVehicleCustomerAndDateRange_Returns201WithActiveStatusAndCorrectTotalPrice_AndAppearsInList()
     {
