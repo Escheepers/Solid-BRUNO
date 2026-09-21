@@ -1,5 +1,7 @@
+using System.Reflection;
 using BrunoVehicleHire.Api.Auth;
 using BrunoVehicleHire.Api.ExceptionHandling;
+using BrunoVehicleHire.Api.Swagger;
 using BrunoVehicleHire.Application.Bookings;
 using BrunoVehicleHire.Application.Common;
 using BrunoVehicleHire.Application.Customers;
@@ -135,6 +137,22 @@ builder.Services.AddSwaggerGen(options =>
     {
         [new OpenApiSecuritySchemeReference(ApiKeyDefaults.Scheme, document)] = new List<string>(),
     });
+
+    // spec-swagger-examples: surfaces the XML doc comments already written throughout the codebase
+    // (controllers/handlers/commands) as real Swagger descriptions. Both the Api's own XML file and
+    // the Application project's (where the Commands/DTOs actually live) are needed -- Application's
+    // is copied alongside Api's into the same output directory via the existing ProjectReference, so
+    // it's found at the same AppContext.BaseDirectory. `includeControllerXmlComments: true` on the
+    // Api file surfaces controller action <summary> text as operation descriptions.
+    var apiXmlFile = $"{Assembly.GetExecutingAssembly().GetName().Name}.xml";
+    options.IncludeXmlComments(Path.Combine(AppContext.BaseDirectory, apiXmlFile), includeControllerXmlComments: true);
+
+    var applicationXmlFile = $"{typeof(GetVehiclesQuery).Assembly.GetName().Name}.xml";
+    options.IncludeXmlComments(Path.Combine(AppContext.BaseDirectory, applicationXmlFile));
+
+    // Provides realistic example JSON for the three Create commands + response DTOs (Design Notes:
+    // an ISchemaFilter rather than XML <example> tags, since the Commands are positional records).
+    options.SchemaFilter<ExampleSchemaFilter>();
 });
 
 // Deliberately NOT captured into a local variable read eagerly here: builder.Configuration is

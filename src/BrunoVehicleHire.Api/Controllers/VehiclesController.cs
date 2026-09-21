@@ -34,7 +34,7 @@ public class VehiclesController(ISender sender) : ControllerBase
 
     /// <summary>
     /// Fetches a single vehicle's full record for the detail page (Story 2.5) -- including a
-    /// soft-deleted vehicle's, since <see cref="Queries.GetVehicleByIdQuery"/> deliberately uses the
+    /// soft-deleted vehicle's, since <see cref="GetVehicleByIdQuery"/> deliberately uses the
     /// unfiltered lookup so the detail page can show its active/soft-deleted state.
     /// </summary>
     [HttpGet("{id:guid}")]

@@ -8,6 +8,12 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <!-- spec-swagger-examples: surfaces this project's existing XML doc comments (Commands/DTOs) as
+         real Swagger descriptions via IncludeXmlComments (Api's Program.cs). NoWarn suppresses
+         CS1591 ("missing XML comment for publicly visible type or member") since this project does
+         not mandate doc comments on every public member, only surfaces the ones that already exist. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>

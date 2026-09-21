@@ -8,7 +8,7 @@ namespace BrunoVehicleHire.Application.Common;
 /// AD-10's shared MediatR pipeline stage: runs every registered <see cref="IValidator{T}"/> for
 /// <typeparamref name="TRequest"/>, aggregates every <see cref="ValidationFailure"/> across all of
 /// them, and -- if any exist -- throws <see cref="ValidationException"/> BEFORE calling
-/// <paramref name="next"/>, short-circuiting the handler entirely. <see cref="GlobalExceptionHandler"/>
+/// <c>next</c>, short-circuiting the handler entirely. <c>GlobalExceptionHandler</c>
 /// (Api layer) catches that exception and maps it to a <c>400 Bad Request</c>
 /// <c>ValidationProblemDetails</c> response. No handler ever validates its own request manually.
 /// </summary>

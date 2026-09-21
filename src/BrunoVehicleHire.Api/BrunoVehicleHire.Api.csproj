@@ -5,6 +5,12 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UserSecretsId>2848e81a-3450-48b6-8361-f197bcd09991</UserSecretsId>
+    <!-- spec-swagger-examples: surfaces this project's existing XML doc comments as real Swagger
+         descriptions via IncludeXmlComments (Program.cs). NoWarn suppresses CS1591 ("missing XML
+         comment for publicly visible type or member") since this project does not mandate doc
+         comments on every public member, only surfaces the ones that already exist. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>

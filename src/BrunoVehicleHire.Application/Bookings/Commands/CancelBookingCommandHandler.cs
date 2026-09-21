@@ -16,7 +16,7 @@ namespace BrunoVehicleHire.Application.Bookings.Commands;
 /// orchestration (SRP) -- every ineligibility rule (already-Cancelled, already-Completed,
 /// past-EndDate-still-Active) lives entirely in <see cref="Booking.Cancel"/> and propagates as
 /// <see cref="Domain.Exceptions.DomainRuleViolationException"/>, mapped to a 409 by
-/// <see cref="Api.ExceptionHandling.GlobalExceptionHandler"/>. Mirrors
+/// <c>GlobalExceptionHandler</c> (Api layer). Mirrors
 /// <see cref="Vehicles.Commands.SoftDeleteVehicleCommandHandler"/>'s exact shape.
 /// </summary>
 public class CancelBookingCommandHandler(IBookingRepository repository, IUnitOfWork unitOfWork)
