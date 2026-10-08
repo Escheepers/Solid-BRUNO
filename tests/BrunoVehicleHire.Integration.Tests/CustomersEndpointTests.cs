@@ -129,7 +129,7 @@ public class CustomersEndpointTests : IAsyncLifetime
     /// Postgres rejects an orphaned FK reference (see <c>BookingMigrationTests</c>), so this first
     /// creates and persists a real <see cref="Vehicle"/> row for the booking to reference too.
     /// </summary>
-    private async Task SeedBookingForCustomerAsync(Customer customer)
+    private async Task SeedBookingForCustomerAsync(Customer customer, BookingStatus status = BookingStatus.Active)
     {
         using var scope = _factory.Services.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -142,6 +142,104 @@ public class CustomersEndpointTests : IAsyncLifetime
         dbContext.Bookings.Add(booking);
 
         await dbContext.SaveChangesAsync();
+
+        if (status != BookingStatus.Active)
+        {
+            // Booking.Create always starts Active; flip the column directly to reach a history state
+            // (exactly as BookingsEndpointTests.SeedBookingWithStatusAsync does).
+            await dbContext.Database.ExecuteSqlInterpolatedAsync(
+                $"""UPDATE "Bookings" SET "Status" = {status.ToString()} WHERE "Id" = {booking.Id}""");
+        }
+    }
+
+    /// <summary>
+    /// Regression test (spec-search-multi-word): a search with a space ("Ericka U") used to return
+    /// nothing, because the WHOLE term was tested against FirstName and LastName separately and is a
+    /// substring of neither. Now each space-separated word must match FirstName or LastName, in any
+    /// order and case, so "Ericka U" finds "Ericka Ullrich" (and only her).
+    /// </summary>
+    [Theory]
+    [InlineData("Ericka U")]
+    [InlineData("ericka u")]
+    [InlineData("  Ericka    Ull  ")]
+    [InlineData("Ullrich Ericka")]
+    public async Task Get_SearchWithSeveralWords_EveryWordMustMatchFirstOrLastName_InAnyOrderAndCase(string search)
+    {
+        await SeedCustomersAsync(
+            Customer.Create("Ericka", "Ullrich", "ericka.ullrich@example.com", "0821110101"),
+            Customer.Create("Ericka", "Smith", "ericka.smith@example.com", "0821110102"),
+            Customer.Create("Bob", "Ullrich", "bob.ullrich@example.com", "0821110103"));
+
+        using var request = AuthenticatedGet(
+            $"/api/customers?page=1&pageSize=20&search={Uri.EscapeDataString(search)}");
+        var response = await _client.SendAsync(request);
+        var json = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(json);
+
+        document.RootElement.GetProperty("totalCount").GetInt32().Should().Be(1);
+        var item = document.RootElement.GetProperty("items")[0];
+        item.GetProperty("firstName").GetString().Should().Be("Ericka");
+        item.GetProperty("lastName").GetString().Should().Be("Ullrich");
+    }
+
+    [Fact]
+    public async Task Get_SearchWithOneWord_StillMatchesEitherName()
+    {
+        await SeedCustomersAsync(
+            Customer.Create("Ericka", "Ullrich", "ericka.ullrich@example.com", "0821110101"),
+            Customer.Create("Ericka", "Smith", "ericka.smith@example.com", "0821110102"),
+            Customer.Create("Bob", "Ullrich", "bob.ullrich@example.com", "0821110103"));
+
+        using var request = AuthenticatedGet("/api/customers?page=1&pageSize=20&search=Ullrich");
+        var response = await _client.SendAsync(request);
+        var json = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(json);
+
+        document.RootElement.GetProperty("totalCount").GetInt32().Should().Be(2);
+    }
+
+    private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => now;
+    }
+
+    /// <summary>
+    /// Regression test (spec-new-rows-visible-first): lists used to be ordered oldest-first, so a
+    /// customer created through the UI landed on the LAST page and looked as if nothing had been
+    /// created. The list must now be newest-first, so the new row is always on page 1.
+    /// </summary>
+    [Fact]
+    public async Task Get_AfterCreatingANewCustomer_ListsNewestFirst_SoItAppearsOnPageOne()
+    {
+        await SeedCustomersAsync(
+            Customer.Create("Old", "One", "old.one@example.com", "0821111111", new FixedTimeProvider(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero))),
+            Customer.Create("Old", "Two", "old.two@example.com", "0822222222", new FixedTimeProvider(new DateTimeOffset(2026, 2, 1, 0, 0, 0, TimeSpan.Zero))),
+            Customer.Create("Old", "Three", "old.three@example.com", "0823333333", new FixedTimeProvider(new DateTimeOffset(2026, 3, 1, 0, 0, 0, TimeSpan.Zero))));
+
+        using var createRequest = AuthenticatedPost("/api/customers", new
+        {
+            firstName = "Brand",
+            lastName = "New",
+            email = "brand.new@example.com",
+            phoneNumber = "0824444444",
+        });
+        var createResponse = await _client.SendAsync(createRequest);
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        using var listRequest = AuthenticatedGet("/api/customers?page=1&pageSize=2");
+        var listResponse = await _client.SendAsync(listRequest);
+        var json = await listResponse.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(json);
+
+        var emails = document.RootElement.GetProperty("items")
+            .EnumerateArray()
+            .Select(item => item.GetProperty("email").GetString())
+            .ToList();
+
+        emails.Should().Equal(
+            new[] { "brand.new@example.com", "old.three@example.com" },
+            "the list is newest-first, so the just-created customer is first");
+        document.RootElement.GetProperty("totalCount").GetInt32().Should().Be(4);
     }
 
     [Fact]
@@ -429,6 +527,31 @@ public class CustomersEndpointTests : IAsyncLifetime
     }
 
     [Theory]
+    [InlineData("08212345a7")]
+    [InlineData("082 123 4567")]
+    [InlineData("08212345678")]
+    public async Task Post_PhoneNumberWithLettersOrMoreThanTenDigits_Returns400WithPhoneNumberInErrors(
+        string phoneNumber)
+    {
+        using var request = AuthenticatedPost("/api/customers", new
+        {
+            firstName = "Jane",
+            lastName = "Doe",
+            email = "jane.phone@example.com",
+            phoneNumber,
+        });
+
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        var json = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(json);
+
+        document.RootElement.GetProperty("errors").TryGetProperty("PhoneNumber", out _).Should().BeTrue();
+    }
+
+    [Theory]
     [InlineData("   ", "Doe", "jane@example.com", "0821234567", "FirstName")]
     [InlineData("Jane", "   ", "jane@example.com", "0821234567", "LastName")]
     [InlineData("Jane", "Doe", "jane@example.com", "   ", "PhoneNumber")]
@@ -705,11 +828,11 @@ public class CustomersEndpointTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Delete_CustomerWithAtLeastOneBooking_Returns409WithExactDetailMessage()
+    public async Task Delete_CustomerWithOnlyFinishedBookings_Returns409WithDeactivateOrEraseMessage()
     {
         var customer = Customer.Create("Has", "Bookings", "has.bookings@example.com", "0821238888");
         await SeedCustomersAsync(customer);
-        await SeedBookingForCustomerAsync(customer);
+        await SeedBookingForCustomerAsync(customer, BookingStatus.Completed);
 
         using var request = AuthenticatedDelete($"/api/customers/{customer.Id}");
         var response = await _client.SendAsync(request);
@@ -730,6 +853,25 @@ public class CustomersEndpointTests : IAsyncLifetime
         using var getDocument = JsonDocument.Parse(getJson);
 
         getDocument.RootElement.GetProperty("totalCount").GetInt32().Should().Be(1);
+    }
+
+    [Fact]
+    public async Task Delete_CustomerWithAnActiveBooking_Returns409TellingTheUserToCancelItFirst()
+    {
+        var customer = Customer.Create("Active", "Hirer", "active.hirer@example.com", "0821238889");
+        await SeedCustomersAsync(customer);
+        await SeedBookingForCustomerAsync(customer);
+
+        using var request = AuthenticatedDelete($"/api/customers/{customer.Id}");
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+
+        var json = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(json);
+
+        document.RootElement.GetProperty("detail").GetString()
+            .Should().Be("This customer has an active or upcoming booking — cancel it first, or wait for it to complete.");
     }
 
     [Fact]
@@ -1179,5 +1321,205 @@ public class CustomersEndpointTests : IAsyncLifetime
         document.RootElement.GetProperty("totalCount").GetInt32().Should().Be(1);
         document.RootElement.GetProperty("items")[0].GetProperty("lastName").GetString()
             .Should().Be("One");
+    }
+
+    // ---- A customer with an Active booking can be neither deactivated nor erased (mirrors the vehicle
+    // rule). Booking history (Completed/Cancelled) never blocks either action.
+
+    private const string ActiveBookingBlocksMessage =
+        "This customer has an active or upcoming booking — cancel it first, or wait for it to complete.";
+
+    private async Task<JsonElement> ListedCustomerAsync(Guid id, string search)
+    {
+        using var request = AuthenticatedGet(
+            $"/api/customers?page=1&pageSize=20&showInactive=true&search={Uri.EscapeDataString(search)}");
+        var response = await _client.SendAsync(request);
+        var json = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(json);
+        return document.RootElement.GetProperty("items").EnumerateArray()
+            .Single(item => item.GetProperty("id").GetGuid() == id).Clone();
+    }
+
+    [Fact]
+    public async Task Deactivate_CustomerWithActiveBooking_Returns409_AndTheCustomerStaysActive()
+    {
+        var customer = Customer.Create("Blocked", "Deactivate", "blocked.deactivate@example.com", "0821110055");
+        await SeedCustomersAsync(customer);
+        await SeedBookingForCustomerAsync(customer);
+
+        using var request = AuthenticatedPost($"/api/customers/{customer.Id}/deactivate");
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await DetailOf(response)).Should().Be(ActiveBookingBlocksMessage);
+
+        (await ListedCustomerAsync(customer.Id, "Blocked")).GetProperty("isDeleted").GetBoolean().Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Anonymize_CustomerWithActiveBooking_Returns409_AndPersonalDataIsUntouched()
+    {
+        var customer = Customer.Create("Blocked", "Erase", "blocked.erase@example.com", "0821110066");
+        await SeedCustomersAsync(customer);
+        await SeedBookingForCustomerAsync(customer);
+
+        using var request = AuthenticatedPost($"/api/customers/{customer.Id}/anonymize");
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await DetailOf(response)).Should().Be(ActiveBookingBlocksMessage);
+
+        var listed = await ListedCustomerAsync(customer.Id, "Blocked");
+        listed.GetProperty("isAnonymized").GetBoolean().Should().BeFalse();
+        listed.GetProperty("firstName").GetString().Should().Be("Blocked");
+        listed.GetProperty("email").GetString().Should().Be("blocked.erase@example.com");
+    }
+
+    [Theory]
+    [InlineData(BookingStatus.Cancelled)]
+    [InlineData(BookingStatus.Completed)]
+    public async Task Deactivate_CustomerWithOnlyBookingHistory_Returns204(BookingStatus status)
+    {
+        var customer = Customer.Create("History", "Deactivate", "history.deactivate@example.com", "0821110077");
+        await SeedCustomersAsync(customer);
+        await SeedBookingForCustomerAsync(customer, status);
+
+        using var request = AuthenticatedPost($"/api/customers/{customer.Id}/deactivate");
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+    }
+
+    [Theory]
+    [InlineData(BookingStatus.Cancelled)]
+    [InlineData(BookingStatus.Completed)]
+    public async Task Anonymize_CustomerWithOnlyBookingHistory_Returns204_AndTheHistoryIsKept(BookingStatus status)
+    {
+        var customer = Customer.Create("History", "Erase", "history.erase@example.com", "0821110088");
+        await SeedCustomersAsync(customer);
+        await SeedBookingForCustomerAsync(customer, status);
+
+        using var request = AuthenticatedPost($"/api/customers/{customer.Id}/anonymize");
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        (await ListedCustomerAsync(customer.Id, "Anonymized")).GetProperty("isAnonymized").GetBoolean()
+            .Should().BeTrue();
+
+        using var scope = _factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        (await dbContext.Bookings.CountAsync(b => b.CustomerId == customer.Id)).Should().Be(1);
+    }
+
+    // ---- Customer now carries the xmin concurrency token (like Vehicle/Booking): a double-click on any
+    // mutation must give the loser a clean 4xx, never a 500 and never a silent second "success".
+
+    private static async Task<string> DetailOf(HttpResponseMessage response)
+    {
+        var json = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(json);
+        return document.RootElement.GetProperty("detail").GetString()!;
+    }
+
+    [Fact]
+    public async Task Restore_TwoConcurrentRequestsOnSameSoftDeletedCustomer_ExactlyOneSucceeds_TheOtherReturns409()
+    {
+        var customer = Customer.Create("Race", "Restore", "race.restore@example.com", "0821110011");
+        customer.SoftDelete();
+        await SeedCustomersAsync(customer);
+
+        using var requestA = AuthenticatedPost($"/api/customers/{customer.Id}/restore");
+        using var requestB = AuthenticatedPost($"/api/customers/{customer.Id}/restore");
+
+        var responses = await Task.WhenAll(_client.SendAsync(requestA), _client.SendAsync(requestB));
+
+        responses.Should().NotContain(response => response.StatusCode == HttpStatusCode.InternalServerError);
+        responses.Count(response => response.StatusCode == HttpStatusCode.NoContent).Should().Be(
+            1, "exactly one of the two concurrently-racing restores must win");
+
+        var rejected = responses.Single(response => response.StatusCode != HttpStatusCode.NoContent);
+        rejected.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await DetailOf(rejected)).Should().Be("Already active.");
+
+        foreach (var response in responses)
+        {
+            response.Dispose();
+        }
+    }
+
+    [Fact]
+    public async Task Deactivate_TwoConcurrentRequestsOnSameCustomer_ExactlyOneSucceeds_TheOtherIs404Or409()
+    {
+        var customer = Customer.Create("Race", "Deactivate", "race.deactivate@example.com", "0821110022");
+        await SeedCustomersAsync(customer);
+
+        using var requestA = AuthenticatedPost($"/api/customers/{customer.Id}/deactivate");
+        using var requestB = AuthenticatedPost($"/api/customers/{customer.Id}/deactivate");
+
+        var responses = await Task.WhenAll(_client.SendAsync(requestA), _client.SendAsync(requestB));
+
+        responses.Should().NotContain(response => response.StatusCode == HttpStatusCode.InternalServerError);
+        responses.Count(response => response.StatusCode == HttpStatusCode.NoContent).Should().Be(
+            1, "exactly one of the two concurrently-racing deactivates must win");
+        responses.Single(response => response.StatusCode != HttpStatusCode.NoContent).StatusCode
+            .Should().BeOneOf(HttpStatusCode.NotFound, HttpStatusCode.Conflict);
+
+        foreach (var response in responses)
+        {
+            response.Dispose();
+        }
+    }
+
+    [Fact]
+    public async Task Delete_TwoConcurrentRequestsOnSameCustomer_ExactlyOneSucceeds_TheOtherIs404Or409()
+    {
+        var customer = Customer.Create("Race", "Delete", "race.delete@example.com", "0821110033");
+        await SeedCustomersAsync(customer);
+
+        using var requestA = AuthenticatedDelete($"/api/customers/{customer.Id}");
+        using var requestB = AuthenticatedDelete($"/api/customers/{customer.Id}");
+
+        var responses = await Task.WhenAll(_client.SendAsync(requestA), _client.SendAsync(requestB));
+
+        responses.Should().NotContain(response => response.StatusCode == HttpStatusCode.InternalServerError);
+        responses.Count(response => response.StatusCode == HttpStatusCode.NoContent).Should().Be(
+            1, "exactly one of the two concurrently-racing deletes must win");
+        responses.Single(response => response.StatusCode != HttpStatusCode.NoContent).StatusCode
+            .Should().BeOneOf(HttpStatusCode.NotFound, HttpStatusCode.Conflict);
+
+        foreach (var response in responses)
+        {
+            response.Dispose();
+        }
+    }
+
+    [Fact]
+    public async Task Anonymize_TwoConcurrentRequestsOnSameCustomer_NeverA500_AndTheCustomerEndsUpAnonymized()
+    {
+        var customer = Customer.Create("Race", "Erase", "race.erase@example.com", "0821110044");
+        await SeedCustomersAsync(customer);
+
+        using var requestA = AuthenticatedPost($"/api/customers/{customer.Id}/anonymize");
+        using var requestB = AuthenticatedPost($"/api/customers/{customer.Id}/anonymize");
+
+        var responses = await Task.WhenAll(_client.SendAsync(requestA), _client.SendAsync(requestB));
+
+        responses.Should().NotContain(response => response.StatusCode == HttpStatusCode.InternalServerError);
+        responses.Should().Contain(response => response.StatusCode == HttpStatusCode.NoContent);
+        responses.Where(response => response.StatusCode != HttpStatusCode.NoContent)
+            .Should().OnlyContain(response => response.StatusCode == HttpStatusCode.Conflict);
+
+        using var listRequest = AuthenticatedGet("/api/customers?page=1&pageSize=20&showInactive=true&search=Anonymized");
+        var listResponse = await _client.SendAsync(listRequest);
+        var json = await listResponse.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(json);
+        document.RootElement.GetProperty("items").EnumerateArray()
+            .Single(item => item.GetProperty("id").GetGuid() == customer.Id)
+            .GetProperty("isAnonymized").GetBoolean().Should().BeTrue();
+
+        foreach (var response in responses)
+        {
+            response.Dispose();
+        }
     }
 }

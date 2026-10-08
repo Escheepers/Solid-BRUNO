@@ -95,7 +95,7 @@
                     {{ formattedTotalPrice(booking) }}
                   </td>
                   <td class="py-row-y px-row-x text-body">
-                    <app-badge [status]="booking.status" />
+                    <app-badge [status]="displayStatus(booking)" />
                   </td>
                 </tr>
               }

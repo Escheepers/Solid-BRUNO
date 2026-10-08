@@ -26,6 +26,9 @@ public enum BookingStatus
 /// </summary>
 public class Booking
 {
+    /// <summary>Longest rental allowed: a booking may span at most this many days.</summary>
+    public const int MaxDurationDays = 365;
+
     public Guid Id { get; private set; }
 
     public Guid VehicleId { get; private set; }
@@ -96,6 +99,51 @@ public class Booking
             endDate,
             totalPrice,
             timeProvider.GetUtcNow().UtcDateTime);
+    }
+
+    /// <summary>
+    /// Moves an upcoming booking to new dates. Only an <see cref="BookingStatus.Active"/> booking whose
+    /// <see cref="StartDate"/> is still after today (per <paramref name="timeProvider"/>) can be
+    /// rescheduled -- exactly the window in which <see cref="Cancel"/> still works -- so a cancelled
+    /// booking throws "Cannot edit — booking is cancelled." and a completed or already-started one
+    /// throws "Cannot edit — booking has already started.". The new range must satisfy the same
+    /// invariants as <see cref="Create"/> (end after start, within <see cref="MaxDurationDays"/>) and
+    /// may not start in the past. <see cref="TotalPrice"/> is rescaled at the booking's ORIGINAL
+    /// per-day rate (price / old days -- exact, since a price is always whole-cent rate x whole days),
+    /// so a later change to the vehicle's rate never reprices an existing booking. Whether the new
+    /// range clashes with ANOTHER booking on the vehicle is a cross-row rule, checked by the handler.
+    /// On a thrown exception the booking is left unchanged.
+    /// </summary>
+    public void Reschedule(DateOnly newStartDate, DateOnly newEndDate, TimeProvider? timeProvider = null)
+    {
+        timeProvider ??= TimeProvider.System;
+
+        if (Status == BookingStatus.Cancelled)
+        {
+            throw new DomainRuleViolationException(
+                nameof(Booking), nameof(Status), "Cannot edit — booking is cancelled.");
+        }
+
+        var today = DateOnly.FromDateTime(timeProvider.GetUtcNow().UtcDateTime);
+        if (Status == BookingStatus.Completed || StartDate <= today)
+        {
+            throw new DomainRuleViolationException(
+                nameof(Booking), nameof(Status), "Cannot edit — booking has already started.");
+        }
+
+        if (newStartDate < today)
+        {
+            throw new DomainRuleViolationException(
+                nameof(Booking), nameof(StartDate), "StartDate cannot be in the past.");
+        }
+
+        ValidateInvariants(newStartDate, newEndDate);
+
+        var dailyRate = TotalPrice / (EndDate.DayNumber - StartDate.DayNumber);
+
+        StartDate = newStartDate;
+        EndDate = newEndDate;
+        TotalPrice = dailyRate * (newEndDate.DayNumber - newStartDate.DayNumber);
     }
 
     /// <summary>
@@ -190,5 +238,12 @@ public class Booking
             throw new DomainRuleViolationException(
                 nameof(Booking), nameof(EndDate), "EndDate must be after StartDate.");
         }
+
+        if (endDate.DayNumber - startDate.DayNumber > MaxDurationDays)
+        {
+            throw new DomainRuleViolationException(
+                nameof(Booking), nameof(EndDate), $"A booking cannot be longer than {MaxDurationDays} days.");
+        }
     }
+    
 }

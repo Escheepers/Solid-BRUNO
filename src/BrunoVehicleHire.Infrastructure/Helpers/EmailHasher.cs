@@ -1,7 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 
-namespace BrunoVehicleHire.Infrastructure.Security;
+namespace BrunoVehicleHire.Infrastructure.Helpers;
 
 /// <summary>
 /// Computes the deterministic SHA-256 hash of a normalized email address, used solely as

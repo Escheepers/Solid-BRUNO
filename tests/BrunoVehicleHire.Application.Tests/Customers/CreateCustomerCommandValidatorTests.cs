@@ -74,6 +74,29 @@ public class CreateCustomerCommandValidatorTests
     }
 
     [Theory]
+    [InlineData("08212345a7")]
+    [InlineData("082-123-4567")]
+    [InlineData("082 123 4567")]
+    [InlineData("+27821234567")]
+    [InlineData("08212345678")]
+    public void PhoneNumber_NotDigitsOnlyOrLongerThanTenDigits_FailsValidation(string phoneNumber)
+    {
+        var result = _validator.TestValidate(ValidCommand(phoneNumber: phoneNumber));
+
+        result.ShouldHaveValidationErrorFor(c => c.PhoneNumber);
+    }
+
+    [Theory]
+    [InlineData("0821234567")]
+    [InlineData("12345")]
+    public void PhoneNumber_OneToTenDigitsOnly_PassesValidation(string phoneNumber)
+    {
+        var result = _validator.TestValidate(ValidCommand(phoneNumber: phoneNumber));
+
+        result.ShouldNotHaveValidationErrorFor(c => c.PhoneNumber);
+    }
+
+    [Theory]
     [InlineData("")]
     [InlineData("   ")]
     public void Email_Blank_FailsValidation(string email)

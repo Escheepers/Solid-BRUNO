@@ -41,7 +41,7 @@ baseline_commit: 'edce456ba966e7743651bad258aab4c6544440b1'
 
 ## Code Map
 
-- `src/BrunoVehicleHire.Infrastructure/Repositories/LikePatternEscaper.cs` -- new -- a small static class with one method, `Escape(string value)`, applying the three-character escape in the Boundaries' specified order
+- `src/BrunoVehicleHire.Infrastructure/Helpers/LikePatternEscaper.cs` -- new -- a small static class with one method, `Escape(string value)`, applying the three-character escape in the Boundaries' specified order
 - `src/BrunoVehicleHire.Infrastructure/Repositories/VehicleRepository.cs` -- modify -- `GetPagedAsync` (`:33-35`) wraps `search` in `LikePatternEscaper.Escape(...)` before building the `%...%` pattern
 - `src/BrunoVehicleHire.Infrastructure/Repositories/CustomerRepository.cs` -- modify -- same, `GetPagedAsync` (`:34-35`)
 - `src/BrunoVehicleHire.Infrastructure/Repositories/BookingRepository.cs` -- modify -- same, `GetPagedAsync` (`:72-76`)
@@ -83,7 +83,7 @@ baseline_commit: 'edce456ba966e7743651bad258aab4c6544440b1'
 
 ## Suggested Review Order
 
-1. `src/BrunoVehicleHire.Infrastructure/Repositories/LikePatternEscaper.cs` — the shared escaping logic and the doc comment explaining why the three-argument `ILike` overload is required (see Spec Change Log).
+1. `src/BrunoVehicleHire.Infrastructure/Helpers/LikePatternEscaper.cs` — the shared escaping logic and the doc comment explaining why the three-argument `ILike` overload is required (see Spec Change Log).
 2. `src/BrunoVehicleHire.Infrastructure/Repositories/VehicleRepository.cs` — the first, canonical call-site wiring.
 3. `CustomerRepository.cs`, `BookingRepository.cs` — the same wiring, mirrored exactly.
 4. `tests/BrunoVehicleHire.Integration.Tests/VehiclesEndpointTests.cs`'s `Get_SearchWithLiteralPercentOrUnderscore_TreatsThemLiterally_NeverAsWildcards` — the canonical regression test, mirrored in `CustomersEndpointTests.cs`/`BookingsEndpointTests.cs`.

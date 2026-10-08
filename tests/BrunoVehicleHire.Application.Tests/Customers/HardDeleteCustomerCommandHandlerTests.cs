@@ -68,6 +68,31 @@ public class HardDeleteCustomerCommandHandlerTests
     }
 
     [Fact]
+    public async Task Handle_CustomerWithActiveBooking_ThrowsTheCancelItFirstMessage_NotTheDeactivateOrEraseOne()
+    {
+        var customer = ExistingCustomer();
+        var customerRepository = Substitute.For<ICustomerRepository>();
+        var bookingRepository = Substitute.For<IBookingRepository>();
+        var unitOfWork = Substitute.For<IUnitOfWork>();
+
+        customerRepository.GetByIdAsync(customer.Id, Arg.Any<CancellationToken>()).Returns(customer);
+        bookingRepository.ExistsForCustomerAsync(customer.Id, Arg.Any<CancellationToken>()).Returns(true);
+        bookingRepository.ExistsActiveForCustomerAsync(customer.Id, Arg.Any<CancellationToken>()).Returns(true);
+
+        var handler = new HardDeleteCustomerCommandHandler(customerRepository, bookingRepository, unitOfWork);
+
+        var act = async () => await handler.Handle(new HardDeleteCustomerCommand(customer.Id), CancellationToken.None);
+
+        var exception = await act.Should().ThrowAsync<DomainRuleViolationException>();
+        exception.Which.Message.Should().Be(
+            "This customer has an active or upcoming booking — cancel it first, or wait for it to complete.");
+        exception.Which.Rule.Should().Be("HasActiveBookings");
+
+        await customerRepository.DidNotReceive().RemoveAsync(Arg.Any<Customer>(), Arg.Any<CancellationToken>());
+        await unitOfWork.DidNotReceive().SaveChangesAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task Handle_CustomerDoesNotExist_ThrowsNotFoundException_AndNeverChecksBookingsOrSaves()
     {
         var customerRepository = Substitute.For<ICustomerRepository>();

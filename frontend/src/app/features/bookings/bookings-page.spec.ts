@@ -1,6 +1,7 @@
 import { provideHttpClient, withInterceptors } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { Router, provideRouter } from '@angular/router';
 import { QueryClient, provideTanStackQuery } from '@tanstack/angular-query-experimental';
 
@@ -9,7 +10,8 @@ import { errorNormalizationInterceptor } from '../../core/api-client/error-norma
 import { BookingDto } from '../../core/models/booking-dto';
 import { PagedResult } from '../../core/models/paged-result';
 import { ToastService } from '../../shared/toast/toast.service';
-import { currencyFormatter } from './booking-formatters';
+import { currencyFormatter, dateFormatter } from './booking-formatters';
+import { BookingFormModal } from './booking-form-modal';
 import { BookingsPage } from './bookings-page';
 
 function bookingDto(overrides: Partial<BookingDto> = {}): BookingDto {
@@ -145,7 +147,7 @@ describe('BookingsPage', () => {
     expect(fixture.nativeElement.querySelector('table')).toBeNull();
   });
 
-  it('renders a populated DataTable with Vehicle/Customer/Start/End/Total/Status columns', async () => {
+  it('renders a populated DataTable with Vehicle/Customer/Start/End/Total/Status/Created columns', async () => {
     await settle();
     expectBookingsRequest().flush(pagedResult([bookingDto()]));
     flushPickerQueries();
@@ -160,12 +162,23 @@ describe('BookingsPage', () => {
     );
     // Every row always gets a "View" action (spec-4-5), so DataTable renders its trailing
     // (sr-only-labelled) Actions column regardless of this row's own Cancel eligibility.
-    expect(headers).toEqual(['Vehicle', 'Customer', 'Start', 'End', 'Total', 'Status', 'Actions']);
+    // "Created" is shown because the list is ordered by it (newest first).
+    expect(headers).toEqual([
+      'Vehicle',
+      'Customer',
+      'Start',
+      'End',
+      'Total',
+      'Status',
+      'Created',
+      'Actions',
+    ]);
 
     const row = fixture.nativeElement.querySelector('tbody tr');
     expect(row.textContent).toContain('Toyota Corolla — CA123456');
     expect(row.textContent).toContain('Thabo Nkosi');
     expect(row.textContent).toContain(currencyFormatter.format(1400));
+    expect(row.textContent).toContain(dateFormatter.format(new Date('2026-09-20T10:30:00Z')));
   });
 
   it('offers a Cancel action for a future Active booking (spec-4-3)', async () => {
@@ -270,6 +283,24 @@ describe('BookingsPage', () => {
     const badge = fixture.nativeElement.querySelector('tbody tr app-badge');
     expect(badge).not.toBeNull();
     expect(badge.textContent).toContain('Active');
+  });
+
+  it('labels an Active booking that has not started yet "Upcoming", and one that has started "Active"', async () => {
+    await settle();
+    expectBookingsRequest().flush(
+      pagedResult([
+        bookingDto({ id: 'future', status: 'Active', startDate: '2099-01-01', endDate: '2099-01-05' }),
+        bookingDto({ id: 'running', status: 'Active', startDate: '2020-01-01', endDate: '2099-01-05' }),
+        bookingDto({ id: 'cancelled-future', status: 'Cancelled', startDate: '2099-02-01', endDate: '2099-02-05' }),
+      ]),
+    );
+    flushPickerQueries();
+    await settle();
+
+    const badges = Array.from<HTMLElement>(fixture.nativeElement.querySelectorAll('tbody tr app-badge')).map(
+      (badge) => badge.textContent?.trim(),
+    );
+    expect(badges).toEqual(['Upcoming', 'Active', 'Cancelled']);
   });
 
   it('renders a Cancelled Badge for a cancelled booking', async () => {
@@ -449,6 +480,135 @@ describe('BookingsPage', () => {
     });
   });
 
+  describe('after a successful create', () => {
+    function bookingModal(): BookingFormModal {
+      return fixture.debugElement.query(By.directive(BookingFormModal)).componentInstance;
+    }
+
+    function nextButton(): HTMLButtonElement {
+      return Array.from<HTMLButtonElement>(fixture.nativeElement.querySelectorAll('button')).find(
+        (b) => b.textContent?.trim() === 'Next',
+      )!;
+    }
+
+    it('goes back to page 1 so the newest-first list shows the new booking', async () => {
+      await settle();
+      expectBookingsRequest().flush(pagedResult([bookingDto()], { totalCount: 100 }));
+      flushPickerQueries();
+      await settle();
+      nextButton().click();
+      await settle();
+      httpMock
+        .expectOne((r) => r.url === '/api/bookings' && r.params.get('page') === '2')
+        .flush(pagedResult([bookingDto()], { totalCount: 100, page: 2 }));
+      await settle();
+
+      bookingModal().created.emit();
+      await settle();
+
+      const req = expectBookingsRequest();
+      expect(req.request.params.get('page')).toBe('1');
+      req.flush(pagedResult([bookingDto()], { totalCount: 100 }));
+    });
+
+    it('clears an active search so a new booking that does not match it is not silently hidden', async () => {
+      await settle();
+      expectBookingsRequest().flush(pagedResult([bookingDto()]));
+      flushPickerQueries();
+      await settle();
+      setSearch('nkosi');
+      fixture.detectChanges();
+      await new Promise((resolve) => setTimeout(resolve, 350));
+      await settle();
+      expectBookingsRequest('nkosi').flush(pagedResult([bookingDto()]));
+      await settle();
+
+      bookingModal().created.emit();
+      fixture.detectChanges();
+      expect(searchInput().value).toBe('');
+
+      await new Promise((resolve) => setTimeout(resolve, 350));
+      await settle();
+      expectBookingsRequest(null).flush(pagedResult([bookingDto()]));
+    });
+
+    it('drops a column sort the user had clicked, so the new booking is not buried by it', async () => {
+      await settle();
+      expectBookingsRequest().flush(
+        pagedResult([bookingDto({ id: 'b1' }), bookingDto({ id: 'b2', totalPrice: 900 })]),
+      );
+      flushPickerQueries();
+      await settle();
+
+      const totalHeader = () =>
+        Array.from<HTMLElement>(fixture.nativeElement.querySelectorAll('th')).find((th) =>
+          th.textContent?.includes('Total'),
+        )!;
+      totalHeader().querySelector('button')!.click();
+      fixture.detectChanges();
+      expect(totalHeader().getAttribute('aria-sort')).toBe('ascending');
+
+      bookingModal().created.emit();
+      await settle();
+
+      expect(totalHeader().getAttribute('aria-sort')).toBe('none');
+    });
+  });
+
+  it('sorts the page by the status label when the Status header is clicked', async () => {
+    await settle();
+    expectBookingsRequest().flush(
+      pagedResult([
+        bookingDto({ id: 'b1', status: 'Completed' }),
+        bookingDto({ id: 'b2', status: 'Cancelled' }),
+        bookingDto({ id: 'b3', status: 'Active', startDate: '2030-03-10', endDate: '2030-03-14' }),
+      ]),
+    );
+    flushPickerQueries();
+    await settle();
+
+    const statusHeader = () =>
+      Array.from<HTMLElement>(fixture.nativeElement.querySelectorAll('th')).find((th) =>
+        th.textContent?.includes('Status'),
+      )!;
+    const statusLabels = () =>
+      Array.from<HTMLElement>(fixture.nativeElement.querySelectorAll('tbody tr')).map((tr) =>
+        tr.querySelectorAll('td')[5].textContent?.trim(),
+      );
+
+    statusHeader().querySelector('button')!.click();
+    fixture.detectChanges();
+
+    expect(statusHeader().getAttribute('aria-sort')).toBe('ascending');
+    expect(statusLabels()).toEqual(['Cancelled', 'Completed', 'Upcoming']);
+
+    statusHeader().querySelector('button')!.click();
+    fixture.detectChanges();
+
+    expect(statusLabels()).toEqual(['Upcoming', 'Completed', 'Cancelled']);
+  });
+
+  it('moves back to the last valid page when the current page no longer exists (e.g. its last row was cancelled away)', async () => {
+    await settle();
+    expectBookingsRequest().flush(pagedResult([bookingDto()], { totalCount: 100 }));
+    flushPickerQueries();
+    await settle();
+    const next = Array.from<HTMLButtonElement>(fixture.nativeElement.querySelectorAll('button')).find(
+      (b) => b.textContent?.trim() === 'Next',
+    )!;
+    next.click();
+    await settle();
+
+    httpMock
+      .expectOne((r) => r.url === '/api/bookings' && r.params.get('page') === '2')
+      .flush(pagedResult([], { totalCount: 20, page: 2 }));
+    await settle();
+
+    const req = expectBookingsRequest();
+    expect(req.request.params.get('page')).toBe('1');
+    req.flush(pagedResult([bookingDto()], { totalCount: 20 }));
+  });
+
   describe('cancel row action', () => {
     function alertDialog(): HTMLElement | null {
       return fixture.nativeElement.querySelector('[role="alertdialog"]');
@@ -547,6 +707,9 @@ describe('BookingsPage', () => {
       expect(dialog).not.toBeNull();
       expect(dialog!.textContent).not.toContain('stay in records as Cancelled');
       expect(dialog!.textContent).toContain('Cannot cancel — booking already completed.');
+      expect(dialog!.querySelector('[role="alert"]')?.textContent).toContain(
+        'Cannot cancel — booking already completed.',
+      );
     });
   });
 });

@@ -1,7 +1,7 @@
 using BrunoVehicleHire.Application.Customers;
 using BrunoVehicleHire.Domain;
+using BrunoVehicleHire.Infrastructure.Helpers;
 using BrunoVehicleHire.Infrastructure.Persistence;
-using BrunoVehicleHire.Infrastructure.Security;
 using Microsoft.EntityFrameworkCore;
 
 namespace BrunoVehicleHire.Infrastructure.Repositories;
@@ -12,8 +12,9 @@ namespace BrunoVehicleHire.Infrastructure.Repositories;
 /// rows -- never filters on <c>IsDeleted</c> explicitly here (mirrors <c>VehicleRepository</c>).
 /// Search matches FirstName/LastName ONLY via <see cref="EF.Functions"/>' <c>ILike</c> -- never
 /// Email/PhoneNumber, since those are encrypted at rest and pattern-matching ciphertext would be
-/// meaningless (spec-3-1's Scope decision 2). Ordered by <c>CreatedDate</c> then <c>Id</c> for a
-/// stable page boundary across requests.
+/// meaningless (spec-3-1's Scope decision 2). Ordered newest-first (<c>CreatedDate</c> then
+/// <c>Id</c>, both descending) so a just-created customer is always on page 1, with a stable page
+/// boundary across requests.
 /// </summary>
 public class CustomerRepository(AppDbContext dbContext) : ICustomerRepository
 {
@@ -28,19 +29,20 @@ public class CustomerRepository(AppDbContext dbContext) : ICustomerRepository
             ? dbContext.Customers.IgnoreQueryFilters()
             : dbContext.Customers.AsQueryable();
 
-        if (!string.IsNullOrWhiteSpace(search))
+        // Every space-separated word must match FirstName or LastName (see ContainsPatterns), so
+        // "Ericka U" finds "Ericka Ullrich".
+        foreach (var pattern in LikePatternEscaper.ContainsPatterns(search))
         {
-            var escapedSearch = LikePatternEscaper.Escape(search);
             query = query.Where(c =>
-                EF.Functions.ILike(c.FirstName, $"%{escapedSearch}%", LikePatternEscaper.EscapeCharacter) ||
-                EF.Functions.ILike(c.LastName, $"%{escapedSearch}%", LikePatternEscaper.EscapeCharacter));
+                EF.Functions.ILike(c.FirstName, pattern, LikePatternEscaper.EscapeCharacter) ||
+                EF.Functions.ILike(c.LastName, pattern, LikePatternEscaper.EscapeCharacter));
         }
 
         var totalCount = await query.CountAsync(cancellationToken);
 
         var items = await query
-            .OrderBy(c => c.CreatedDate)
-            .ThenBy(c => c.Id)
+            .OrderByDescending(c => c.CreatedDate)
+            .ThenByDescending(c => c.Id)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .ToListAsync(cancellationToken);

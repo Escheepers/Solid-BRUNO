@@ -57,18 +57,22 @@ export class VehiclesPage {
   );
 
   /**
-   * `page` resets to 1 every time `debouncedSearch` changes (a filtered search
-   * shouldn't stay on a stale page number from the previous result set), but is
+   * `page` resets to 1 every time `debouncedSearch` or the "Show inactive" toggle changes (a
+   * different filter shouldn't stay on a stale page number from the previous result set -- toggling
+   * "Show inactive" off from page 2 used to land on a page that no longer existed), but is
    * otherwise freely settable via `onPageChange`. `linkedSignal` resolves this
    * synchronously as part of the signal graph, so the very first query issued for a
-   * new search term already reads page 1 — an `effect()`-based reset that calls
+   * new filter already reads page 1 — an `effect()`-based reset that calls
    * `page.set(1)` after the fact would still let one wasted request go out first for
    * `{ page: <stale>, search: <new> }` before a corrected one landed.
    */
   protected readonly page = linkedSignal({
-    source: this.debouncedSearch,
+    source: () => `${this.debouncedSearch()}|${this.showInactive()}`,
     computation: () => 1,
   });
+
+  /** Bumped after a create so `DataTable` drops any column sort the user clicked earlier. */
+  protected readonly sortResetToken = signal(0);
 
   protected readonly query = useVehiclesQuery(() => ({
     page: this.page(),
@@ -179,6 +183,17 @@ export class VehiclesPage {
 
   protected onFormModalClose(): void {
     this.isFormModalOpen.set(false);
+  }
+
+  /**
+   * After a successful create, make the new row visible: lists are newest-first, so go back to page
+   * 1, clear the search (a new row that doesn't match it would silently stay hidden) and drop any
+   * leftover column sort.
+   */
+  protected onCreated(): void {
+    this.searchInput.set('');
+    this.page.set(1);
+    this.sortResetToken.update((token) => token + 1);
   }
 
   protected openDeactivateDialog(vehicle: Vehicle): void {

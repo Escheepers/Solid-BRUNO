@@ -17,7 +17,14 @@
     />
     <app-input formControlName="make" label="Make" [error]="makeError()" />
     <app-input formControlName="model" label="Model" [error]="modelError()" />
-    <app-input type="number" formControlName="year" label="Year" [error]="yearError()" />
+    <app-input
+      type="number"
+      formControlName="year"
+      label="Year"
+      [min]="earliestYear"
+      [max]="latestYear"
+      [error]="yearError()"
+    />
     <app-input
       type="number"
       formControlName="dailyRate"

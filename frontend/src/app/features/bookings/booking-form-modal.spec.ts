@@ -71,6 +71,10 @@ describe('BookingFormModal', () => {
   let toastService: ToastService;
 
   beforeEach(async () => {
+    // Pin "today" (Date only, so timers/microtasks stay real): the form rejects past start dates
+    // and the fixtures below use dates in Oct 2026.
+    vi.useFakeTimers({ toFake: ['Date'], now: new Date(2026, 8, 15, 12) });
+
     queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
     });
@@ -92,6 +96,7 @@ describe('BookingFormModal', () => {
 
   afterEach(() => {
     httpMock.verify();
+    vi.useRealTimers();
   });
 
   async function settle(): Promise<void> {
@@ -236,6 +241,8 @@ describe('BookingFormModal', () => {
 
     const closeSpy = vi.fn();
     fixture.componentInstance.closeRequest.subscribe(closeSpy);
+    const createdSpy = vi.fn();
+    fixture.componentInstance.created.subscribe(createdSpy);
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
     const toastSpy = vi.spyOn(toastService, 'success');
 
@@ -255,8 +262,31 @@ describe('BookingFormModal', () => {
     await settle();
 
     expect(closeSpy).toHaveBeenCalled();
+    expect(createdSpy).toHaveBeenCalledTimes(1);
     expect(toastSpy).toHaveBeenCalledWith('Booking created.');
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['bookings', 'list'] });
+  });
+
+  it('does not emit created when the create fails', async () => {
+    await seedPickers();
+    const createdSpy = vi.fn();
+    fixture.componentInstance.created.subscribe(createdSpy);
+
+    fillValidForm();
+    await submitForm();
+
+    httpMock.expectOne('/api/bookings').flush(
+      {
+        type: 'urn:bruno:booking:overlap',
+        title: 'A domain rule was violated.',
+        status: 409,
+        detail: 'This vehicle is already booked 1 Oct – 5 Oct',
+      },
+      { status: 409, statusText: 'Conflict' },
+    );
+    await settle();
+
+    expect(createdSpy).not.toHaveBeenCalled();
   });
 
   describe('live Total Price', () => {
@@ -298,6 +328,39 @@ describe('BookingFormModal', () => {
       fixture.detectChanges();
 
       expect(totalPriceRegion().textContent).toContain('Select a vehicle and valid dates');
+    });
+  });
+
+  describe('past dates', () => {
+    it('sets today as the Start Date min and the day after the start as the End Date min', async () => {
+      await seedPickers();
+
+      const [startDate, endDate] = dateInputs();
+      expect(startDate.min).toBe('2026-09-15');
+      expect(endDate.min).toBe('2026-09-16');
+
+      setInputValue(startDate, '2026-10-01');
+      fixture.detectChanges();
+      expect(endDate.min).toBe('2026-10-02');
+    });
+
+    it('blocks submit and shows an error when the Start Date is in the past', async () => {
+      await seedPickers();
+      fillValidForm();
+      setInputValue(dateInputs()[0], '2026-09-14');
+      await submitForm();
+
+      httpMock.expectNone('/api/bookings');
+      expect(fixture.nativeElement.textContent).toContain('Bookings cannot start in the past.');
+    });
+
+    it('allows a booking that starts today', async () => {
+      await seedPickers();
+      fillValidForm();
+      setInputValue(dateInputs()[0], '2026-09-15');
+      await submitForm();
+
+      httpMock.expectOne('/api/bookings');
     });
   });
 

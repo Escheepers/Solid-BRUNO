@@ -91,5 +91,25 @@ export function startOfToday(): Date {
  * list's.
  */
 export function isCancellable(booking: Booking): boolean {
+  return isUpcoming(booking);
+}
+
+/** What a booking's status badge can show: the three real statuses, plus "Upcoming". */
+export type DisplayStatus = BookingStatus | 'Upcoming';
+
+/**
+ * True for an Active booking that has not started yet (`startDate` after today) -- the one
+ * Active sub-state a user can still cancel. "Upcoming" is NOT a stored status (the API only has
+ * Active/Completed/Cancelled); it is derived here, from the dates, purely for display. A booking
+ * that starts today, is mid-rental, or is past its end date but not yet swept stays "Active", and
+ * Completed/Cancelled bookings are never relabelled. Takes only the two fields it needs so the
+ * Customer Summary's own booking rows can use it too.
+ */
+export function isUpcoming(booking: { status: BookingStatus; startDate: Date }): boolean {
   return booking.status === 'Active' && booking.startDate > startOfToday();
+}
+
+/** The label a status badge should show for this booking (see {@link isUpcoming}). */
+export function displayStatus(booking: { status: BookingStatus; startDate: Date }): DisplayStatus {
+  return isUpcoming(booking) ? 'Upcoming' : booking.status;
 }

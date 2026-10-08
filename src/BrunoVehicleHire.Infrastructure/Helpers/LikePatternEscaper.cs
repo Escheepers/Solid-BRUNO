@@ -1,4 +1,6 @@
-namespace BrunoVehicleHire.Infrastructure.Repositories;
+using System.Globalization;
+
+namespace BrunoVehicleHire.Infrastructure.Helpers;
 
 /// <summary>
 /// Escapes a raw user-supplied search term so it can be safely wrapped in a Postgres
@@ -34,5 +36,24 @@ public static class LikePatternEscaper
             .Replace("\\", "\\\\")
             .Replace("%", "\\%")
             .Replace("_", "\\_");
+    }
+
+    /// <summary>
+    /// Splits a user's search text on whitespace and returns one escaped <c>%word%</c> pattern per word.
+    /// A repository then requires EVERY pattern to match at least one searchable field (AND across
+    /// words, OR across fields), so a multi-word search works across fields: "Ericka U" finds
+    /// "Ericka Ullrich" (the whole phrase is a substring of neither first nor last name on its own),
+    /// "Toyota Corolla" finds a vehicle by make + model, and word order does not matter. A single
+    /// word behaves exactly as before. Blank input yields no patterns (no filtering). A word made only
+    /// of dashes ("—", "-") is skipped: the UI renders "Make Model — Reg" with an em dash, so a
+    /// pasted display string would otherwise never match anything.
+    /// </summary>
+    public static IReadOnlyList<string> ContainsPatterns(string? search)
+    {
+        return (search ?? string.Empty)
+            .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)
+            .Where(word => !word.All(c => char.GetUnicodeCategory(c) == UnicodeCategory.DashPunctuation))
+            .Select(word => $"%{Escape(word)}%")
+            .ToList();
     }
 }

@@ -59,6 +59,19 @@ describe('Badge', () => {
     expect(dot().className).toContain('bg-danger-dot');
   });
 
+  it('renders Upcoming (a display-only label for a not-yet-started Active booking) in the link-blue tokens, distinct from success/neutral/danger', () => {
+    fixture.componentRef.setInput('status', 'Upcoming');
+    fixture.detectChanges();
+
+    const pill = fixture.nativeElement.querySelector('span');
+    expect(fixture.nativeElement.textContent).toContain('Upcoming');
+    expect(pill.className).toContain('bg-surface-alt');
+    expect(pill.className).toContain('text-link');
+    expect(dot().className).toContain('bg-link');
+    expect(pill.className).not.toContain('success');
+    expect(pill.className).not.toContain('danger');
+  });
+
   it('uses the full-pill radius reserved for status badges only', () => {
     fixture.componentRef.setInput('status', 'Active');
     fixture.detectChanges();

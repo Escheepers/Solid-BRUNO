@@ -1,5 +1,6 @@
 using BrunoVehicleHire.Application.Bookings;
 using BrunoVehicleHire.Domain;
+using BrunoVehicleHire.Infrastructure.Helpers;
 using BrunoVehicleHire.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -32,6 +33,17 @@ public class BookingRepository(AppDbContext dbContext) : IBookingRepository
     }
 
     /// <summary>
+    /// Backs <see cref="IBookingRepository.ExistsActiveForCustomerAsync"/>: true if any Booking row for
+    /// <paramref name="customerId"/> is currently <see cref="BookingStatus.Active"/> -- mirrors
+    /// <see cref="ExistsActiveForVehicleAsync"/> exactly.
+    /// </summary>
+    public async Task<bool> ExistsActiveForCustomerAsync(Guid customerId, CancellationToken cancellationToken)
+    {
+        return await dbContext.Bookings
+            .AnyAsync(b => b.CustomerId == customerId && b.Status == BookingStatus.Active, cancellationToken);
+    }
+
+    /// <summary>
     /// Joins each Booking to its referenced Vehicle/Customer row via <c>IgnoreQueryFilters()</c> on
     /// BOTH sides from day one (spec-4-1's Scope decision 4/AD-13) -- not deferred to a later story
     /// -- so a booking referencing an already-soft-deleted vehicle or an already-soft-deleted/
@@ -41,15 +53,17 @@ public class BookingRepository(AppDbContext dbContext) : IBookingRepository
     /// section (spec-4-5's Scope decision 1) -- filtered on the un-joined <c>Bookings</c> table before
     /// the join, since it needs no Vehicle/Customer field. <paramref name="search"/>
     /// (spec-bookings-search) case-insensitively substring-matches the joined Vehicle's
-    /// Make/Model/RegistrationNumber or Customer's FirstName/LastName (OR'd across all five fields via
+    /// Make/Model/RegistrationNumber or Customer's FirstName/LastName -- EVERY space-separated word of
+    /// <paramref name="search"/> must match at least one of those five fields (spec-search-multi-word;
+    /// OR'd across all five fields per word, AND'd across words, via
     /// <see cref="EF.Functions"/>' <c>ILike</c>, mirroring <c>VehicleRepository.GetPagedAsync</c>'s
     /// exact pattern), applied only when non-null/non-whitespace. Because <paramref name="search"/>
     /// needs the join's Vehicle/Customer columns, the total count is now taken from the same joined
     /// (and, when set, search-filtered) query the paged rows are sliced from -- one query shape for
     /// both, rather than the unfiltered-count-from-Bookings-alone shortcut this method used before
-    /// <paramref name="search"/> existed. Ordered by <c>CreatedDate</c> then <c>Id</c> for a stable
-    /// page boundary across requests, mirroring <c>VehicleRepository</c>/<c>CustomerRepository</c>'s
-    /// exact ordering.
+    /// <paramref name="search"/> existed. Ordered newest-first (<c>CreatedDate</c> then <c>Id</c>,
+    /// both descending) so a just-created booking is always on page 1, with a stable page boundary
+    /// across requests, mirroring <c>VehicleRepository</c>/<c>CustomerRepository</c>'s exact ordering.
     /// </summary>
     public async Task<(IReadOnlyList<(Booking Booking, Vehicle Vehicle, Customer Customer)> Items, int TotalCount)>
         GetPagedAsync(int page, int pageSize, Guid? vehicleId, string? search, CancellationToken cancellationToken)
@@ -66,22 +80,23 @@ public class BookingRepository(AppDbContext dbContext) : IBookingRepository
             join customer in dbContext.Customers.IgnoreQueryFilters() on booking.CustomerId equals customer.Id
             select new { booking, vehicle, customer };
 
-        if (!string.IsNullOrWhiteSpace(search))
+        // Every space-separated word must match one of the five fields (see ContainsPatterns), so a
+        // search can mix vehicle and customer words: "Toyota Ericka", "Ericka U".
+        foreach (var pattern in LikePatternEscaper.ContainsPatterns(search))
         {
-            var escapedSearch = LikePatternEscaper.Escape(search);
             joinedQuery = joinedQuery.Where(row =>
-                EF.Functions.ILike(row.vehicle.Make, $"%{escapedSearch}%", LikePatternEscaper.EscapeCharacter) ||
-                EF.Functions.ILike(row.vehicle.Model, $"%{escapedSearch}%", LikePatternEscaper.EscapeCharacter) ||
-                EF.Functions.ILike(row.vehicle.RegistrationNumber, $"%{escapedSearch}%", LikePatternEscaper.EscapeCharacter) ||
-                EF.Functions.ILike(row.customer.FirstName, $"%{escapedSearch}%", LikePatternEscaper.EscapeCharacter) ||
-                EF.Functions.ILike(row.customer.LastName, $"%{escapedSearch}%", LikePatternEscaper.EscapeCharacter));
+                EF.Functions.ILike(row.vehicle.Make, pattern, LikePatternEscaper.EscapeCharacter) ||
+                EF.Functions.ILike(row.vehicle.Model, pattern, LikePatternEscaper.EscapeCharacter) ||
+                EF.Functions.ILike(row.vehicle.RegistrationNumber, pattern, LikePatternEscaper.EscapeCharacter) ||
+                EF.Functions.ILike(row.customer.FirstName, pattern, LikePatternEscaper.EscapeCharacter) ||
+                EF.Functions.ILike(row.customer.LastName, pattern, LikePatternEscaper.EscapeCharacter));
         }
 
         var totalCount = await joinedQuery.CountAsync(cancellationToken);
 
         var rows = await joinedQuery
-            .OrderBy(row => row.booking.CreatedDate)
-            .ThenBy(row => row.booking.Id)
+            .OrderByDescending(row => row.booking.CreatedDate)
+            .ThenByDescending(row => row.booking.Id)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .ToListAsync(cancellationToken);

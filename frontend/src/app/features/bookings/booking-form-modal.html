@@ -67,9 +67,16 @@
         type="date"
         formControlName="startDate"
         label="Start Date"
+        [min]="today"
         [error]="startDateError()"
       />
-      <app-input type="date" formControlName="endDate" label="End Date" [error]="endDateError()" />
+      <app-input
+        type="date"
+        formControlName="endDate"
+        label="End Date"
+        [min]="endDateMin()"
+        [error]="endDateError()"
+      />
     </div>
 
     <div class="flex flex-col gap-1">

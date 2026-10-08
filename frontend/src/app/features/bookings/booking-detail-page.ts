@@ -1,4 +1,4 @@
-import { Component, computed, inject } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { QueryClient } from '@tanstack/angular-query-experimental';
@@ -11,9 +11,10 @@ import { ConfirmDialog } from '../../shared/confirm-dialog/confirm-dialog';
 import { ConfirmableAction, createConfirmableAction } from '../../shared/confirm-dialog/confirmable-action';
 import { Skeleton } from '../../shared/skeleton/skeleton';
 import { ToastService } from '../../shared/toast/toast.service';
+import { BookingEditModal } from './booking-edit-modal';
 import { currencyFormatter, dateFormatter } from './booking-formatters';
 import { useBookingQuery, useCancelBookingMutation } from './bookings.service';
-import { Booking, isCancellable, toBooking } from './models/booking';
+import { Booking, displayStatus, isCancellable, toBooking } from './models/booking';
 
 const DEFAULT_CANCEL_MESSAGE =
   'This booking will stay in records as Cancelled. This is not reversible.';
@@ -24,6 +25,10 @@ const DEFAULT_CANCEL_MESSAGE =
  * (a dedicated message + a link back to the list), and found (the full record) --
  * the same SRP-scoped responsibility (Story 2.5), applied to a Booking instead of a
  * Vehicle.
+ *
+ * An upcoming booking (the same `isCancellable` window) also gets an "Edit Dates" action opening
+ * `BookingEditModal`; saving it invalidates this booking's detail and the list (via
+ * `useUpdateBookingMutation`) so the new dates and price show immediately.
  *
  * Unlike `VehicleDetailPage`, this page also offers a Cancel action -- reusing
  * `isCancellable` (moved to `models/booking.ts` by this same story, spec-4-5's Scope
@@ -46,7 +51,7 @@ const DEFAULT_CANCEL_MESSAGE =
  */
 @Component({
   selector: 'app-booking-detail-page',
-  imports: [Skeleton, RouterLink, Badge, Button, ConfirmDialog],
+  imports: [Skeleton, RouterLink, Badge, Button, ConfirmDialog, BookingEditModal],
   templateUrl: './booking-detail-page.html',
 })
 export class BookingDetailPage {
@@ -58,7 +63,13 @@ export class BookingDetailPage {
     inject(ActivatedRoute).paramMap.pipe(map((params) => params.get('id') ?? undefined)),
   );
 
+  /** Exposed to the template: the badge shows "Upcoming" for an Active booking that hasn't started. */
+  protected readonly displayStatus = displayStatus;
+
   protected readonly query = useBookingQuery(() => this.bookingId());
+
+  /** Whether the "Edit Dates" modal is open -- offered only while the booking is still upcoming. */
+  protected readonly isEditOpen = signal(false);
 
   protected readonly booking = computed(() => {
     const dto = this.query.data();

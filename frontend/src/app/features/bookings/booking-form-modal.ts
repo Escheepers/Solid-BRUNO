@@ -24,6 +24,7 @@ import { ConfirmDialog } from '../../shared/confirm-dialog/confirm-dialog';
 import { Input } from '../../shared/input/input';
 import { Modal } from '../../shared/modal/modal';
 import { ToastService } from '../../shared/toast/toast.service';
+import { addDays, daysBetween, notInThePast, todayIso } from './booking-dates';
 import { currencyFormatter } from './booking-formatters';
 import { CreateBookingPayload, useCreateBookingMutation } from './bookings.service';
 
@@ -55,19 +56,6 @@ const BLANK_FORM_VALUE = {
  */
 const PICKER_PAGE_SIZE = 100;
 
-const MS_PER_DAY = 24 * 60 * 60 * 1000;
-
-/** Whole-day difference between two `"yyyy-MM-dd"` date-input values, computed the
- * same way `CreateBookingCommandHandler` computes it server-side
- * (`EndDate.DayNumber - StartDate.DayNumber`) -- anchoring both to UTC midnight
- * keeps the subtraction free of DST/timezone drift regardless of the browser's
- * local timezone. */
-function daysBetween(startIso: string, endIso: string): number {
-  const start = new Date(`${startIso}T00:00:00Z`).getTime();
-  const end = new Date(`${endIso}T00:00:00Z`).getTime();
-  return Math.round((end - start) / MS_PER_DAY);
-}
-
 /**
  * The "+ New Booking" form (spec-4-1): a vehicle/customer picker, a Start/End date
  * pair, a live-computed read-only Total Price, and a nested "+ New Customer" link
@@ -93,6 +81,10 @@ function daysBetween(startIso: string, endIso: string): number {
 export class BookingFormModal {
   readonly open = input.required<boolean>();
   readonly closeRequest = output<void>();
+  /** Fires only after a successful booking CREATE (never a cancel/discard), so the Bookings list can
+   * jump to where the new row is visible. Not to be confused with the nested `CustomerFormModal`'s
+   * own `created` (a new customer) bound in this component's template. */
+  readonly created = output<void>();
 
   /** Typed as `Combobox<Customer>` rather than an `ElementRef` -- spec-6-4's
    * focus-return-to-Customer-picker fix now lands on the combobox's own
@@ -106,9 +98,12 @@ export class BookingFormModal {
   protected readonly form = this.fb.nonNullable.group({
     vehicleId: ['', Validators.required],
     customerId: ['', Validators.required],
-    startDate: ['', Validators.required],
+    startDate: ['', [Validators.required, notInThePast]],
     endDate: ['', Validators.required],
   });
+
+  /** Today's local date (`yyyy-MM-dd`): the `min` of the Start Date picker. */
+  protected readonly today = todayIso();
 
   private readonly submitAttempted = signal(false);
   private readonly serverFieldErrors = signal<Partial<Record<BookingFormFieldName, string>>>({});
@@ -161,6 +156,12 @@ export class BookingFormModal {
 
     const days = daysBetween(startDate, endDate);
     return days > 0 ? vehicle.dailyRate * days : null;
+  });
+
+  /** End Date can't be on/before the chosen Start Date (or today when none is chosen yet). */
+  protected readonly endDateMin = computed(() => {
+    const { startDate } = this.formValue();
+    return startDate ? addDays(startDate, 1) : addDays(this.today, 1);
   });
 
   protected readonly totalPriceDisplay = computed(() => {
@@ -259,6 +260,7 @@ export class BookingFormModal {
     this.createMutation.mutate(payload, {
       onSuccess: () => {
         this.toastService.success('Booking created.');
+        this.created.emit();
         this.resetAndClose();
       },
       onError: (error) => this.applyError(error),
@@ -439,6 +441,9 @@ export class BookingFormModal {
 
       if (control.errors?.['required']) {
         return 'This field is required.';
+      }
+      if (control.errors?.['pastDate']) {
+        return 'Bookings cannot start in the past.';
       }
       return undefined;
     };

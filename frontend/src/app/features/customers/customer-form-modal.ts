@@ -36,6 +36,9 @@ const BLANK_FORM_VALUE = {
   phoneNumber: '',
 };
 
+/** Digits only, at most 10 -- the same rule `PhoneNumberRules` enforces server-side (a 400). */
+const PHONE_NUMBER_PATTERN = /^[0-9]{1,10}$/;
+
 /**
  * The "+ New Customer" / "Edit Customer" form — one component serving both create
  * and edit (Story 3.2, generalized from Story 3.1's create-only `CreateCustomerModal`,
@@ -91,7 +94,7 @@ export class CustomerFormModal {
     firstName: ['', Validators.required],
     lastName: ['', Validators.required],
     email: ['', [Validators.required, Validators.email]],
-    phoneNumber: ['', Validators.required],
+    phoneNumber: ['', [Validators.required, Validators.pattern(PHONE_NUMBER_PATTERN)]],
   });
 
   private readonly submitAttempted = signal(false);
@@ -330,6 +333,9 @@ export class CustomerFormModal {
       }
       if (control.errors?.['email']) {
         return 'Enter a valid email address.';
+      }
+      if (control.errors?.['pattern']) {
+        return 'Phone number must be digits only, up to 10 digits.';
       }
       return undefined;
     };

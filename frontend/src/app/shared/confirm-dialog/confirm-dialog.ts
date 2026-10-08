@@ -39,6 +39,14 @@ export class ConfirmDialog implements AfterViewChecked {
   readonly confirmLabel = input('Confirm');
   readonly cancelLabel = input('Cancel');
   readonly variant = input<'neutral' | 'destructive'>('neutral');
+  /**
+   * True when `message` is the reason the confirmed action FAILED (e.g. the API's 409 "This
+   * customer has an active or upcoming booking ..."), rather than ordinary confirmation copy.
+   * Renders it as a red, announced alert with an icon so it can't be mistaken for the question, and
+   * replaces the Confirm/Cancel pair with a single "Close" button -- the action already failed (e.g.
+   * "booking already cancelled"), so offering to confirm it again would be misleading.
+   */
+  readonly isError = input(false);
 
   readonly confirm = output<void>();
   readonly cancel = output<void>();

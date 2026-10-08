@@ -3,6 +3,7 @@ using BrunoVehicleHire.Application.Customers.Dtos;
 using BrunoVehicleHire.Domain;
 using BrunoVehicleHire.Domain.Exceptions;
 using MediatR;
+using Microsoft.EntityFrameworkCore;
 
 namespace BrunoVehicleHire.Application.Customers.Commands;
 
@@ -36,7 +37,16 @@ public class UpdateCustomerCommandHandler(ICustomerRepository repository, IUnitO
 
         customer.Update(request.FirstName, request.LastName, request.Email, request.PhoneNumber);
 
-        await unitOfWork.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await unitOfWork.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            // Another request changed (or deactivated/erased) this customer between our read and write.
+            throw await ConcurrencyConflict.ResolveAsync(
+                nameof(Customer), request.CustomerId, () => repository.GetByIdAsync(request.CustomerId, cancellationToken));
+        }
 
         return CustomerDto.FromDomain(customer);
     }

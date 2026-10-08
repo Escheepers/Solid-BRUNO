@@ -1,6 +1,7 @@
 import { provideHttpClient, withInterceptors } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { Router, provideRouter } from '@angular/router';
 import { QueryClient, provideTanStackQuery } from '@tanstack/angular-query-experimental';
 
@@ -9,6 +10,7 @@ import { errorNormalizationInterceptor } from '../../core/api-client/error-norma
 import { PagedResult } from '../../core/models/paged-result';
 import { VehicleDto } from '../../core/models/vehicle-dto';
 import { ToastService } from '../../shared/toast/toast.service';
+import { VehicleFormModal } from './vehicle-form-modal';
 import { VehiclesPage } from './vehicles-page';
 
 function vehicleDto(overrides: Partial<VehicleDto> = {}): VehicleDto {
@@ -382,6 +384,7 @@ describe('VehiclesPage', () => {
       // per the spec's Design Notes) shows its `detail` message rather than a generic
       // ServerError string.
       expect(dialog!.textContent).toContain("Vehicle 'v9' was not found.");
+      expect(dialog!.querySelector('[role="alert"]')?.textContent).toContain("Vehicle 'v9' was not found.");
     });
   });
 
@@ -406,6 +409,113 @@ describe('VehiclesPage', () => {
 
       expectVehiclesRequest('', 'true').flush(pagedResult([]));
     });
+
+    it('goes back to page 1 when the toggle changes, instead of keeping a page that may no longer exist', async () => {
+      await settle();
+      expectVehiclesRequest('', 'false').flush(pagedResult([vehicleDto()], { totalCount: 100 }));
+      await settle();
+
+      nextButton().click();
+      await settle();
+      expectVehiclesRequest('', 'false').flush(
+        pagedResult([vehicleDto()], { totalCount: 100, page: 2 }),
+      );
+      await settle();
+
+      showInactiveCheckbox().click();
+      fixture.detectChanges();
+      await settle();
+
+      const req = expectVehiclesRequest('', 'true');
+      expect(req.request.params.get('page')).toBe('1');
+      req.flush(pagedResult([vehicleDto()]));
+    });
+  });
+
+  function nextButton(): HTMLButtonElement {
+    return Array.from<HTMLButtonElement>(fixture.nativeElement.querySelectorAll('button')).find(
+      (b) => b.textContent?.trim() === 'Next',
+    )!;
+  }
+
+  describe('after a successful create', () => {
+    function vehicleModal(): VehicleFormModal {
+      return fixture.debugElement.query(By.directive(VehicleFormModal)).componentInstance;
+    }
+
+    it('goes back to page 1 so the newest-first list shows the new row', async () => {
+      await settle();
+      expectVehiclesRequest('').flush(pagedResult([vehicleDto()], { totalCount: 100 }));
+      await settle();
+      nextButton().click();
+      await settle();
+      expectVehiclesRequest('').flush(pagedResult([vehicleDto()], { totalCount: 100, page: 2 }));
+      await settle();
+
+      vehicleModal().created.emit();
+      await settle();
+
+      const req = expectVehiclesRequest('');
+      expect(req.request.params.get('page')).toBe('1');
+      req.flush(pagedResult([vehicleDto()], { totalCount: 100 }));
+    });
+
+    it('clears an active search so a new row that does not match it is not silently hidden', async () => {
+      await settle();
+      expectVehiclesRequest('').flush(pagedResult([vehicleDto()]));
+      await settle();
+      setSearch('toyota');
+      fixture.detectChanges();
+      await new Promise((resolve) => setTimeout(resolve, 350));
+      await settle();
+      expectVehiclesRequest('toyota').flush(pagedResult([vehicleDto()]));
+      await settle();
+
+      vehicleModal().created.emit();
+      fixture.detectChanges();
+      expect(searchInput().value).toBe('');
+
+      await new Promise((resolve) => setTimeout(resolve, 350));
+      await settle();
+      expectVehiclesRequest('').flush(pagedResult([vehicleDto()]));
+    });
+
+    it('drops a column sort the user had clicked, so the new row is not buried by it', async () => {
+      await settle();
+      expectVehiclesRequest('').flush(
+        pagedResult([vehicleDto({ id: 'v1' }), vehicleDto({ id: 'v2', registrationNumber: 'CA222222' })]),
+      );
+      await settle();
+
+      const rateHeader = () =>
+        Array.from<HTMLElement>(fixture.nativeElement.querySelectorAll('th')).find((th) =>
+          th.textContent?.includes('Daily Rate'),
+        )!;
+      rateHeader().querySelector('button')!.click();
+      fixture.detectChanges();
+      expect(rateHeader().getAttribute('aria-sort')).toBe('ascending');
+
+      vehicleModal().created.emit();
+      await settle();
+
+      expect(rateHeader().getAttribute('aria-sort')).toBe('none');
+    });
+  });
+
+  it('moves back to the last valid page when the current page no longer exists (e.g. its last row was removed)', async () => {
+    await settle();
+    expectVehiclesRequest('').flush(pagedResult([vehicleDto()], { totalCount: 100 }));
+    await settle();
+    nextButton().click();
+    await settle();
+
+    // The result set shrank while the user was on page 2: no rows there any more, 20 in total.
+    expectVehiclesRequest('').flush(pagedResult([], { totalCount: 20, page: 2 }));
+    await settle();
+
+    const req = expectVehiclesRequest('');
+    expect(req.request.params.get('page')).toBe('1');
+    req.flush(pagedResult([vehicleDto()], { totalCount: 20 }));
   });
 
   describe('restore row action', () => {

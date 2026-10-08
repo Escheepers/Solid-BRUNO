@@ -45,6 +45,7 @@
       [rowMuted]="rowMuted"
       [rowKey]="rowKey"
       [rowError]="rowError()"
+      [sortResetToken]="sortResetToken()"
       (pageChange)="onPageChange($event)"
     />
   }
@@ -52,6 +53,7 @@
   <app-customer-form-modal
     [open]="isFormModalOpen()"
     [customer]="editingCustomer()"
+    (created)="onCreated()"
     (closeRequest)="onFormModalClose()"
   />
 
@@ -59,6 +61,7 @@
     [open]="hardDeleteAction.current() !== null"
     title="Delete this customer?"
     [message]="hardDeleteAction.dialogMessage()"
+    [isError]="hardDeleteAction.hasError()"
     confirmLabel="Delete"
     cancelLabel="Cancel"
     (confirm)="hardDeleteAction.confirm()"
@@ -69,6 +72,7 @@
     [open]="deactivateAction.current() !== null"
     title="Deactivate this customer?"
     [message]="deactivateAction.dialogMessage()"
+    [isError]="deactivateAction.hasError()"
     confirmLabel="Deactivate"
     cancelLabel="Keep active"
     (confirm)="deactivateAction.confirm()"
@@ -80,6 +84,7 @@
     variant="destructive"
     title="Erase this customer's personal data?"
     [message]="eraseAction.dialogMessage()"
+    [isError]="eraseAction.hasError()"
     confirmLabel="Erase"
     cancelLabel="Cancel"
     (confirm)="eraseAction.confirm()"

@@ -1,5 +1,5 @@
 <ng-template #statusCell let-booking>
-  <app-badge [status]="booking.status" />
+  <app-badge [status]="displayStatus(booking)" />
 </ng-template>
 
 <div class="flex flex-col gap-6 p-8">
@@ -38,16 +38,22 @@
       [totalCount]="totalCount()"
       [actions]="actions"
       [rowKey]="rowKey"
+      [sortResetToken]="sortResetToken()"
       (pageChange)="onPageChange($event)"
     />
   }
 
-  <app-booking-form-modal [open]="isFormModalOpen()" (closeRequest)="onFormModalClose()" />
+  <app-booking-form-modal
+    [open]="isFormModalOpen()"
+    (created)="onCreated()"
+    (closeRequest)="onFormModalClose()"
+  />
 
   <app-confirm-dialog
     [open]="cancelAction.current() !== null"
     title="Cancel this booking?"
     [message]="cancelAction.dialogMessage()"
+    [isError]="cancelAction.hasError()"
     confirmLabel="Cancel booking"
     cancelLabel="Keep booking"
     (confirm)="cancelAction.confirm()"

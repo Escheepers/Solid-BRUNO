@@ -61,7 +61,7 @@ public class CreateVehicleCommandHandler(IVehicleRepository repository, IUnitOfW
         string registrationNumber, CancellationToken cancellationToken)
     {
         var alreadyExists = await repository.ExistsByRegistrationNumberAsync(
-            registrationNumber, excludingId: null, cancellationToken);
+            Vehicle.NormalizeRegistrationNumber(registrationNumber), excludingId: null, cancellationToken);
 
         if (alreadyExists)
         {

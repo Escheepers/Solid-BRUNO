@@ -1,5 +1,5 @@
 import { NgTemplateOutlet } from '@angular/common';
-import { Component, TemplateRef, computed, input, output, signal } from '@angular/core';
+import { Component, TemplateRef, computed, effect, input, linkedSignal, output } from '@angular/core';
 
 import { Skeleton } from '../skeleton/skeleton';
 
@@ -106,8 +106,30 @@ export class DataTable<T> {
   readonly rowMuted = input<((row: T) => boolean) | null>(null);
   readonly rowKey = input<((row: T) => string) | null>(null);
   readonly rowError = input<{ key: string; message: string } | null>(null);
+  /**
+   * Changing this value clears any column sort the user has clicked (spec-new-rows-visible-first):
+   * the owner bumps it after a create so the server's newest-first order shows again and the new
+   * row isn't buried by a sort chosen earlier. Its value has no meaning beyond "it changed".
+   */
+  readonly sortResetToken = input(0);
 
   readonly pageChange = output<number>();
+
+  constructor() {
+    // A page past the last one (the last row of the last page was just removed, or a filter shrank
+    // the result set) would otherwise leave an empty table under a non-zero count. Ask the owner to
+    // move to the last valid page. Skipped while loading and when there are no rows at all -- the
+    // latter is the owner's empty state, not a stale page number.
+    effect(() => {
+      if (this.loading() || this.totalCount() === 0) {
+        return;
+      }
+      const lastPage = this.totalPages();
+      if (this.page() > lastPage) {
+        this.pageChange.emit(lastPage);
+      }
+    });
+  }
 
   /**
    * The single sortable column/direction active at a time (or `null` for the
@@ -116,8 +138,12 @@ export class DataTable<T> {
    * Deliberately keyed by `column.header` (already this table's per-column
    * identity, per the existing `track column.header`) rather than a column
    * index, so it survives `columns()` re-creation across change detection.
+   * A `linkedSignal` on `sortResetToken` so the owner can clear it from outside.
    */
-  private readonly sortState = signal<{ header: string; direction: SortDirection } | null>(null);
+  private readonly sortState = linkedSignal<number, { header: string; direction: SortDirection } | null>({
+    source: this.sortResetToken,
+    computation: () => null,
+  });
 
   /**
    * `rows()` sorted per `sortState` -- client-side, over only the currently

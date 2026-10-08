@@ -17,17 +17,42 @@
       </div>
 
       <div class="px-6 py-5">
-        <p id="confirm-dialog-message" class="text-body text-text-body">{{ message() }}</p>
+        @if (isError()) {
+          <div
+            role="alert"
+            aria-live="polite"
+            class="flex items-start gap-2 rounded-md bg-danger-bg px-3 py-2 text-body text-danger-text"
+          >
+            <svg
+              aria-hidden="true"
+              viewBox="0 0 20 20"
+              fill="currentColor"
+              class="mt-0.5 h-4 w-4 shrink-0"
+            >
+              <path
+                fill-rule="evenodd"
+                clip-rule="evenodd"
+                d="M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0Zm-8-5a.75.75 0 0 1 .75.75v4.5a.75.75 0 0 1-1.5 0v-4.5A.75.75 0 0 1 10 5Zm0 10a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z"
+              />
+            </svg>
+            <p id="confirm-dialog-message">{{ message() }}</p>
+          </div>
+        } @else {
+          <p id="confirm-dialog-message" class="text-body text-text-body">{{ message() }}</p>
+        }
 
         <div class="mt-6 flex justify-end gap-3">
           <button
             type="button"
+            data-testid="confirm-dialog-cancel"
             class="rounded-md border border-input-border px-[18px] py-[9px] text-button text-text hover:bg-surface-alt"
             (click)="onCancelClick()"
           >
-            {{ cancelLabel() }}
+            {{ isError() ? 'Close' : cancelLabel() }}
           </button>
-          @if (variant() === 'destructive') {
+          @if (isError()) {
+            <!-- The action failed (e.g. already cancelled): confirming again can't help, so only Close remains. -->
+          } @else if (variant() === 'destructive') {
             <button
               type="button"
               data-testid="confirm-dialog-destructive-confirm"

@@ -577,5 +577,84 @@ describe('DataTable', () => {
       expect(header('ID').getAttribute('aria-sort')).toBe('none');
       expect(header('Name').getAttribute('aria-sort')).toBe('ascending');
     });
+
+    it('clears the active sort whenever sortResetToken changes, so server order (newest first) shows again', () => {
+      const sortableColumns: ColumnDef<Row>[] = [
+        { header: 'ID', cell: (row) => String(row.id) },
+        { header: 'Name', cell: (row) => row.name, sortable: true, sortValue: (row) => row.name },
+      ];
+      fixture.componentRef.setInput('columns', sortableColumns);
+      fixture.componentRef.setInput('rows', [
+        { id: 1, name: 'beta' },
+        { id: 2, name: 'alpha' },
+      ]);
+      fixture.detectChanges();
+
+      sortButton('Name').click();
+      fixture.detectChanges();
+      expect(rowNames()).toEqual(['alpha', 'beta']);
+
+      fixture.componentRef.setInput('sortResetToken', 1);
+      fixture.detectChanges();
+
+      expect(header('Name').getAttribute('aria-sort')).toBe('none');
+      expect(rowNames()).toEqual(['beta', 'alpha']); // as-received order again
+    });
+  });
+
+  /**
+   * A page number past the last page (e.g. the last row of the last page was just
+   * deactivated/deleted/cancelled, or a filter was toggled) used to leave an empty table
+   * while the footer still showed a count. The table asks its owner to move to the last
+   * valid page instead.
+   */
+  describe('out-of-range page', () => {
+    function collectPageChanges(): number[] {
+      const emitted: number[] = [];
+      component.pageChange.subscribe((page) => emitted.push(page));
+      return emitted;
+    }
+
+    it('emits pageChange with the last valid page when page is beyond it but rows exist', () => {
+      fixture.componentRef.setInput('totalCount', 20);
+      fixture.componentRef.setInput('pageSize', 20);
+      fixture.componentRef.setInput('page', 3);
+      const emitted = collectPageChanges();
+
+      fixture.detectChanges();
+
+      expect(emitted).toEqual([1]);
+    });
+
+    it('does not emit while the page is within range', () => {
+      fixture.componentRef.setInput('totalCount', 100);
+      fixture.componentRef.setInput('page', 5);
+      const emitted = collectPageChanges();
+
+      fixture.detectChanges();
+
+      expect(emitted).toEqual([]);
+    });
+
+    it('does not emit when there are no rows at all (that is an empty state, not a stale page)', () => {
+      fixture.componentRef.setInput('totalCount', 0);
+      fixture.componentRef.setInput('page', 3);
+      const emitted = collectPageChanges();
+
+      fixture.detectChanges();
+
+      expect(emitted).toEqual([]);
+    });
+
+    it('does not emit while loading', () => {
+      fixture.componentRef.setInput('totalCount', 20);
+      fixture.componentRef.setInput('page', 3);
+      fixture.componentRef.setInput('loading', true);
+      const emitted = collectPageChanges();
+
+      fixture.detectChanges();
+
+      expect(emitted).toEqual([]);
+    });
   });
 });

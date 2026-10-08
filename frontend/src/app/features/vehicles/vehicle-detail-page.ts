@@ -7,7 +7,7 @@ import { Badge } from '../../shared/badge/badge';
 import { ColumnDef, DataTable } from '../../shared/data-table/data-table';
 import { Skeleton } from '../../shared/skeleton/skeleton';
 import { useBookingsQuery } from '../bookings/bookings.service';
-import { Booking, toBooking } from '../bookings/models/booking';
+import { Booking, displayStatus, toBooking } from '../bookings/models/booking';
 import { toVehicle } from './models/vehicle';
 import { currencyFormatter, dateFormatter } from './vehicle-formatters';
 import { useVehicleQuery } from './vehicles.service';
@@ -108,6 +108,9 @@ export class VehicleDetailPage implements OnInit {
 
   protected readonly bookingHistoryPageSize = BOOKING_HISTORY_PAGE_SIZE;
 
+  /** Exposed to the template: the badge shows "Upcoming" for an Active booking that hasn't started. */
+  protected readonly displayStatus = displayStatus;
+
   protected bookingColumns: ColumnDef<Booking>[] = [];
 
   ngOnInit(): void {
@@ -125,9 +128,11 @@ export class VehicleDetailPage implements OnInit {
       { header: 'Total', cell: (booking) => currencyFormatter.format(booking.totalPrice) },
       {
         header: 'Status',
-        cell: (booking) => booking.status,
+        cell: (booking) => displayStatus(booking),
         cellTemplate: this.statusCellRef,
       },
+      // Shown because the history is ordered by it (newest first).
+      { header: 'Created', cell: (booking) => dateFormatter.format(booking.createdDate) },
     ];
   }
 

@@ -53,6 +53,38 @@ describe('createConfirmableAction', () => {
     });
   });
 
+  describe('hasError', () => {
+    it('is false until a confirm fails, true while the error is showing, and false again after cancel or reopen', () => {
+      const { action } = setUp((item, callbacks) => callbacks.onError({ detail: 'boom' }));
+
+      expect(action.hasError()).toBe(false);
+
+      action.open({ id: 'a1' });
+      expect(action.hasError()).toBe(false);
+
+      action.confirm();
+      expect(action.hasError()).toBe(true);
+
+      action.cancel();
+      expect(action.hasError()).toBe(false);
+
+      action.open({ id: 'a2' });
+      action.confirm();
+      expect(action.hasError()).toBe(true);
+      action.open({ id: 'a3' });
+      expect(action.hasError()).toBe(false);
+    });
+
+    it('stays false after a successful confirm', () => {
+      const { action } = setUp((item, callbacks) => callbacks.onSuccess());
+
+      action.open({ id: 'a1' });
+      action.confirm();
+
+      expect(action.hasError()).toBe(false);
+    });
+  });
+
   describe('cancel', () => {
     it('closes the dialog and never calls mutate', () => {
       const { action, mutate } = setUp();

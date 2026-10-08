@@ -240,12 +240,14 @@ describe('VehicleDetailPage', () => {
       const headers = Array.from(fixture.nativeElement.querySelectorAll('thead th')).map((th) =>
         (th as HTMLElement).textContent?.trim(),
       );
-      expect(headers).toEqual(['Customer', 'Start', 'End', 'Total', 'Status']);
+      // "Created" is shown because the history is ordered by it (newest first).
+      expect(headers).toEqual(['Customer', 'Start', 'End', 'Total', 'Status', 'Created']);
 
       const rows = fixture.nativeElement.querySelectorAll('tbody tr');
       expect(rows.length).toBe(2);
       expect(rows[0].textContent).toContain('Thabo Nkosi');
       expect(rows[0].textContent).toContain(currencyFormatter.format(1400));
+      expect(rows[0].textContent).toContain(dateFormatter.format(new Date('2026-09-20T10:30:00Z')));
 
       const badges = fixture.nativeElement.querySelectorAll('tbody tr app-badge');
       expect(badges.length).toBe(2);

@@ -1,7 +1,7 @@
-using BrunoVehicleHire.Infrastructure.Security;
+using BrunoVehicleHire.Infrastructure.Helpers;
 using FluentAssertions;
 
-namespace BrunoVehicleHire.Infrastructure.Tests.Security;
+namespace BrunoVehicleHire.Infrastructure.Tests.Helpers;
 
 /// <summary>
 /// Proves <see cref="EmailHasher.Compute"/>'s normalization: two emails that are the same

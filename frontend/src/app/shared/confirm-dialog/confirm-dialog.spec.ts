@@ -15,6 +15,7 @@ import { ConfirmDialog } from './confirm-dialog';
       confirmLabel="Discard"
       cancelLabel="Keep editing"
       [variant]="variant"
+      [isError]="isError"
       (confirm)="onConfirm()"
       (cancel)="onCancel()"
     />
@@ -25,6 +26,7 @@ class TestHost {
   confirmed = false;
   cancelled = false;
   variant: 'neutral' | 'destructive' = 'neutral';
+  isError = false;
 
   onConfirm(): void {
     this.confirmed = true;
@@ -64,6 +66,63 @@ describe('ConfirmDialog', () => {
   it('renders nothing when open is false', () => {
     fixture.detectChanges();
     expect(dialog()).toBeNull();
+  });
+
+  describe('error state (isError)', () => {
+    it('shows the message as a red, announced alert with an icon when isError is true', () => {
+      host.open = true;
+      host.isError = true;
+      fixture.detectChanges();
+
+      const alert = dialog()!.querySelector<HTMLElement>('[role="alert"]');
+      expect(alert).not.toBeNull();
+      expect(alert!.textContent).toContain('You have unsaved changes. Discard them?');
+      expect(alert!.className).toContain('text-danger-text');
+      expect(alert!.className).toContain('bg-danger-bg');
+      expect(alert!.querySelector('svg[aria-hidden="true"]')).not.toBeNull();
+    });
+
+    it('keeps aria-describedby pointing at the message in the error state too', () => {
+      host.open = true;
+      host.isError = true;
+      fixture.detectChanges();
+
+      const describedBy = dialog()!.getAttribute('aria-describedby')!;
+      expect(fixture.nativeElement.querySelector(`#${describedBy}`)?.textContent).toContain(
+        'You have unsaved changes. Discard them?',
+      );
+    });
+
+    it('replaces Confirm/Cancel with a single Close button that cancels, since the action already failed', () => {
+      host.open = true;
+      host.isError = true;
+      fixture.detectChanges();
+
+      const buttons = Array.from<HTMLButtonElement>(dialog()!.querySelectorAll('button'));
+      expect(buttons.map((b) => b.textContent?.trim())).toEqual(['Close']);
+
+      buttons[0].click();
+      expect(host.cancelled).toBe(true);
+      expect(host.confirmed).toBe(false);
+    });
+
+    it('keeps both the confirm and cancel buttons when isError is false', () => {
+      host.open = true;
+      fixture.detectChanges();
+
+      const labels = Array.from<HTMLButtonElement>(dialog()!.querySelectorAll('button')).map((b) =>
+        b.textContent?.trim(),
+      );
+      expect(labels).toEqual(['Keep editing', 'Discard']);
+    });
+
+    it('renders a plain, non-alert message when isError is false (the normal confirmation copy)', () => {
+      host.open = true;
+      fixture.detectChanges();
+
+      expect(dialog()!.querySelector('[role="alert"]')).toBeNull();
+      expect(dialog()!.textContent).toContain('You have unsaved changes. Discard them?');
+    });
   });
 
   it('renders the title, message, and role="alertdialog"/aria-modal when open is true', () => {

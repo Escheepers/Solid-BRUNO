@@ -4,6 +4,7 @@ import { ActivatedRoute, RouterLink } from '@angular/router';
 import { map } from 'rxjs';
 
 import { Badge } from '../../shared/badge/badge';
+import { displayStatus } from '../bookings/models/booking';
 import { Skeleton } from '../../shared/skeleton/skeleton';
 import { useCustomerSummaryQuery } from './customer-summary.service';
 import { currencyFormatter, dateFormatter } from './customer-summary-formatters';
@@ -75,6 +76,9 @@ export class CustomerSummaryPage {
   protected readonly hasNoBookings = computed(() => (this.summary()?.bookings.length ?? 0) === 0);
 
   protected readonly anonymizedClass = ANONYMIZED_CLASS;
+
+  /** Exposed to the template: the badge shows "Upcoming" for an Active booking that hasn't started. */
+  protected readonly displayStatus = displayStatus;
 
   protected vehicleDisplayName(booking: CustomerSummaryBooking): string {
     return `${booking.vehicleMake} ${booking.vehicleModel} — ${booking.vehicleRegistrationNumber}`;

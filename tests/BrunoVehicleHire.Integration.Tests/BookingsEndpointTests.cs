@@ -100,6 +100,16 @@ public class BookingsEndpointTests : IAsyncLifetime
         return request;
     }
 
+    private HttpRequestMessage AuthenticatedPut(string path, object body)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Put, path)
+        {
+            Content = JsonContent.Create(body),
+        };
+        request.Headers.Add(ApiKeyDefaults.HeaderName, ConfiguredKey);
+        return request;
+    }
+
     /// <summary>Body-less overload for action routes like Cancel, mirroring <c>VehiclesEndpointTests</c>'s own.</summary>
     private HttpRequestMessage AuthenticatedPost(string path)
     {
@@ -201,6 +211,106 @@ public class BookingsEndpointTests : IAsyncLifetime
         await command.ExecuteNonQueryAsync();
 
         return booking;
+    }
+
+    /// <summary>
+    /// Regression test (spec-search-multi-word): a multi-word booking search used to return nothing.
+    /// Each word must now match the joined Vehicle's Make/Model/RegistrationNumber or the Customer's
+    /// FirstName/LastName -- so "Ericka U" finds Ericka Ullrich's bookings, and "Toyota Ericka" mixes
+    /// a vehicle word with a customer word.
+    /// </summary>
+    [Theory]
+    [InlineData("Ericka U", 2)]
+    [InlineData("Toyota Ericka", 1)]
+    [InlineData("Ullrich Honda", 1)]
+    [InlineData("Toyota Bob", 1)]
+    [InlineData("Honda Bob", 0)]
+    [InlineData("Toyota — Ericka", 1)]
+    [InlineData("Toyota - Ericka", 1)]
+    public async Task Get_SearchWithSeveralWords_EveryWordMustMatchAVehicleOrCustomerField(
+        string search, int expectedCount)
+    {
+        var toyota = Vehicle.Create("CA700001", "Toyota", "Corolla", 2023, 350m);
+        var honda = Vehicle.Create("CA700002", "Honda", "Civic", 2023, 350m);
+        var ericka = Customer.Create("Ericka", "Ullrich", "ericka.u@example.com", "0821110201");
+        var bob = Customer.Create("Bob", "Smith", "bob.s@example.com", "0821110202");
+
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            dbContext.Vehicles.AddRange(toyota, honda);
+            dbContext.Customers.AddRange(ericka, bob);
+            await dbContext.SaveChangesAsync();
+        }
+
+        await SeedBookingAsync(toyota, ericka, new DateOnly(2026, 11, 1), new DateOnly(2026, 11, 3));
+        await SeedBookingAsync(honda, ericka, new DateOnly(2026, 11, 1), new DateOnly(2026, 11, 3));
+        await SeedBookingAsync(toyota, bob, new DateOnly(2026, 11, 10), new DateOnly(2026, 11, 12));
+
+        using var request = AuthenticatedGet(
+            $"/api/bookings?page=1&pageSize=20&search={Uri.EscapeDataString(search)}");
+        var response = await _client.SendAsync(request);
+        var json = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(json);
+
+        document.RootElement.GetProperty("totalCount").GetInt32().Should().Be(expectedCount);
+    }
+
+    private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => now;
+    }
+
+    private async Task SeedBookingCreatedAtAsync(
+        Vehicle vehicle, Customer customer, DateOnly startDate, DateOnly endDate, DateTimeOffset createdAt)
+    {
+        var booking = Booking.Create(
+            vehicle.Id, customer.Id, startDate, endDate, 1400m, new FixedTimeProvider(createdAt));
+
+        using var scope = _factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        dbContext.Bookings.Add(booking);
+        await dbContext.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// Regression test (spec-new-rows-visible-first): lists used to be ordered oldest-first, so a
+    /// booking created through the UI landed on the LAST page and looked as if nothing had been
+    /// created. The list must now be newest-first, so the new row is always on page 1.
+    /// </summary>
+    [Fact]
+    public async Task Get_AfterCreatingANewBooking_ListsNewestFirst_SoItAppearsOnPageOne()
+    {
+        var vehicle = await SeedActiveVehicleAsync();
+        var customer = await SeedActiveCustomerAsync();
+        await SeedBookingCreatedAtAsync(vehicle, customer, new DateOnly(2026, 11, 1), new DateOnly(2026, 11, 3), new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        await SeedBookingCreatedAtAsync(vehicle, customer, new DateOnly(2026, 11, 10), new DateOnly(2026, 11, 12), new DateTimeOffset(2026, 2, 1, 0, 0, 0, TimeSpan.Zero));
+        await SeedBookingCreatedAtAsync(vehicle, customer, new DateOnly(2026, 11, 20), new DateOnly(2026, 11, 22), new DateTimeOffset(2026, 3, 1, 0, 0, 0, TimeSpan.Zero));
+
+        using var createRequest = AuthenticatedPost("/api/bookings", new
+        {
+            vehicleId = vehicle.Id,
+            customerId = customer.Id,
+            startDate = new DateOnly(2026, 12, 1),
+            endDate = new DateOnly(2026, 12, 3),
+        });
+        var createResponse = await _client.SendAsync(createRequest);
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        using var listRequest = AuthenticatedGet("/api/bookings?page=1&pageSize=2");
+        var listResponse = await _client.SendAsync(listRequest);
+        var json = await listResponse.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(json);
+
+        var startDates = document.RootElement.GetProperty("items")
+            .EnumerateArray()
+            .Select(item => item.GetProperty("startDate").GetString())
+            .ToList();
+
+        startDates.Should().Equal(
+            new[] { "2026-12-01", "2026-11-20" },
+            "the list is newest-first, so the just-created booking is first");
+        document.RootElement.GetProperty("totalCount").GetInt32().Should().Be(4);
     }
 
     [Fact]
@@ -616,8 +726,8 @@ public class BookingsEndpointTests : IAsyncLifetime
         {
             vehicleId = vehicle.Id,
             customerId = customer.Id,
-            startDate = "2026-10-01",
-            endDate = "2026-10-05",
+            startDate = "2030-10-01",
+            endDate = "2030-10-05",
         });
 
         var response = await _client.SendAsync(request);
@@ -657,8 +767,8 @@ public class BookingsEndpointTests : IAsyncLifetime
         {
             vehicleId = vehicle.Id,
             customerId = customer.Id,
-            startDate = "2026-10-01",
-            endDate = "2026-10-01",
+            startDate = "2030-10-01",
+            endDate = "2030-10-01",
         });
 
         var response = await _client.SendAsync(request);
@@ -681,13 +791,236 @@ public class BookingsEndpointTests : IAsyncLifetime
         {
             vehicleId = vehicle.Id,
             customerId = customer.Id,
-            startDate = "2026-10-05",
-            endDate = "2026-10-01",
+            startDate = "2030-10-05",
+            endDate = "2030-10-01",
         });
 
         var response = await _client.SendAsync(request);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task Post_StartDateInThePast_Returns400WithStartDateError()
+    {
+        var vehicle = await SeedActiveVehicleAsync();
+        var customer = await SeedActiveCustomerAsync();
+        var yesterday = DateOnly.FromDateTime(DateTime.UtcNow).AddDays(-1);
+
+        using var request = AuthenticatedPost("/api/bookings", new
+        {
+            vehicleId = vehicle.Id,
+            customerId = customer.Id,
+            startDate = yesterday,
+            endDate = yesterday.AddDays(3),
+        });
+
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        var json = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(json);
+
+        document.RootElement.GetProperty("errors").TryGetProperty("StartDate", out _).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Post_BookingLongerThanTheMaximumDuration_Returns400WithEndDateError()
+    {
+        var vehicle = await SeedActiveVehicleAsync();
+        var customer = await SeedActiveCustomerAsync();
+
+        using var request = AuthenticatedPost("/api/bookings", new
+        {
+            vehicleId = vehicle.Id,
+            customerId = customer.Id,
+            startDate = "2030-01-01",
+            endDate = "9999-12-31",
+        });
+
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        var json = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(json);
+
+        document.RootElement.GetProperty("errors").TryGetProperty("EndDate", out _).Should().BeTrue();
+    }
+
+    /// <summary>
+    /// <c>PUT /api/bookings/{id}</c> reschedules an UPCOMING booking: new dates and a rescaled price
+    /// (at the booking's original daily rate), persisted; it may move into its own old range; and every
+    /// refusal (past start, bad range, clash with another booking, cancelled/started/completed booking,
+    /// unknown id) is a clean 4xx. Seeded bookings are 4 days for 1400 => 350/day.
+    /// </summary>
+    private async Task<(Vehicle Vehicle, Customer Customer, Booking Booking)> SeedUpcomingBookingAsync()
+    {
+        var vehicle = await SeedActiveVehicleAsync();
+        var customer = await SeedActiveCustomerAsync();
+        var booking = await SeedBookingAsync(vehicle, customer, new DateOnly(2030, 3, 10), new DateOnly(2030, 3, 14));
+        return (vehicle, customer, booking);
+    }
+
+    [Fact]
+    public async Task Put_UpcomingBooking_Returns200WithNewDatesAndRescaledPrice_AndPersistsIt()
+    {
+        var (_, _, booking) = await SeedUpcomingBookingAsync();
+
+        // Overlaps its own old range (10-14 Mar) -- must not be treated as a clash.
+        using var request = AuthenticatedPut($"/api/bookings/{booking.Id}", new
+        {
+            startDate = "2030-03-12",
+            endDate = "2030-03-19",
+        });
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("startDate").GetString().Should().Be("2030-03-12");
+        document.RootElement.GetProperty("endDate").GetString().Should().Be("2030-03-19");
+        document.RootElement.GetProperty("totalPrice").GetDecimal().Should().Be(2450m); // 7 days x 350
+        document.RootElement.GetProperty("status").GetString().Should().Be("Active");
+
+        using var getRequest = AuthenticatedGet($"/api/bookings/{booking.Id}");
+        var getResponse = await _client.SendAsync(getRequest);
+        using var getDocument = JsonDocument.Parse(await getResponse.Content.ReadAsStringAsync());
+        getDocument.RootElement.GetProperty("startDate").GetString().Should().Be("2030-03-12");
+        getDocument.RootElement.GetProperty("totalPrice").GetDecimal().Should().Be(2450m);
+    }
+
+    [Fact]
+    public async Task Put_NewRangeOverlapsAnotherBookingOnTheVehicle_Returns409WithThatBookingsDates()
+    {
+        var (vehicle, _, booking) = await SeedUpcomingBookingAsync();
+        var otherCustomer = await SeedActiveCustomerAsync();
+        await SeedBookingAsync(vehicle, otherCustomer, new DateOnly(2030, 4, 1), new DateOnly(2030, 4, 5));
+
+        using var request = AuthenticatedPut($"/api/bookings/{booking.Id}", new
+        {
+            startDate = "2030-03-30",
+            endDate = "2030-04-02",
+        });
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("detail").GetString()
+            .Should().Be("This vehicle is already booked 1 Apr – 5 Apr");
+
+        // The failed edit changed nothing.
+        using var getRequest = AuthenticatedGet($"/api/bookings/{booking.Id}");
+        var getResponse = await _client.SendAsync(getRequest);
+        using var getDocument = JsonDocument.Parse(await getResponse.Content.ReadAsStringAsync());
+        getDocument.RootElement.GetProperty("startDate").GetString().Should().Be("2030-03-10");
+    }
+
+    [Fact]
+    public async Task Put_NewRangeTouchingAnotherBookingsEndDate_SameDayTurnover_Returns200()
+    {
+        var (vehicle, _, booking) = await SeedUpcomingBookingAsync();
+        var otherCustomer = await SeedActiveCustomerAsync();
+        await SeedBookingAsync(vehicle, otherCustomer, new DateOnly(2030, 4, 1), new DateOnly(2030, 4, 5));
+
+        using var request = AuthenticatedPut($"/api/bookings/{booking.Id}", new
+        {
+            startDate = "2030-04-05",
+            endDate = "2030-04-08",
+        });
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task Put_StartDateInThePast_Returns400WithStartDateError()
+    {
+        var (_, _, booking) = await SeedUpcomingBookingAsync();
+        var yesterday = DateOnly.FromDateTime(DateTime.UtcNow).AddDays(-1);
+
+        using var request = AuthenticatedPut($"/api/bookings/{booking.Id}", new
+        {
+            startDate = yesterday,
+            endDate = yesterday.AddDays(3),
+        });
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("errors").TryGetProperty("StartDate", out _).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Put_EndDateNotAfterStartDate_Returns400WithEndDateError()
+    {
+        var (_, _, booking) = await SeedUpcomingBookingAsync();
+
+        using var request = AuthenticatedPut($"/api/bookings/{booking.Id}", new
+        {
+            startDate = "2030-03-12",
+            endDate = "2030-03-12",
+        });
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("errors").TryGetProperty("EndDate", out _).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Put_CancelledBooking_Returns409CannotEdit()
+    {
+        var vehicle = await SeedActiveVehicleAsync();
+        var customer = await SeedActiveCustomerAsync();
+        var booking = await SeedBookingWithStatusAsync(
+            vehicle, customer, new DateOnly(2030, 3, 10), new DateOnly(2030, 3, 14), BookingStatus.Cancelled);
+
+        using var request = AuthenticatedPut($"/api/bookings/{booking.Id}", new
+        {
+            startDate = "2030-03-20",
+            endDate = "2030-03-22",
+        });
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("detail").GetString().Should().Be("Cannot edit — booking is cancelled.");
+    }
+
+    [Fact]
+    public async Task Put_BookingThatHasAlreadyStarted_Returns409CannotEdit()
+    {
+        var vehicle = await SeedActiveVehicleAsync();
+        var customer = await SeedActiveCustomerAsync();
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var booking = await SeedBookingAsync(vehicle, customer, today, today.AddDays(5));
+
+        using var request = AuthenticatedPut($"/api/bookings/{booking.Id}", new
+        {
+            startDate = today.AddDays(10),
+            endDate = today.AddDays(12),
+        });
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("detail").GetString()
+            .Should().Be("Cannot edit — booking has already started.");
+    }
+
+    [Fact]
+    public async Task Put_NonexistentBookingId_Returns404()
+    {
+        using var request = AuthenticatedPut($"/api/bookings/{Guid.NewGuid()}", new
+        {
+            startDate = "2030-03-20",
+            endDate = "2030-03-22",
+        });
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     [Fact]
@@ -700,8 +1033,8 @@ public class BookingsEndpointTests : IAsyncLifetime
         {
             vehicleId = vehicle.Id,
             customerId = customer.Id,
-            startDate = "2026-10-01",
-            endDate = "2026-10-05",
+            startDate = "2030-10-01",
+            endDate = "2030-10-05",
         });
 
         var response = await _client.SendAsync(request);
@@ -723,8 +1056,8 @@ public class BookingsEndpointTests : IAsyncLifetime
         {
             vehicleId = Guid.NewGuid(),
             customerId = customer.Id,
-            startDate = "2026-10-01",
-            endDate = "2026-10-05",
+            startDate = "2030-10-01",
+            endDate = "2030-10-05",
         });
 
         var response = await _client.SendAsync(request);
@@ -741,8 +1074,8 @@ public class BookingsEndpointTests : IAsyncLifetime
         {
             vehicleId = vehicle.Id,
             customerId = Guid.NewGuid(),
-            startDate = "2026-10-01",
-            endDate = "2026-10-05",
+            startDate = "2030-10-01",
+            endDate = "2030-10-05",
         });
 
         var response = await _client.SendAsync(request);
@@ -760,8 +1093,8 @@ public class BookingsEndpointTests : IAsyncLifetime
         {
             vehicleId = vehicle.Id,
             customerId = customer.Id,
-            startDate = "2026-10-01",
-            endDate = "2026-10-05",
+            startDate = "2030-10-01",
+            endDate = "2030-10-05",
         });
 
         var response = await _client.SendAsync(request);
@@ -775,15 +1108,15 @@ public class BookingsEndpointTests : IAsyncLifetime
         var vehicle = await SeedActiveVehicleAsync();
         var customer = await SeedActiveCustomerAsync();
         // Existing Active booking: 2 Sep - 4 Sep (matches the AC's own example verbatim).
-        await SeedBookingAsync(vehicle, customer, new DateOnly(2026, 9, 2), new DateOnly(2026, 9, 4));
+        await SeedBookingAsync(vehicle, customer, new DateOnly(2030, 9, 2), new DateOnly(2030, 9, 4));
 
         var otherCustomer = await SeedActiveCustomerAsync();
         using var request = AuthenticatedPost("/api/bookings", new
         {
             vehicleId = vehicle.Id,
             customerId = otherCustomer.Id,
-            startDate = "2026-09-03",
-            endDate = "2026-09-06",
+            startDate = "2030-09-03",
+            endDate = "2030-09-06",
         });
 
         var response = await _client.SendAsync(request);
@@ -803,15 +1136,15 @@ public class BookingsEndpointTests : IAsyncLifetime
         var vehicle = await SeedActiveVehicleAsync();
         var customer = await SeedActiveCustomerAsync();
         // Existing booking ends exactly on 5 Oct -- the new request starts exactly there too.
-        await SeedBookingAsync(vehicle, customer, new DateOnly(2026, 10, 1), new DateOnly(2026, 10, 5));
+        await SeedBookingAsync(vehicle, customer, new DateOnly(2030, 10, 1), new DateOnly(2030, 10, 5));
 
         var otherCustomer = await SeedActiveCustomerAsync();
         using var request = AuthenticatedPost("/api/bookings", new
         {
             vehicleId = vehicle.Id,
             customerId = otherCustomer.Id,
-            startDate = "2026-10-05",
-            endDate = "2026-10-09",
+            startDate = "2030-10-05",
+            endDate = "2030-10-09",
         });
 
         var response = await _client.SendAsync(request);
@@ -825,15 +1158,15 @@ public class BookingsEndpointTests : IAsyncLifetime
         var vehicle = await SeedActiveVehicleAsync();
         var customer = await SeedActiveCustomerAsync();
         await SeedBookingWithStatusAsync(
-            vehicle, customer, new DateOnly(2026, 9, 2), new DateOnly(2026, 9, 4), BookingStatus.Completed);
+            vehicle, customer, new DateOnly(2030, 9, 2), new DateOnly(2030, 9, 4), BookingStatus.Completed);
 
         var otherCustomer = await SeedActiveCustomerAsync();
         using var request = AuthenticatedPost("/api/bookings", new
         {
             vehicleId = vehicle.Id,
             customerId = otherCustomer.Id,
-            startDate = "2026-09-03",
-            endDate = "2026-09-06",
+            startDate = "2030-09-03",
+            endDate = "2030-09-06",
         });
 
         var response = await _client.SendAsync(request);
@@ -853,15 +1186,15 @@ public class BookingsEndpointTests : IAsyncLifetime
         var vehicle = await SeedActiveVehicleAsync();
         var customer = await SeedActiveCustomerAsync();
         await SeedBookingWithStatusAsync(
-            vehicle, customer, new DateOnly(2026, 9, 2), new DateOnly(2026, 9, 4), BookingStatus.Cancelled);
+            vehicle, customer, new DateOnly(2030, 9, 2), new DateOnly(2030, 9, 4), BookingStatus.Cancelled);
 
         var otherCustomer = await SeedActiveCustomerAsync();
         using var request = AuthenticatedPost("/api/bookings", new
         {
             vehicleId = vehicle.Id,
             customerId = otherCustomer.Id,
-            startDate = "2026-09-03",
-            endDate = "2026-09-06",
+            startDate = "2030-09-03",
+            endDate = "2030-09-06",
         });
 
         var response = await _client.SendAsync(request);

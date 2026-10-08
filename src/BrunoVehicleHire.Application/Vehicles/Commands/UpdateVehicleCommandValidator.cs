@@ -25,6 +25,6 @@ public class UpdateVehicleCommandValidator : AbstractValidator<UpdateVehicleComm
             .NotEmpty();
 
         RuleFor(c => c.DailyRate)
-            .GreaterThan(0);
+            .MustBeAValidDailyRate();
     }
 }

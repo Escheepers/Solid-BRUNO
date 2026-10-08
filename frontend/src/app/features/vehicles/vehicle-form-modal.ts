@@ -26,6 +26,10 @@ import {
 
 type VehicleFormFieldName = 'registrationNumber' | 'make' | 'model' | 'year' | 'dailyRate';
 
+/** Mirrors `Vehicle`'s plausible-year range: 1900 up to next calendar year. */
+const EARLIEST_YEAR = 1900;
+const LATEST_YEAR = new Date().getFullYear() + 1;
+
 const BLANK_FORM_VALUE = {
   registrationNumber: '',
   make: '',
@@ -45,9 +49,10 @@ const BLANK_FORM_VALUE = {
  * Client-side `Validators` mirror exactly what `CreateVehicleCommandValidator`/
  * `UpdateVehicleCommandValidator` check server-side (RegistrationNumber/Make/Model
  * required, DailyRate positive) — the only place field-shape rules are duplicated on
- * the frontend, per the DRY requirement. `Year` is deliberately left with no more
- * than `required`, matching the backend, which validates it as a domain invariant
- * (409), not a FluentValidation shape check (spec-2-1's Design Notes).
+ * the frontend, per the DRY requirement. `Year` also gets the same plausible range the
+ * domain enforces (1900 to next calendar year) as `min`/`max`, so a bad year is caught
+ * in the browser; the backend still validates it as a domain invariant (409), not a
+ * FluentValidation shape check (spec-2-1's Design Notes).
  *
  * Create and update each go through their own service-level mutation
  * (`useCreateVehicleMutation`/`useUpdateVehicleMutation`, both already owning their
@@ -74,6 +79,9 @@ export class VehicleFormModal {
   readonly open = input.required<boolean>();
   readonly vehicle = input<Vehicle | null>(null);
   readonly closeRequest = output<void>();
+  /** Fires only after a successful CREATE (never an edit or a cancel), so the owning list page can
+   * jump to where the new row is visible. Mirrors `CustomerFormModal.created`. */
+  readonly created = output<void>();
 
   private readonly toastService = inject(ToastService);
   private readonly fb = inject(FormBuilder);
@@ -83,7 +91,7 @@ export class VehicleFormModal {
     registrationNumber: ['', Validators.required],
     make: ['', Validators.required],
     model: ['', Validators.required],
-    year: ['', Validators.required],
+    year: ['', [Validators.required, Validators.min(EARLIEST_YEAR), Validators.max(LATEST_YEAR)]],
     dailyRate: ['', [Validators.required, Validators.min(0.01)]],
   });
 
@@ -97,6 +105,9 @@ export class VehicleFormModal {
   protected readonly modelError = this.fieldErrorSignal('model');
   protected readonly yearError = this.fieldErrorSignal('year');
   protected readonly dailyRateError = this.fieldErrorSignal('dailyRate');
+
+  protected readonly earliestYear = EARLIEST_YEAR;
+  protected readonly latestYear = LATEST_YEAR;
 
   protected readonly modalTitle = computed(() => (this.vehicle() ? 'Edit Vehicle' : '+ New Vehicle'));
   protected readonly submitLabel = computed(() =>
@@ -203,6 +214,7 @@ export class VehicleFormModal {
     this.createMutation.mutate(payload, {
       onSuccess: () => {
         this.toastService.success('Vehicle created.');
+        this.created.emit();
         this.resetAndClose();
       },
       onError: (error: NormalizedApiError) => this.applyError(error),
@@ -332,8 +344,10 @@ export class VehicleFormModal {
       if (control.errors?.['required']) {
         return 'This field is required.';
       }
-      if (control.errors?.['min']) {
-        return 'Daily rate must be greater than zero.';
+      if (control.errors?.['min'] || control.errors?.['max']) {
+        return name === 'year'
+          ? `Year must be between ${EARLIEST_YEAR} and ${LATEST_YEAR}.`
+          : 'Daily rate must be greater than zero.';
       }
       return undefined;
     };

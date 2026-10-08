@@ -1,5 +1,5 @@
 using BrunoVehicleHire.Domain;
-using BrunoVehicleHire.Infrastructure.Security;
+using BrunoVehicleHire.Infrastructure.Helpers;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
@@ -122,6 +122,13 @@ public class AppDbContext : DbContext
             // GetPagedAsync's includeInactive flag already bypasses this filter wholesale via
             // IgnoreQueryFilters(), so toggling "show inactive" surfaces anonymized customers too.
             entity.HasQueryFilter(c => !c.IsDeleted && !c.IsAnonymized);
+
+            // Optimistic-concurrency guard: mirrors Vehicle's own xmin mapping exactly -- lets every
+            // Customer mutation (Restore/Deactivate/Erase/Delete/Edit) detect a near-simultaneous
+            // second request that read the same row, instead of silently double-processing or
+            // overwriting it (see ConcurrencyConflict).
+            entity.Property<uint>("xmin")
+                .IsRowVersion();
         });
 
         // Booking (Story 3.3): the first enum and the first FK relationships anywhere in this

@@ -13,7 +13,7 @@ import { ToastService } from '../../shared/toast/toast.service';
 import { BookingFormModal } from './booking-form-modal';
 import { currencyFormatter, dateFormatter } from './booking-formatters';
 import { useBookingsQuery, useCancelBookingMutation } from './bookings.service';
-import { Booking, isCancellable, toBooking } from './models/booking';
+import { Booking, displayStatus, isCancellable, toBooking } from './models/booking';
 
 const PAGE_SIZE = 20;
 const SEARCH_DEBOUNCE_MS = 300;
@@ -68,6 +68,8 @@ export class BookingsPage implements OnInit {
   private readonly cancelMutation = useCancelBookingMutation();
 
   protected readonly pageSize = PAGE_SIZE;
+  /** Exposed to the template: the badge shows "Upcoming" for an Active booking that hasn't started. */
+  protected readonly displayStatus = displayStatus;
   protected readonly isFormModalOpen = signal(false);
 
   protected readonly searchInput = signal('');
@@ -87,6 +89,9 @@ export class BookingsPage implements OnInit {
     source: this.debouncedSearch,
     computation: () => 1,
   });
+
+  /** Bumped after a create so `DataTable` drops any column sort the user clicked earlier. */
+  protected readonly sortResetToken = signal(0);
 
   protected readonly query = useBookingsQuery(() => ({
     page: this.page(),
@@ -146,8 +151,19 @@ export class BookingsPage implements OnInit {
       },
       {
         header: 'Status',
-        cell: (booking) => booking.status,
+        cell: (booking) => displayStatus(booking),
         cellTemplate: this.statusCellRef,
+        // Sorts by the label the badge shows (Active, Cancelled, Completed, Upcoming), not the stored status.
+        sortable: true,
+        sortValue: (booking) => displayStatus(booking),
+      },
+      // Shown because the list is ordered by it (newest first) -- mirrors Vehicles/Customers'
+      // own "Created" column.
+      {
+        header: 'Created',
+        cell: (booking) => dateFormatter.format(booking.createdDate),
+        sortable: true,
+        sortValue: (booking) => booking.createdDate.getTime(),
       },
     ];
   }
@@ -198,6 +214,14 @@ export class BookingsPage implements OnInit {
 
   protected onFormModalClose(): void {
     this.isFormModalOpen.set(false);
+  }
+
+  /** Mirrors `VehiclesPage.onCreated`: after a successful create, make the new booking visible by
+   * going back to page 1, clearing the search and dropping any leftover column sort. */
+  protected onCreated(): void {
+    this.searchInput.set('');
+    this.page.set(1);
+    this.sortResetToken.update((token) => token + 1);
   }
 
   /**

@@ -1,5 +1,5 @@
 import { BookingDto } from '../../../core/models/booking-dto';
-import { Booking, isCancellable, startOfToday, toBooking } from './booking';
+import { Booking, displayStatus, isCancellable, isUpcoming, startOfToday, toBooking } from './booking';
 
 describe('toBooking', () => {
   const dto: BookingDto = {
@@ -117,5 +117,38 @@ describe('isCancellable', () => {
         booking({ status: 'Active', startDate: new Date('2020-01-01'), endDate: new Date('2020-01-05') }),
       ),
     ).toBe(false);
+  });
+});
+
+/**
+ * "Upcoming" is NOT a stored status (the API only has Active/Completed/Cancelled): it is a display
+ * label for an Active booking that has not started yet. A booking started today, mid-rental, or
+ * already past its end date stays "Active"; Completed/Cancelled are never relabelled.
+ */
+describe('isUpcoming / displayStatus', () => {
+  const future = new Date('2099-01-01');
+  const past = new Date('2020-01-01');
+
+  it('labels an Active booking that has not started yet as Upcoming', () => {
+    const booking = { status: 'Active' as const, startDate: future };
+
+    expect(isUpcoming(booking)).toBe(true);
+    expect(displayStatus(booking)).toBe('Upcoming');
+  });
+
+  it('keeps an Active booking that starts today as Active (it has started)', () => {
+    const booking = { status: 'Active' as const, startDate: startOfToday() };
+
+    expect(isUpcoming(booking)).toBe(false);
+    expect(displayStatus(booking)).toBe('Active');
+  });
+
+  it('keeps a mid-rental or ended-but-unswept Active booking as Active', () => {
+    expect(displayStatus({ status: 'Active', startDate: past })).toBe('Active');
+  });
+
+  it('never relabels a Completed or Cancelled booking, even with a future start date', () => {
+    expect(displayStatus({ status: 'Completed', startDate: future })).toBe('Completed');
+    expect(displayStatus({ status: 'Cancelled', startDate: future })).toBe('Cancelled');
   });
 });

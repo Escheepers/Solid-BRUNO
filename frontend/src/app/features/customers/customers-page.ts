@@ -114,15 +114,18 @@ export class CustomersPage {
   );
 
   /**
-   * `page` resets to 1 every time `debouncedSearch` changes (a filtered search
-   * shouldn't stay on a stale page number from the previous result set), but is
+   * `page` resets to 1 every time `debouncedSearch` or the "Show inactive" toggle changes (a
+   * different filter shouldn't stay on a stale page number from the previous result set), but is
    * otherwise freely settable via `onPageChange` — mirrors `VehiclesPage`'s exact
    * `linkedSignal`-based mechanism.
    */
   protected readonly page = linkedSignal({
-    source: this.debouncedSearch,
+    source: () => `${this.debouncedSearch()}|${this.showInactive()}`,
     computation: () => 1,
   });
+
+  /** Bumped after a create so `DataTable` drops any column sort the user clicked earlier. */
+  protected readonly sortResetToken = signal(0);
 
   protected readonly query = useCustomersQuery(() => ({
     page: this.page(),
@@ -181,9 +184,10 @@ export class CustomersPage {
    * Erase personal data]` (erasing doesn't require restoring first, per spec-3-5's
    * Scope decision 2); active rows keep the full `[Summary, Edit, Delete, Deactivate,
    * Erase personal data]` set. "Summary" leads every branch, mirroring `VehiclesPage`'s
-   * own "View" leading its two branches. Per spec-3-3/spec-3-4's Scope decisions,
-   * neither Delete nor Deactivate nor Erase is gated on booking count in the UI -- the
-   * backend guard (or lack thereof) is the single source of truth.
+   * own "View" leading its two branches. None of Delete, Deactivate or Erase is gated in the
+   * UI -- the backend guards are the single source of truth (Delete: any booking blocks it;
+   * Deactivate/Erase: an Active booking blocks them) and their 409 message is shown in the
+   * confirm dialog.
    */
   protected readonly actions = (customer: Customer): RowAction<Customer>[] => {
     const summaryAction: RowAction<Customer> = {
@@ -272,6 +276,14 @@ export class CustomersPage {
 
   protected onFormModalClose(): void {
     this.isFormModalOpen.set(false);
+  }
+
+  /** Mirrors `VehiclesPage.onCreated`: after a successful create, make the new row visible by going
+   * back to page 1, clearing the search and dropping any leftover column sort. */
+  protected onCreated(): void {
+    this.searchInput.set('');
+    this.page.set(1);
+    this.sortResetToken.update((token) => token + 1);
   }
 
   /** Mirrors `VehiclesPage.onViewClick`'s exact shape -- a plain `Router.navigate`,

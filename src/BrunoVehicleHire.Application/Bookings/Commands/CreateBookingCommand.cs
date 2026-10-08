@@ -16,4 +16,4 @@ public record CreateBookingCommand(
     Guid VehicleId,
     Guid CustomerId,
     DateOnly StartDate,
-    DateOnly EndDate) : IRequest<BookingDto>;
+    DateOnly EndDate) : IRequest<BookingDto>, IBookingDates;

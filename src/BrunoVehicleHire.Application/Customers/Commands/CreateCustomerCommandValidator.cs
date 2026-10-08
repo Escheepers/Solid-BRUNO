@@ -21,7 +21,9 @@ public class CreateCustomerCommandValidator : AbstractValidator<CreateCustomerCo
             .NotEmpty();
 
         RuleFor(c => c.PhoneNumber)
-            .NotEmpty();
+            .NotEmpty()
+            .Matches(PhoneNumberRules.DigitsOnlyUpToTenPattern)
+            .WithMessage(PhoneNumberRules.Message);
 
         RuleFor(c => c.Email)
             .NotEmpty()

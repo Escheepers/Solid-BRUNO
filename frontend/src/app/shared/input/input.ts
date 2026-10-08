@@ -26,6 +26,10 @@ export class Input implements ControlValueAccessor, OnChanges {
   readonly label = input<string>('');
   readonly type = input<string>('text');
   readonly error = input<string | null | undefined>(undefined);
+  /** Lowest allowed value for `type="date"`/`"number"` fields (e.g. `yyyy-MM-dd` or `1900`); ignored otherwise. */
+  readonly min = input<string | number | null>(null);
+  /** Highest allowed value, same shape as `min`. */
+  readonly max = input<string | number | null>(null);
 
   protected readonly inputId = `app-input-${nextInputId++}`;
 

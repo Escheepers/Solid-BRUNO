@@ -1,5 +1,6 @@
 using BrunoVehicleHire.Application.Vehicles;
 using BrunoVehicleHire.Domain;
+using BrunoVehicleHire.Infrastructure.Helpers;
 using BrunoVehicleHire.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -11,8 +12,8 @@ namespace BrunoVehicleHire.Infrastructure.Repositories;
 /// rows -- never filters on <c>IsDeleted</c> explicitly here. Search matches
 /// Make/Model/RegistrationNumber via <see cref="EF.Functions"/>' <c>ILike</c> (Postgres
 /// case-insensitive <c>ILIKE</c>), applied only when the <c>search</c> parameter is non-null and
-/// non-whitespace. Ordered by <c>CreatedDate</c> then <c>Id</c> for a stable page boundary across
-/// requests.
+/// non-whitespace. Ordered newest-first (<c>CreatedDate</c> then <c>Id</c>, both descending) so a
+/// just-created vehicle is always on page 1, with a stable page boundary across requests.
 /// </summary>
 public class VehicleRepository(AppDbContext dbContext) : IVehicleRepository
 {
@@ -27,20 +28,20 @@ public class VehicleRepository(AppDbContext dbContext) : IVehicleRepository
             ? dbContext.Vehicles.IgnoreQueryFilters()
             : dbContext.Vehicles.AsQueryable();
 
-        if (!string.IsNullOrWhiteSpace(search))
+        // Every space-separated word must match Make, Model or RegistrationNumber (see ContainsPatterns).
+        foreach (var pattern in LikePatternEscaper.ContainsPatterns(search))
         {
-            var escapedSearch = LikePatternEscaper.Escape(search);
             query = query.Where(v =>
-                EF.Functions.ILike(v.Make, $"%{escapedSearch}%", LikePatternEscaper.EscapeCharacter) ||
-                EF.Functions.ILike(v.Model, $"%{escapedSearch}%", LikePatternEscaper.EscapeCharacter) ||
-                EF.Functions.ILike(v.RegistrationNumber, $"%{escapedSearch}%", LikePatternEscaper.EscapeCharacter));
+                EF.Functions.ILike(v.Make, pattern, LikePatternEscaper.EscapeCharacter) ||
+                EF.Functions.ILike(v.Model, pattern, LikePatternEscaper.EscapeCharacter) ||
+                EF.Functions.ILike(v.RegistrationNumber, pattern, LikePatternEscaper.EscapeCharacter));
         }
 
         var totalCount = await query.CountAsync(cancellationToken);
 
         var items = await query
-            .OrderBy(v => v.CreatedDate)
-            .ThenBy(v => v.Id)
+            .OrderByDescending(v => v.CreatedDate)
+            .ThenByDescending(v => v.Id)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .ToListAsync(cancellationToken);

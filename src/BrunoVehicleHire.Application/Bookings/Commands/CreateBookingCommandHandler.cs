@@ -1,4 +1,3 @@
-using System.Globalization;
 using BrunoVehicleHire.Application.Bookings.Dtos;
 using BrunoVehicleHire.Application.Common;
 using BrunoVehicleHire.Application.Customers;
@@ -17,7 +16,7 @@ namespace BrunoVehicleHire.Application.Bookings.Commands;
 /// <see cref="DomainRuleViolationException"/>/409 if the row exists but is soft-deleted -- spec-4-1's
 /// Scope decision 2) -> <see cref="ICustomerRepository.GetByIdAsync"/> (the existing FILTERED lookup,
 /// so an inactive/anonymized customer 404s exactly like any other nonexistent customer -- Scope
-/// decision 2's deliberate asymmetry from Vehicle) -> <see cref="EnsureNoOverlapAsync"/> (spec-4-2's
+/// decision 2's deliberate asymmetry from Vehicle) -> <see cref="BookingOverlapGuard"/> (spec-4-2's
 /// AD-7 layer-1 application check: fetches the vehicle's non-Cancelled bookings and calls the real
 /// <see cref="DateRange.Overlaps"/> on each in plain C#) -> <c>TotalPrice = Vehicle.DailyRate x
 /// (EndDate - StartDate in days)</c> computed here, never trusted from the request ->
@@ -59,7 +58,8 @@ public class CreateBookingCommandHandler(
             ?? throw new NotFoundException(nameof(Customer), request.CustomerId);
 
         var requestedRange = new DateRange(request.StartDate, request.EndDate);
-        await EnsureNoOverlapAsync(vehicle.Id, requestedRange, cancellationToken);
+        await BookingOverlapGuard.EnsureNoOverlapAsync(
+            bookingRepository, vehicle.Id, requestedRange, excludingBookingId: null, cancellationToken);
 
         var totalPrice = vehicle.DailyRate * (request.EndDate.DayNumber - request.StartDate.DayNumber);
 
@@ -79,39 +79,11 @@ public class CreateBookingCommandHandler(
             // above (spec-4-2's Scope decision 3), never a generic "conflict occurred" 500-avoidant
             // fallback. EnsureNoOverlapAsync always throws here -- the conflicting row that made
             // Postgres reject the insert is, by definition, still there to be found again.
-            await EnsureNoOverlapAsync(vehicle.Id, requestedRange, cancellationToken);
+            await BookingOverlapGuard.EnsureNoOverlapAsync(
+                bookingRepository, vehicle.Id, requestedRange, excludingBookingId: null, cancellationToken);
             throw;
         }
 
         return BookingDto.FromDomain(booking, vehicle, customer);
     }
-
-    /// <summary>
-    /// Throws <see cref="DomainRuleViolationException"/> for the first non-Cancelled booking on
-    /// <paramref name="vehicleId"/> whose own date range overlaps <paramref name="requestedRange"/>
-    /// (half-open semantics, so a same-day turnover never conflicts), using that conflicting
-    /// booking's own dates in the message -- never the new request's dates (Boundaries). Called both
-    /// as the fast-path application-level check before <see cref="Booking.Create"/>, and again, after
-    /// a caught database-level exclusion violation, to re-derive the identical 409.
-    /// </summary>
-    private async Task EnsureNoOverlapAsync(
-        Guid vehicleId, DateRange requestedRange, CancellationToken cancellationToken)
-    {
-        var existingBookings = await bookingRepository.GetNonCancelledForVehicleAsync(vehicleId, cancellationToken);
-
-        foreach (var existing in existingBookings)
-        {
-            var existingRange = new DateRange(existing.StartDate, existing.EndDate);
-            if (requestedRange.Overlaps(existingRange))
-            {
-                throw new DomainRuleViolationException(
-                    nameof(Booking),
-                    "Overlap",
-                    $"This vehicle is already booked {FormatDate(existing.StartDate)} – {FormatDate(existing.EndDate)}");
-            }
-        }
-    }
-
-    /// <summary>E.g. 2 Sep -- invariant-culture, day without a leading zero, per the AC's own example.</summary>
-    private static string FormatDate(DateOnly date) => date.ToString("d MMM", CultureInfo.InvariantCulture);
 }

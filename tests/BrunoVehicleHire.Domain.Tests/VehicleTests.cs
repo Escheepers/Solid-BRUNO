@@ -94,6 +94,37 @@ public class VehicleTests
         Assert.Throws<DomainRuleViolationException>(act);
     }
 
+    [Theory]
+    [InlineData(1000000.01)]
+    [InlineData(350.555)]
+    public void Create_WithDailyRateAboveMaximumOrFinerThanCents_ThrowsDomainRuleViolationException(decimal badRate)
+    {
+        var act = () => Vehicle.Create(ValidRegistrationNumber, ValidMake, ValidModel, ValidYear, badRate);
+
+        Assert.Throws<DomainRuleViolationException>(act);
+    }
+
+    [Theory]
+    [InlineData("ca 123 456", "CA 123 456")]
+    [InlineData("  CA 123 456  ", "CA 123 456")]
+    [InlineData("CA 123 456", "CA 123 456")]
+    public void Create_StoresTheRegistrationNumberTrimmedAndUpperCased(string input, string expected)
+    {
+        var vehicle = Vehicle.Create(input, ValidMake, ValidModel, ValidYear, 350m);
+
+        Assert.Equal(expected, vehicle.RegistrationNumber);
+    }
+
+    [Fact]
+    public void Update_StoresTheRegistrationNumberTrimmedAndUpperCased()
+    {
+        var vehicle = Vehicle.Create(ValidRegistrationNumber, ValidMake, ValidModel, ValidYear, 350m);
+
+        vehicle.Update(" cb 777 888 ", ValidMake, ValidModel, ValidYear, 350m);
+
+        Assert.Equal("CB 777 888", vehicle.RegistrationNumber);
+    }
+
     [Fact]
     public void Create_WithYearBefore1900_ThrowsDomainRuleViolationException()
     {

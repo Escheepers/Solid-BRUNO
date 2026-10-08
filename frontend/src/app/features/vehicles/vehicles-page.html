@@ -45,6 +45,7 @@
       [rowMuted]="rowMuted"
       [rowKey]="rowKey"
       [rowError]="rowError()"
+      [sortResetToken]="sortResetToken()"
       (pageChange)="onPageChange($event)"
     />
   }
@@ -52,6 +53,7 @@
   <app-vehicle-form-modal
     [open]="isFormModalOpen()"
     [vehicle]="editingVehicle()"
+    (created)="onCreated()"
     (closeRequest)="onFormModalClose()"
   />
 
@@ -59,6 +61,7 @@
     [open]="deactivatingVehicle() !== null"
     title="Deactivate this vehicle?"
     [message]="deactivateDialogMessage()"
+    [isError]="deactivateErrorMessage() !== null"
     confirmLabel="Deactivate"
     cancelLabel="Keep active"
     (confirm)="onConfirmDeactivate()"

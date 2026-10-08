@@ -1,6 +1,7 @@
 using BrunoVehicleHire.Application.Common;
 using BrunoVehicleHire.Domain;
 using MediatR;
+using Microsoft.EntityFrameworkCore;
 
 namespace BrunoVehicleHire.Application.Customers.Commands;
 
@@ -25,6 +26,21 @@ public class RestoreCustomerCommandHandler(ICustomerRepository repository, IUnit
 
         customer.Restore();
 
-        await unitOfWork.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await unitOfWork.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            // Mirrors RestoreVehicleCommandHandler: a near-simultaneous second Restore read the
+            // pre-mutation row too. Re-fetching and re-calling Restore() lets the domain method report
+            // the true current state ("Already active.") instead of silently double-processing.
+            var current = await repository.GetByIdIncludingSoftDeletedAsync(request.CustomerId, cancellationToken)
+                ?? throw new NotFoundException(nameof(Customer), request.CustomerId);
+
+            current.Restore();
+
+            await unitOfWork.SaveChangesAsync(cancellationToken);
+        }
     }
 }

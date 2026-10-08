@@ -10,6 +10,8 @@
   <input
     [id]="inputId"
     [type]="type()"
+    [attr.min]="min()"
+    [attr.max]="max()"
     [value]="value"
     [disabled]="disabled"
     [attr.aria-invalid]="hasError ? 'true' : null"

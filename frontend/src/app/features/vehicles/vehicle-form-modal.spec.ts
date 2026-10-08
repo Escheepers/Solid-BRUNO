@@ -147,11 +147,30 @@ describe('VehicleFormModal', () => {
       httpMock.expectNone('/api/vehicles');
     });
 
+    it('limits the Year field to 1900 through next calendar year', async () => {
+      await settle();
+
+      const [, , , year] = fields();
+      expect(year.min).toBe('1900');
+      expect(year.max).toBe(String(new Date().getFullYear() + 1));
+    });
+
+    it.each(['1899', '20233'])('blocks submit and shows a range error for the out-of-range year %s', async (badYear) => {
+      await settle();
+      fillValidForm({ year: badYear });
+      await submitForm();
+
+      httpMock.expectNone('/api/vehicles');
+      expect(fixture.nativeElement.textContent).toContain('Year must be between 1900 and');
+    });
+
     it('valid submit posts the correct payload; success closes the modal, toasts, and invalidates the list query', async () => {
       await settle();
 
       const closeSpy = vi.fn();
       fixture.componentInstance.closeRequest.subscribe(closeSpy);
+      const createdSpy = vi.fn();
+      fixture.componentInstance.created.subscribe(createdSpy);
       const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
       const toastSpy = vi.spyOn(toastService, 'success');
 
@@ -175,6 +194,7 @@ describe('VehicleFormModal', () => {
       await settle();
 
       expect(closeSpy).toHaveBeenCalled();
+      expect(createdSpy).toHaveBeenCalledTimes(1);
       expect(toastSpy).toHaveBeenCalledWith('Vehicle created.');
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['vehicles', 'list'] });
     });
@@ -284,6 +304,8 @@ describe('VehicleFormModal', () => {
 
       const closeSpy = vi.fn();
       fixture.componentInstance.closeRequest.subscribe(closeSpy);
+      const createdSpy = vi.fn();
+      fixture.componentInstance.created.subscribe(createdSpy);
       const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
       const toastSpy = vi.spyOn(toastService, 'success');
 
@@ -307,6 +329,7 @@ describe('VehicleFormModal', () => {
       await settle();
 
       expect(closeSpy).toHaveBeenCalled();
+      expect(createdSpy).not.toHaveBeenCalled(); // an edit is not a create
       expect(toastSpy).toHaveBeenCalledWith('Vehicle updated.');
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['vehicles', 'list'] });
     });

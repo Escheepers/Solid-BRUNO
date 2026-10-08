@@ -44,6 +44,15 @@ export interface CreateBookingPayload {
   endDate: string;
 }
 
+/**
+ * The body of `PUT /api/bookings/{id}` (`UpdateBookingCommand` minus the route's `bookingId`): just the
+ * new dates, as `"yyyy-MM-dd"` strings. Like create, it carries no `totalPrice` -- the server rescales it.
+ */
+export interface UpdateBookingPayload {
+  startDate: string;
+  endDate: string;
+}
+
 /** Matches `useBookingsQuery`'s query-key convention (AD-3) exactly, minus the params
  * — `invalidateQueries` matches every params variant sharing this key prefix. */
 export const BOOKINGS_LIST_QUERY_KEY = ['bookings', 'list'] as const;
@@ -143,5 +152,25 @@ export function useCancelBookingMutation() {
     mutationFn: (bookingId: string) =>
       firstValueFrom(apiClient.post<void, undefined>(`bookings/${bookingId}/cancel`, undefined)),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: BOOKINGS_LIST_QUERY_KEY }),
+  }));
+}
+
+/**
+ * Wraps `injectMutation` over `ApiClient.put<BookingDto, UpdateBookingPayload>('bookings/{id}', ...)` --
+ * the reschedule of an upcoming booking. On success it invalidates the list and this booking's own
+ * detail query (`['bookings', 'detail', id]`) so both reflect the new dates and price straight away.
+ */
+export function useUpdateBookingMutation() {
+  const apiClient = inject(ApiClient);
+  const queryClient = inject(QueryClient);
+
+  return injectMutation<BookingDto, NormalizedApiError, { id: string; payload: UpdateBookingPayload }>(() => ({
+    mutationFn: ({ id, payload }) =>
+      firstValueFrom(apiClient.put<BookingDto, UpdateBookingPayload>(`bookings/${id}`, payload)),
+    onSuccess: (_updated, { id }) =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: BOOKINGS_LIST_QUERY_KEY }),
+        queryClient.invalidateQueries({ queryKey: ['bookings', 'detail', id] }),
+      ]),
   }));
 }

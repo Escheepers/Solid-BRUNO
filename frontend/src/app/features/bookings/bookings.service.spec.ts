@@ -11,6 +11,7 @@ import {
   useBookingsQuery,
   useCancelBookingMutation,
   useCreateBookingMutation,
+  useUpdateBookingMutation,
 } from './bookings.service';
 
 /** Matches the macrotask-flush pattern used elsewhere for TanStack Query's Angular reactivity. */
@@ -329,5 +330,58 @@ describe('useCancelBookingMutation', () => {
     await flushMicrotasks();
 
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['bookings', 'list'] });
+  });
+});
+
+describe('useUpdateBookingMutation', () => {
+  let httpMock: HttpTestingController;
+  let queryClient: QueryClient;
+
+  beforeEach(() => {
+    queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+
+    TestBed.configureTestingModule({
+      providers: [
+        provideHttpClient(withInterceptors([apiKeyInterceptor, errorNormalizationInterceptor])),
+        provideHttpClientTesting(),
+        provideTanStackQuery(queryClient),
+      ],
+    });
+
+    httpMock = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => {
+    httpMock.verify();
+    TestBed.resetTestingModule();
+  });
+
+  it('PUTs the new dates to bookings/{id}', async () => {
+    const mutation = TestBed.runInInjectionContext(() => useUpdateBookingMutation());
+
+    mutation.mutate({ id: 'b1', payload: { startDate: '2030-01-10', endDate: '2030-01-12' } });
+    await flushMicrotasks();
+
+    const req = httpMock.expectOne('/api/bookings/b1');
+    expect(req.request.method).toBe('PUT');
+    expect(req.request.body).toEqual({ startDate: '2030-01-10', endDate: '2030-01-12' });
+
+    req.flush(bookingDto({ startDate: '2030-01-10', endDate: '2030-01-12' }));
+  });
+
+  it('invalidates the list and that booking detail query on success', async () => {
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+    const mutation = TestBed.runInInjectionContext(() => useUpdateBookingMutation());
+
+    mutation.mutate({ id: 'b1', payload: { startDate: '2030-01-10', endDate: '2030-01-12' } });
+    await flushMicrotasks();
+
+    httpMock.expectOne('/api/bookings/b1').flush(bookingDto());
+    await flushMicrotasks();
+
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['bookings', 'list'] });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['bookings', 'detail', 'b1'] });
   });
 });

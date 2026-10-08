@@ -346,6 +346,45 @@ describe('BookingDetailPage', () => {
       expect(dialog).not.toBeNull();
       expect(dialog!.textContent).not.toContain('stay in records as Cancelled');
       expect(dialog!.textContent).toContain('Cannot cancel — booking already completed.');
+      expect(dialog!.querySelector('[role="alert"]')?.textContent).toContain(
+        'Cannot cancel — booking already completed.',
+      );
+    });
+  });
+
+  describe('Edit Dates', () => {
+    function buttonNamed(label: string): HTMLButtonElement | undefined {
+      return Array.from<HTMLButtonElement>(fixture.nativeElement.querySelectorAll('button')).find(
+        (b) => b.textContent?.trim() === label,
+      );
+    }
+
+    it('offers Edit Dates for an upcoming booking and opens the edit modal', async () => {
+      createComponent('b1');
+      await settle();
+      httpMock
+        .expectOne('/api/bookings/b1')
+        .flush(bookingDto({ startDate: '2030-03-10', endDate: '2030-03-14' }));
+      await settle();
+
+      expect(fixture.nativeElement.querySelector('[role="dialog"]')).toBeNull();
+
+      buttonNamed('Edit Dates')!.click();
+      await settle();
+
+      expect(fixture.nativeElement.querySelector('[role="dialog"]')).not.toBeNull();
+      expect(fixture.nativeElement.textContent).toContain('Edit Booking Dates');
+    });
+
+    it('does not offer Edit Dates once the booking is no longer upcoming', async () => {
+      createComponent('b1');
+      await settle();
+      httpMock
+        .expectOne('/api/bookings/b1')
+        .flush(bookingDto({ startDate: '2030-03-10', endDate: '2030-03-14', status: 'Cancelled' }));
+      await settle();
+
+      expect(buttonNamed('Edit Dates')).toBeUndefined();
     });
   });
 });

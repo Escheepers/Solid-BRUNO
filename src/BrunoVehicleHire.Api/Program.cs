@@ -1,6 +1,8 @@
+using System.Diagnostics;
 using System.Reflection;
 using BrunoVehicleHire.Api.Auth;
 using BrunoVehicleHire.Api.ExceptionHandling;
+using BrunoVehicleHire.Api.Logging;
 using BrunoVehicleHire.Api.Swagger;
 using BrunoVehicleHire.Application.Bookings;
 using BrunoVehicleHire.Application.Common;
@@ -201,7 +203,13 @@ using (var scope = app.Services.CreateScope())
 // UseSerilogRequestLogging() is the very first middleware so its timer and final logged status
 // code span the entire pipeline, including whatever GlobalExceptionHandler rewrites the response
 // to for a caught exception -- the source of the dashboard's request-rate panel (spec-6-3).
-app.UseSerilogRequestLogging();
+// The request line's level follows its outcome (RequestLogLevel): 5xx -> Error, 4xx (e.g. a business-rule
+// 409) -> Warning, otherwise Information -- so Grafana colours it red / amber / green.
+app.UseSerilogRequestLogging(options =>
+{
+    options.EnrichDiagnosticContext = (context, httpContext) => context.Set("TraceId", Activity.Current?.TraceId.ToString());
+    options.GetLevel = (httpContext, _, exception) => RequestLogLevel.For(httpContext.Response.StatusCode, exception);
+});
 
 // UseExceptionHandler() is the first exception-catching middleware (AD-8/Story 1.5) so
 // GlobalExceptionHandler can catch exceptions thrown by any later middleware, not just endpoint

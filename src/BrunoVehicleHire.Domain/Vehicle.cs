@@ -13,6 +13,29 @@ public class Vehicle
 {
     private const int EarliestPlausibleYear = 1900;
 
+    /// <summary>
+    /// Upper bound on <see cref="DailyRate"/>: far above any real rental rate, and low enough that
+    /// <c>DailyRate x days</c> always fits the <c>numeric(18,2)</c> price columns.
+    /// </summary>
+    public const decimal MaxDailyRate = 1_000_000m;
+
+    /// <summary>
+    /// The one canonical form of a registration number -- trimmed and upper-cased -- so "ca 123 456",
+    /// "CA 123 456" and " CA 123 456 " are the same vehicle for the unique-registration rule. Used by
+    /// <see cref="Create"/>/<see cref="Update"/> when storing and by the create/update handlers for the
+    /// duplicate pre-check, so both always compare the same form.
+    /// </summary>
+    public static string NormalizeRegistrationNumber(string registrationNumber)
+    {
+        return registrationNumber.Trim().ToUpperInvariant();
+    }
+
+    /// <summary>Whether <paramref name="dailyRate"/> is a whole number of cents (at most 2 decimals).</summary>
+    public static bool IsWholeCents(decimal dailyRate)
+    {
+        return decimal.Round(dailyRate, 2) == dailyRate;
+    }
+
     public Guid Id { get; private set; }
 
     public string RegistrationNumber { get; private set; } = string.Empty;
@@ -72,7 +95,7 @@ public class Vehicle
 
         return new Vehicle(
             Guid.CreateVersion7(),
-            registrationNumber,
+            NormalizeRegistrationNumber(registrationNumber),
             make,
             model,
             year,
@@ -100,7 +123,7 @@ public class Vehicle
 
         ValidateInvariants(registrationNumber, make, model, year, dailyRate, timeProvider);
 
-        RegistrationNumber = registrationNumber;
+        RegistrationNumber = NormalizeRegistrationNumber(registrationNumber);
         Make = make;
         Model = model;
         Year = year;
@@ -166,6 +189,18 @@ public class Vehicle
         {
             throw new DomainRuleViolationException(
                 nameof(Vehicle), nameof(DailyRate), "DailyRate must be positive.");
+        }
+
+        if (dailyRate > MaxDailyRate)
+        {
+            throw new DomainRuleViolationException(
+                nameof(Vehicle), nameof(DailyRate), $"DailyRate must not exceed {MaxDailyRate:N0}.");
+        }
+
+        if (!IsWholeCents(dailyRate))
+        {
+            throw new DomainRuleViolationException(
+                nameof(Vehicle), nameof(DailyRate), "DailyRate must have at most 2 decimal places.");
         }
 
         var nextCalendarYear = timeProvider.GetUtcNow().Year + 1;

@@ -279,6 +279,34 @@ describe('CustomerFormModal', () => {
       expect(fixture.nativeElement.textContent).toContain('Enter a valid email address.');
     });
 
+    it.each([
+      ['letters', '08212345a7'],
+      ['spaces', '082 123 4567'],
+      ['a leading plus', '+27821234567'],
+      ['more than 10 digits', '08212345678'],
+    ])(
+      'a phone number with %s shows a client-side validation error without hitting the server',
+      async (_label, phoneNumber) => {
+        await settle();
+        fillValidForm({ phoneNumber });
+        await submitForm();
+
+        httpMock.expectNone('/api/customers');
+        expect(fixture.nativeElement.textContent).toContain(
+          'Phone number must be digits only, up to 10 digits.',
+        );
+      },
+    );
+
+    it('accepts a phone number of up to 10 digits', async () => {
+      await settle();
+      fillValidForm({ phoneNumber: '0821234567' });
+      await submitForm();
+
+      httpMock.expectOne('/api/customers').flush(customerDto(), { status: 201, statusText: 'Created' });
+      expect(fixture.nativeElement.textContent).not.toContain('Phone number must be digits only');
+    });
+
     it('a server error shows a top-of-form banner, not a field-level error', async () => {
       await settle();
       fillValidForm();

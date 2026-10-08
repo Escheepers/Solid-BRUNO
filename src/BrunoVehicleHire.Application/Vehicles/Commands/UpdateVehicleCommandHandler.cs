@@ -3,6 +3,7 @@ using BrunoVehicleHire.Application.Vehicles.Dtos;
 using BrunoVehicleHire.Domain;
 using BrunoVehicleHire.Domain.Exceptions;
 using MediatR;
+using Microsoft.EntityFrameworkCore;
 
 namespace BrunoVehicleHire.Application.Vehicles.Commands;
 
@@ -26,7 +27,7 @@ public class UpdateVehicleCommandHandler(IVehicleRepository repository, IUnitOfW
             ?? throw new NotFoundException(nameof(Vehicle), request.VehicleId);
 
         var duplicateExists = await repository.ExistsByRegistrationNumberAsync(
-            request.RegistrationNumber, request.VehicleId, cancellationToken);
+            Vehicle.NormalizeRegistrationNumber(request.RegistrationNumber), request.VehicleId, cancellationToken);
 
         if (duplicateExists)
         {
@@ -36,7 +37,16 @@ public class UpdateVehicleCommandHandler(IVehicleRepository repository, IUnitOfW
 
         vehicle.Update(request.RegistrationNumber, request.Make, request.Model, request.Year, request.DailyRate);
 
-        await unitOfWork.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await unitOfWork.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            // Another request changed (or deactivated) this vehicle between our read and our write.
+            throw await ConcurrencyConflict.ResolveAsync(
+                nameof(Vehicle), request.VehicleId, () => repository.GetByIdAsync(request.VehicleId, cancellationToken));
+        }
 
         return VehicleDto.FromDomain(vehicle);
     }

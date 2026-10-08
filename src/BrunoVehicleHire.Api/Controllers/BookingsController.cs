@@ -10,8 +10,8 @@ namespace BrunoVehicleHire.Api.Controllers;
 /// The Booking aggregate's HTTP entry point: sends <see cref="GetBookingsQuery"/>/
 /// <see cref="GetBookingByIdQuery"/>/<see cref="CreateBookingCommand"/>/<see cref="CancelBookingCommand"/>
 /// via <see cref="ISender"/> and returns each result directly. Mirrors <see cref="VehiclesController"/>'s
-/// shape. Deliberately carries no Edit route (still out of this project's scope -- see spec-4-5's
-/// Never section). Deliberately carries no [Authorize]/[AllowAnonymous] attribute -- protection comes
+/// shape. The one edit route (<c>PUT /api/bookings/{id}</c>) only reschedules an upcoming booking.
+/// Deliberately carries no [Authorize]/[AllowAnonymous] attribute -- protection comes
 /// entirely from the global FallbackPolicy registered in Program.cs (Story 1.4). Validation of every
 /// request shape happens entirely in each request's own validator via the shared MediatR pipeline
 /// (AD-10) -- never here.
@@ -58,6 +58,25 @@ public class BookingsController(ISender sender) : ControllerBase
         var dto = await sender.Send(command, cancellationToken);
 
         return Created($"/api/bookings/{dto.Id}", dto);
+    }
+
+    /// <summary>
+    /// Moves an upcoming booking to new dates. The route id always wins over any <c>bookingId</c> in the
+    /// body (same convention as <see cref="VehiclesController.Update"/>).
+    /// Date-shape errors are a 400 via <see cref="UpdateBookingCommandValidator"/>; a booking that is
+    /// not upcoming, or a clash with another booking, is a 409 from the domain/handler -- never
+    /// checked here.
+    /// </summary>
+    [HttpPut("{id:guid}")]
+    [ProducesResponseType(typeof(BookingDto), StatusCodes.Status200OK)]
+    public async Task<IActionResult> Update(
+        Guid id,
+        [FromBody] UpdateBookingCommand command,
+        CancellationToken cancellationToken)
+    {
+        var dto = await sender.Send(command with { BookingId = id }, cancellationToken);
+
+        return Ok(dto);
     }
 
     /// <summary>

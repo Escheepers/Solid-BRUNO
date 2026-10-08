@@ -1,6 +1,7 @@
 import { provideHttpClient, withInterceptors } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { Router, provideRouter } from '@angular/router';
 import { QueryClient, provideTanStackQuery } from '@tanstack/angular-query-experimental';
 
@@ -9,7 +10,9 @@ import { errorNormalizationInterceptor } from '../../core/api-client/error-norma
 import { CustomerDto } from '../../core/models/customer-dto';
 import { PagedResult } from '../../core/models/paged-result';
 import { ToastService } from '../../shared/toast/toast.service';
+import { CustomerFormModal } from './customer-form-modal';
 import { CustomersPage } from './customers-page';
+import { toCustomer } from './models/customer';
 
 function customerDto(overrides: Partial<CustomerDto> = {}): CustomerDto {
   return {
@@ -377,6 +380,10 @@ describe('CustomersPage', () => {
       expect(dialog!.textContent).toContain(
         'This customer has bookings — deactivate or erase their data instead.',
       );
+      // ...and it is presented as a red, announced error, not as ordinary confirmation copy.
+      expect(dialog!.querySelector('[role="alert"]')?.textContent).toContain(
+        'This customer has bookings — deactivate or erase their data instead.',
+      );
     });
   });
 
@@ -481,6 +488,35 @@ describe('CustomersPage', () => {
       expect(dialog).not.toBeUndefined();
       expect(dialog!.textContent).not.toContain('This customer will disappear from default listings');
       expect(dialog!.textContent).toContain("Customer 'c9' was not found.");
+      expect(dialog!.querySelector('[role="alert"]')?.textContent).toContain("Customer 'c9' was not found.");
+    });
+
+    it('a customer with an Active booking (409) shows the reason as a red alert, replacing the confirmation copy', async () => {
+      await seedOneRowAndOpenDeactivateDialog();
+
+      Array.from<HTMLButtonElement>(deactivateDialog()!.querySelectorAll('button'))
+        .find((b) => b.textContent?.trim() === 'Deactivate')!
+        .click();
+      await settle();
+
+      httpMock.expectOne('/api/customers/c9/deactivate').flush(
+        {
+          type: 'urn:bruno:customer:has-active-bookings',
+          title: 'A domain rule was violated.',
+          status: 409,
+          detail: 'This customer has an active or upcoming booking — cancel it first, or wait for it to complete.',
+        },
+        { status: 409, statusText: 'Conflict' },
+      );
+      await settle();
+
+      const dialog = deactivateDialog()!;
+      const alert = dialog.querySelector<HTMLElement>('[role="alert"]');
+      expect(alert?.textContent).toContain(
+        'This customer has an active or upcoming booking — cancel it first, or wait for it to complete.',
+      );
+      expect(alert?.className).toContain('text-danger-text');
+      expect(dialog.textContent).not.toContain('This customer will disappear from default listings');
     });
   });
 
@@ -505,6 +541,112 @@ describe('CustomersPage', () => {
 
       expectCustomersRequest('', 'true').flush(pagedResult([]));
     });
+
+    it('goes back to page 1 when the toggle changes, instead of keeping a page that may no longer exist', async () => {
+      await settle();
+      expectCustomersRequest('', 'false').flush(pagedResult([customerDto()], { totalCount: 100 }));
+      await settle();
+
+      nextButton().click();
+      await settle();
+      expectCustomersRequest('', 'false').flush(
+        pagedResult([customerDto()], { totalCount: 100, page: 2 }),
+      );
+      await settle();
+
+      showInactiveCheckbox().click();
+      fixture.detectChanges();
+      await settle();
+
+      const req = expectCustomersRequest('', 'true');
+      expect(req.request.params.get('page')).toBe('1');
+      req.flush(pagedResult([customerDto()]));
+    });
+  });
+
+  function nextButton(): HTMLButtonElement {
+    return Array.from<HTMLButtonElement>(fixture.nativeElement.querySelectorAll('button')).find(
+      (b) => b.textContent?.trim() === 'Next',
+    )!;
+  }
+
+  describe('after a successful create', () => {
+    function customerModal(): CustomerFormModal {
+      return fixture.debugElement.query(By.directive(CustomerFormModal)).componentInstance;
+    }
+
+    it('goes back to page 1 so the newest-first list shows the new row', async () => {
+      await settle();
+      expectCustomersRequest('').flush(pagedResult([customerDto()], { totalCount: 100 }));
+      await settle();
+      nextButton().click();
+      await settle();
+      expectCustomersRequest('').flush(pagedResult([customerDto()], { totalCount: 100, page: 2 }));
+      await settle();
+
+      customerModal().created.emit(toCustomer(customerDto()));
+      await settle();
+
+      const req = expectCustomersRequest('');
+      expect(req.request.params.get('page')).toBe('1');
+      req.flush(pagedResult([customerDto()], { totalCount: 100 }));
+    });
+
+    it('clears an active search so a new row that does not match it is not silently hidden', async () => {
+      await settle();
+      expectCustomersRequest('').flush(pagedResult([customerDto()]));
+      await settle();
+      setSearch('alice');
+      fixture.detectChanges();
+      await new Promise((resolve) => setTimeout(resolve, 350));
+      await settle();
+      expectCustomersRequest('alice').flush(pagedResult([customerDto()]));
+      await settle();
+
+      customerModal().created.emit(toCustomer(customerDto()));
+      fixture.detectChanges();
+      expect(searchInput().value).toBe('');
+
+      await new Promise((resolve) => setTimeout(resolve, 350));
+      await settle();
+      expectCustomersRequest('').flush(pagedResult([customerDto()]));
+    });
+
+    it('drops a column sort the user had clicked, so the new row is not buried by it', async () => {
+      await settle();
+      expectCustomersRequest('').flush(
+        pagedResult([customerDto({ id: 'c1' }), customerDto({ id: 'c2', email: 'two@example.com' })]),
+      );
+      await settle();
+
+      const createdHeader = () =>
+        Array.from<HTMLElement>(fixture.nativeElement.querySelectorAll('th')).find((th) =>
+          th.textContent?.includes('Created'),
+        )!;
+      createdHeader().querySelector('button')!.click();
+      fixture.detectChanges();
+      expect(createdHeader().getAttribute('aria-sort')).toBe('ascending');
+
+      customerModal().created.emit(toCustomer(customerDto()));
+      await settle();
+
+      expect(createdHeader().getAttribute('aria-sort')).toBe('none');
+    });
+  });
+
+  it('moves back to the last valid page when the current page no longer exists (e.g. its last row was removed)', async () => {
+    await settle();
+    expectCustomersRequest('').flush(pagedResult([customerDto()], { totalCount: 100 }));
+    await settle();
+    nextButton().click();
+    await settle();
+
+    expectCustomersRequest('').flush(pagedResult([], { totalCount: 20, page: 2 }));
+    await settle();
+
+    const req = expectCustomersRequest('');
+    expect(req.request.params.get('page')).toBe('1');
+    req.flush(pagedResult([customerDto()], { totalCount: 20 }));
   });
 
   describe('restore row action', () => {
@@ -746,6 +888,7 @@ describe('CustomersPage', () => {
       expect(dialog).not.toBeUndefined();
       expect(dialog!.textContent).not.toContain('permanently');
       expect(dialog!.textContent).toContain("Customer 'c9' was not found.");
+      expect(dialog!.querySelector('[role="alert"]')?.textContent).toContain("Customer 'c9' was not found.");
     });
   });
 

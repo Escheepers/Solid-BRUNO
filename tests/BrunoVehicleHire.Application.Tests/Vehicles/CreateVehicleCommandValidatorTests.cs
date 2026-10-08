@@ -84,6 +84,37 @@ public class CreateVehicleCommandValidatorTests
         result.ShouldHaveValidationErrorFor(c => c.DailyRate);
     }
 
+    [Theory]
+    [InlineData(1000000.01)]
+    [InlineData(99999999999999.99)]
+    public void DailyRate_AboveTheMaximum_FailsValidation(decimal dailyRate)
+    {
+        var result = _validator.TestValidate(ValidCommand(dailyRate: dailyRate));
+
+        result.ShouldHaveValidationErrorFor(c => c.DailyRate);
+    }
+
+    [Theory]
+    [InlineData(350.555)]
+    [InlineData(0.001)]
+    public void DailyRate_WithMoreThanTwoDecimals_FailsValidation(decimal dailyRate)
+    {
+        var result = _validator.TestValidate(ValidCommand(dailyRate: dailyRate));
+
+        result.ShouldHaveValidationErrorFor(c => c.DailyRate);
+    }
+
+    [Theory]
+    [InlineData(350)]
+    [InlineData(350.5)]
+    [InlineData(1000000)]
+    public void DailyRate_WithinTheMaximumAndWholeCents_PassesValidation(decimal dailyRate)
+    {
+        var result = _validator.TestValidate(ValidCommand(dailyRate: dailyRate));
+
+        result.ShouldNotHaveValidationErrorFor(c => c.DailyRate);
+    }
+
     [Fact]
     public void DailyRate_Positive_PassesValidation()
     {

@@ -149,6 +149,76 @@ public class BookingRepositoryTests : IAsyncLifetime
         exists.Should().BeFalse();
     }
 
+    [Fact]
+    public async Task ExistsActiveForCustomerAsync_CustomerHasActiveBooking_ReturnsTrue()
+    {
+        var vehicle = CreateValidVehicle();
+        var customer = CreateValidCustomer();
+        var booking = CreateBooking(vehicle.Id, customer.Id);
+
+        await using var seedContext = CreateDbContext();
+        seedContext.Vehicles.Add(vehicle);
+        seedContext.Customers.Add(customer);
+        seedContext.Bookings.Add(booking);
+        await seedContext.SaveChangesAsync();
+
+        await using var dbContext = CreateDbContext();
+        var repository = new BookingRepository(dbContext);
+
+        var exists = await repository.ExistsActiveForCustomerAsync(customer.Id, CancellationToken.None);
+
+        exists.Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData(nameof(BookingStatus.Cancelled))]
+    [InlineData(nameof(BookingStatus.Completed))]
+    public async Task ExistsActiveForCustomerAsync_CustomerHasOnlyNonActiveBookings_ReturnsFalse(string status)
+    {
+        var vehicle = CreateValidVehicle();
+        var customer = CreateValidCustomer();
+        var booking = CreateBooking(vehicle.Id, customer.Id, new DateOnly(2026, 9, 1), new DateOnly(2026, 9, 5));
+
+        await using var seedContext = CreateDbContext();
+        seedContext.Vehicles.Add(vehicle);
+        seedContext.Customers.Add(customer);
+        seedContext.Bookings.Add(booking);
+        await seedContext.SaveChangesAsync();
+
+        // Flip the Status column directly (as the vehicle tests above do) to reach a history state.
+        await seedContext.Database.ExecuteSqlInterpolatedAsync(
+            $"""UPDATE "Bookings" SET "Status" = {status} WHERE "Id" = {booking.Id}""");
+
+        await using var dbContext = CreateDbContext();
+        var repository = new BookingRepository(dbContext);
+
+        var exists = await repository.ExistsActiveForCustomerAsync(customer.Id, CancellationToken.None);
+
+        exists.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task ExistsActiveForCustomerAsync_ActiveBookingBelongsToSomeoneElse_ReturnsFalse()
+    {
+        var vehicle = CreateValidVehicle();
+        var customer = CreateValidCustomer("someone.else@example.com");
+        var otherCustomer = CreateValidCustomer("the.customer@example.com");
+        var booking = CreateBooking(vehicle.Id, customer.Id);
+
+        await using var seedContext = CreateDbContext();
+        seedContext.Vehicles.Add(vehicle);
+        seedContext.Customers.AddRange(customer, otherCustomer);
+        seedContext.Bookings.Add(booking);
+        await seedContext.SaveChangesAsync();
+
+        await using var dbContext = CreateDbContext();
+        var repository = new BookingRepository(dbContext);
+
+        var exists = await repository.ExistsActiveForCustomerAsync(otherCustomer.Id, CancellationToken.None);
+
+        exists.Should().BeFalse();
+    }
+
     /// <summary>Minimal fixed-clock test double -- mirrors <c>BookingCompletionSweepServiceTests</c>'s own.</summary>
     private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
     {

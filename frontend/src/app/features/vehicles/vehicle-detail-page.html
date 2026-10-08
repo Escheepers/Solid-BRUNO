@@ -1,5 +1,5 @@
 <ng-template #statusCell let-booking>
-  <app-badge [status]="booking.status" />
+  <app-badge [status]="displayStatus(booking)" />
 </ng-template>
 
 <div class="flex flex-col gap-6 p-8">

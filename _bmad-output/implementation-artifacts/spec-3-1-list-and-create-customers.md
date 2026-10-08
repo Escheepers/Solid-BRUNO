@@ -56,7 +56,7 @@ baseline_commit: 'd68e0a8fd6c15ff43cb0bbaf3bbde8b232558e42'
 **Backend:**
 - `src/BrunoVehicleHire.Domain/Customer.cs` -- new -- `Create(firstName, lastName, email, phoneNumber, timeProvider?)`, mirrors `Vehicle`'s private-constructor/factory/no-public-setters shape exactly (AD-15); `IsDeleted`/`IsAnonymized` both default `false`
 - `tests/BrunoVehicleHire.Domain.Tests/CustomerTests.cs` -- new -- full I/O matrix (mirrors `VehicleTests.cs`'s structure), including the no-public-setters reflection check
-- `src/BrunoVehicleHire.Infrastructure/Security/EmailHasher.cs` -- new -- `public static string Compute(string email) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(email.Trim().ToLowerInvariant())));`
+- `src/BrunoVehicleHire.Infrastructure/Helpers/EmailHasher.cs` -- new -- `public static string Compute(string email) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(email.Trim().ToLowerInvariant())));`
 - `src/BrunoVehicleHire.Infrastructure/Persistence/AppDbContext.cs` -- modify -- constructor takes `IDataProtectionProvider`, creates one `IDataProtector` (a fixed purpose string, e.g. `"BrunoVehicleHire.PII"`); `DbSet<Customer> Customers`; `Customer` EF configuration (table, unique index on the `EmailHash` shadow property, the PII value converter applied to `Email`/`PhoneNumber`, query filter `!IsDeleted`); override `SaveChangesAsync` to compute and set the `EmailHash` shadow property for every added/modified `Customer` entry before calling `base.SaveChangesAsync`
 - `src/BrunoVehicleHire.Infrastructure/Migrations/` -- new migration creating `Customers` (Id, FirstName, LastName, Email, PhoneNumber, EmailHash [shadow, unique-indexed], CreatedDate, IsDeleted, IsAnonymized)
 - `src/BrunoVehicleHire.Application/Customers/ICustomerRepository.cs` -- new -- `GetPagedAsync(page, pageSize, search, ct)`, `ExistsByEmailAsync(email, excludingId, ct)`, `AddAsync(customer, ct)` -- mirrors `IVehicleRepository`'s exact shape/doc-comment style
@@ -135,7 +135,7 @@ baseline_commit: 'd68e0a8fd6c15ff43cb0bbaf3bbde8b232558e42'
   [`CustomersEndpointTests.cs:318`](../../tests/BrunoVehicleHire.Integration.Tests/CustomersEndpointTests.cs#L318)
 
 - `EmailHasher` -- the one place normalization/hashing logic exists, called from two directions.
-  [`EmailHasher.cs`](../../src/BrunoVehicleHire.Infrastructure/Security/EmailHasher.cs)
+  [`EmailHasher.cs`](../../src/BrunoVehicleHire.Infrastructure/Helpers/EmailHasher.cs)
 
 **The incidental but important find**
 

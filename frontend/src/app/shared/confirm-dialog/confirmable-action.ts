@@ -38,6 +38,8 @@ export interface ConfirmableAction<T> {
   readonly current: Signal<T | null>;
   /** `defaultMessage`, or the mapped error message from the previous failed confirm. */
   readonly dialogMessage: Signal<string>;
+  /** True while `dialogMessage` is showing a failed confirm's error rather than the default copy. */
+  readonly hasError: Signal<boolean>;
   /** Opens the dialog for `item`, clearing any error left over from a previous attempt. */
   open(item: T): void;
   /** Closes the dialog without mutating, clearing any error. */
@@ -53,6 +55,7 @@ export function createConfirmableAction<T, TError>(
   const errorMessage = signal<string | null>(null);
 
   const dialogMessage = computed(() => errorMessage() ?? options.defaultMessage);
+  const hasError = computed(() => errorMessage() !== null);
 
   function open(item: T): void {
     errorMessage.set(null);
@@ -82,5 +85,5 @@ export function createConfirmableAction<T, TError>(
     });
   }
 
-  return { current, dialogMessage, open, cancel, confirm };
+  return { current, dialogMessage, hasError, open, cancel, confirm };
 }

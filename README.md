@@ -2,7 +2,7 @@
 
 A small vehicle-hire management system built as a "Solid Developer — Movement Assessment" submission: a Clean Architecture, CQRS-flavored .NET backend and a feature-modular Angular frontend, managing Vehicles, Customers, and Bookings with the domain business rules (booking overlap prevention, soft-delete/anonymize semantics, cancellation rules) enforced in the domain model itself, not scattered across handlers or controllers.
 
-This README covers the system as built through **Epic 5** (Vehicles, Customers, Bookings, and the Customer Summary view) — architecture, how to run it locally, and the assumptions made along the way.
+This README covers the complete system — all 6 epics (Vehicles, Customers, Bookings, the Customer Summary view, and submission-readiness work including seed data, code coverage, and optional observability) — architecture, how to run it locally, and the assumptions made along the way.
 
 ## Architecture
 

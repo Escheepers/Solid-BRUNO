@@ -147,6 +147,93 @@ public class VehiclesEndpointTests : IAsyncLifetime
         await dbContext.SaveChangesAsync();
     }
 
+    /// <summary>
+    /// Regression test (spec-search-multi-word): a multi-word search ("Toyota Corolla") used to return
+    /// nothing because the whole term was tested against Make, Model and RegistrationNumber separately.
+    /// Now each word must match one of those fields, in any order.
+    /// </summary>
+    [Theory]
+    [InlineData("Toyota Corolla")]
+    [InlineData("corolla toyota")]
+    [InlineData("  toy   coro ")]
+    public async Task Get_SearchWithSeveralWords_EveryWordMustMatchMakeModelOrRegistration(string search)
+    {
+        await SeedVehiclesAsync(
+            Vehicle.Create("CA111111", "Toyota", "Corolla", 2022, 400m),
+            Vehicle.Create("CA222222", "Toyota", "Hilux", 2022, 500m),
+            Vehicle.Create("CA333333", "Honda", "Corolla", 2022, 450m));
+
+        using var request = AuthenticatedGet(
+            $"/api/vehicles?page=1&pageSize=20&search={Uri.EscapeDataString(search)}");
+        var response = await _client.SendAsync(request);
+        var json = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(json);
+
+        document.RootElement.GetProperty("totalCount").GetInt32().Should().Be(1);
+        document.RootElement.GetProperty("items")[0].GetProperty("registrationNumber").GetString()
+            .Should().Be("CA111111");
+    }
+
+    [Fact]
+    public async Task Get_SearchWithMakeAndPartOfRegistration_MatchesAcrossDifferentFields()
+    {
+        await SeedVehiclesAsync(
+            Vehicle.Create("CA111111", "Toyota", "Corolla", 2022, 400m),
+            Vehicle.Create("CA222222", "Toyota", "Hilux", 2022, 500m));
+
+        using var request = AuthenticatedGet("/api/vehicles?page=1&pageSize=20&search=Toyota%20CA2");
+        var response = await _client.SendAsync(request);
+        var json = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(json);
+
+        document.RootElement.GetProperty("totalCount").GetInt32().Should().Be(1);
+        document.RootElement.GetProperty("items")[0].GetProperty("model").GetString().Should().Be("Hilux");
+    }
+
+    private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => now;
+    }
+
+    /// <summary>
+    /// Regression test (spec-new-rows-visible-first): lists used to be ordered oldest-first, so a
+    /// vehicle created through the UI landed on the LAST page and looked as if nothing had been
+    /// created. The list must now be newest-first, so the new row is always on page 1.
+    /// </summary>
+    [Fact]
+    public async Task Get_AfterCreatingANewVehicle_ListsNewestFirst_SoItAppearsOnPageOne()
+    {
+        await SeedVehiclesAsync(
+            Vehicle.Create("OLD00001", "Toyota", "Corolla", 2022, 400m, new FixedTimeProvider(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero))),
+            Vehicle.Create("OLD00002", "Toyota", "Corolla", 2022, 400m, new FixedTimeProvider(new DateTimeOffset(2026, 2, 1, 0, 0, 0, TimeSpan.Zero))),
+            Vehicle.Create("OLD00003", "Toyota", "Corolla", 2022, 400m, new FixedTimeProvider(new DateTimeOffset(2026, 3, 1, 0, 0, 0, TimeSpan.Zero))));
+
+        using var createRequest = AuthenticatedPost("/api/vehicles", new
+        {
+            registrationNumber = "NEW99999",
+            make = "Honda",
+            model = "Civic",
+            year = 2024,
+            dailyRate = 500m,
+        });
+        var createResponse = await _client.SendAsync(createRequest);
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        using var listRequest = AuthenticatedGet("/api/vehicles?page=1&pageSize=2");
+        var listResponse = await _client.SendAsync(listRequest);
+        var json = await listResponse.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(json);
+
+        var registrationNumbers = document.RootElement.GetProperty("items")
+            .EnumerateArray()
+            .Select(item => item.GetProperty("registrationNumber").GetString())
+            .ToList();
+
+        registrationNumbers.Should().Equal(
+            new[] { "NEW99999", "OLD00003" }, "the list is newest-first, so the just-created vehicle is first");
+        document.RootElement.GetProperty("totalCount").GetInt32().Should().Be(4);
+    }
+
     [Fact]
     public async Task Get_VehiclesExist_ReturnsPagedResultShape()
     {
@@ -449,6 +536,47 @@ public class VehiclesEndpointTests : IAsyncLifetime
 
         document.RootElement.GetProperty("detail").GetString()
             .Should().Be("This registration number is already in use.");
+    }
+
+    [Theory]
+    [InlineData("ca999999")]
+    [InlineData("  CA999999  ")]
+    public async Task Post_RegistrationNumberDifferingOnlyByCaseOrWhitespace_Returns409(string registrationNumber)
+    {
+        await SeedVehiclesAsync(Vehicle.Create("CA999999", "Ford", "Ranger", 2022, 500m));
+
+        using var request = AuthenticatedPost("/api/vehicles", new
+        {
+            registrationNumber,
+            make = "Toyota",
+            model = "Hilux",
+            year = 2022,
+            dailyRate = 480m,
+        });
+
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+    }
+
+    [Theory]
+    [InlineData("1000000.01")]
+    [InlineData("99999999999999999")]
+    [InlineData("350.555")]
+    public async Task Post_DailyRateTooLargeOrTooPrecise_Returns400NotA500(string dailyRate)
+    {
+        using var request = AuthenticatedPost("/api/vehicles", new
+        {
+            registrationNumber = "CA555555",
+            make = "Toyota",
+            model = "Hilux",
+            year = 2022,
+            dailyRate = decimal.Parse(dailyRate, System.Globalization.CultureInfo.InvariantCulture),
+        });
+
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
     /// <summary>
@@ -928,6 +1056,36 @@ public class VehiclesEndpointTests : IAsyncLifetime
         var json = await rejected.Content.ReadAsStringAsync();
         using var document = JsonDocument.Parse(json);
         document.RootElement.GetProperty("detail").GetString().Should().Be("Already active.");
+
+        foreach (var response in responses)
+        {
+            response.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// Found by the Bruno concurrency demo: two near-simultaneous Deactivate requests for the SAME
+    /// vehicle (a double-click) both read it as active, and the loser's xmin-guarded UPDATE matched
+    /// nothing. <c>SoftDeleteVehicleCommandHandler</c> never caught that
+    /// <see cref="Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException"/>, so the loser was a 500
+    /// (every time). It must now be the clean 404 a sequential second click already gets.
+    /// </summary>
+    [Fact]
+    public async Task Deactivate_TwoConcurrentRequestsOnSameVehicle_ExactlyOneSucceeds_TheOtherIs404Or409()
+    {
+        var vehicle = Vehicle.Create("CA383940", "Isuzu", "D-Max", 2023, 470m);
+        await SeedVehiclesAsync(vehicle);
+
+        using var requestA = AuthenticatedPost($"/api/vehicles/{vehicle.Id}/deactivate");
+        using var requestB = AuthenticatedPost($"/api/vehicles/{vehicle.Id}/deactivate");
+
+        var responses = await Task.WhenAll(_client.SendAsync(requestA), _client.SendAsync(requestB));
+
+        responses.Should().NotContain(response => response.StatusCode == HttpStatusCode.InternalServerError);
+        responses.Count(response => response.StatusCode == HttpStatusCode.NoContent).Should().Be(
+            1, "exactly one of the two concurrently-racing deactivates must win");
+        responses.Single(response => response.StatusCode != HttpStatusCode.NoContent).StatusCode
+            .Should().BeOneOf(HttpStatusCode.NotFound, HttpStatusCode.Conflict);
 
         foreach (var response in responses)
         {

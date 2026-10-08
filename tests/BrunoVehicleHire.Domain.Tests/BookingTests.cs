@@ -64,6 +64,24 @@ public class BookingTests
     }
 
     [Fact]
+    public void Create_WithTheMaximumDuration_Succeeds()
+    {
+        var booking = Booking.Create(
+            ValidVehicleId, ValidCustomerId, ValidStartDate, ValidStartDate.AddDays(Booking.MaxDurationDays), ValidTotalPrice);
+
+        Assert.Equal(ValidStartDate.AddDays(Booking.MaxDurationDays), booking.EndDate);
+    }
+
+    [Fact]
+    public void Create_LongerThanTheMaximumDuration_ThrowsDomainRuleViolationException()
+    {
+        var act = () => Booking.Create(
+            ValidVehicleId, ValidCustomerId, ValidStartDate, ValidStartDate.AddDays(Booking.MaxDurationDays + 1), ValidTotalPrice);
+
+        Assert.Throws<DomainRuleViolationException>(act);
+    }
+
+    [Fact]
     public void Create_WithEndDateBeforeStartDate_ThrowsDomainRuleViolationException()
     {
         var act = () => Booking.Create(
@@ -269,6 +287,121 @@ public class BookingTests
 
             var exception = Assert.Throws<DomainRuleViolationException>(act);
             Assert.Equal("Cannot complete — booking has not ended yet.", exception.Message);
+        }
+    }
+
+    /// <summary>
+    /// <see cref="Booking.Reschedule"/>: only an Active booking that starts after today can move; the new
+    /// range follows the same rules as a new booking; the price is rescaled at the ORIGINAL daily rate.
+    /// </summary>
+    public class Reschedule
+    {
+        private static readonly DateOnly OldStart = new(2026, 10, 1);
+        private static readonly DateOnly OldEnd = new(2026, 10, 5); // 4 days, so 1500 => 375/day
+
+        /// <summary>"Today" is 2026-09-15, so the booking is still upcoming.</summary>
+        private static readonly FixedTimeProvider TodayBeforeBooking =
+            new(new DateTimeOffset(2026, 9, 15, 8, 0, 0, TimeSpan.Zero));
+
+        private static Booking UpcomingBooking() =>
+            Booking.Create(ValidVehicleId, ValidCustomerId, OldStart, OldEnd, 1500m);
+
+        [Fact]
+        public void UpcomingBooking_MovesToTheNewDates_AndRescalesThePriceAtTheOriginalDailyRate()
+        {
+            var booking = UpcomingBooking();
+
+            booking.Reschedule(new DateOnly(2026, 10, 10), new DateOnly(2026, 10, 12), TodayBeforeBooking);
+
+            Assert.Equal(new DateOnly(2026, 10, 10), booking.StartDate);
+            Assert.Equal(new DateOnly(2026, 10, 12), booking.EndDate);
+            Assert.Equal(750m, booking.TotalPrice); // 2 days x 375
+            Assert.Equal(BookingStatus.Active, booking.Status);
+        }
+
+        [Fact]
+        public void StartingToday_IsAllowedAsTheNewStart_WhenTheBookingItselfStillStartsLater()
+        {
+            var booking = UpcomingBooking();
+
+            booking.Reschedule(new DateOnly(2026, 9, 15), new DateOnly(2026, 9, 16), TodayBeforeBooking);
+
+            Assert.Equal(new DateOnly(2026, 9, 15), booking.StartDate);
+        }
+
+        [Fact]
+        public void NewStartInThePast_Throws_AndLeavesTheBookingUnchanged()
+        {
+            var booking = UpcomingBooking();
+
+            var act = () => booking.Reschedule(new DateOnly(2026, 9, 14), new DateOnly(2026, 9, 20), TodayBeforeBooking);
+
+            var exception = Assert.Throws<DomainRuleViolationException>(act);
+            Assert.Equal("StartDate cannot be in the past.", exception.Message);
+            Assert.Equal(OldStart, booking.StartDate);
+            Assert.Equal(1500m, booking.TotalPrice);
+        }
+
+        [Theory]
+        [InlineData(0)]
+        [InlineData(-1)]
+        public void EndNotAfterStart_Throws(int daysAfterStart)
+        {
+            var booking = UpcomingBooking();
+            var start = new DateOnly(2026, 10, 10);
+
+            var act = () => booking.Reschedule(start, start.AddDays(daysAfterStart), TodayBeforeBooking);
+
+            Assert.Throws<DomainRuleViolationException>(act);
+        }
+
+        [Fact]
+        public void LongerThanTheMaximumDuration_Throws()
+        {
+            var booking = UpcomingBooking();
+            var start = new DateOnly(2026, 10, 10);
+
+            var act = () => booking.Reschedule(start, start.AddDays(Booking.MaxDurationDays + 1), TodayBeforeBooking);
+
+            Assert.Throws<DomainRuleViolationException>(act);
+        }
+
+        [Fact]
+        public void CancelledBooking_ThrowsCancelledMessage()
+        {
+            var booking = UpcomingBooking();
+            booking.Cancel(TodayBeforeBooking);
+
+            var act = () => booking.Reschedule(new DateOnly(2026, 10, 10), new DateOnly(2026, 10, 12), TodayBeforeBooking);
+
+            var exception = Assert.Throws<DomainRuleViolationException>(act);
+            Assert.Equal("Cannot edit — booking is cancelled.", exception.Message);
+        }
+
+        [Fact]
+        public void CompletedBooking_ThrowsAlreadyStartedMessage()
+        {
+            var booking = UpcomingBooking();
+            typeof(Booking).GetProperty(nameof(Booking.Status))!.SetValue(booking, BookingStatus.Completed);
+
+            var act = () => booking.Reschedule(new DateOnly(2026, 10, 10), new DateOnly(2026, 10, 12), TodayBeforeBooking);
+
+            var exception = Assert.Throws<DomainRuleViolationException>(act);
+            Assert.Equal("Cannot edit — booking has already started.", exception.Message);
+        }
+
+        [Theory]
+        [InlineData(1)] // today is the booking's own start day
+        [InlineData(3)] // the booking started two days ago
+        public void BookingThatHasAlreadyStarted_ThrowsAlreadyStartedMessage(int todayInOctober)
+        {
+            var booking = UpcomingBooking();
+            var asOf = new FixedTimeProvider(new DateTimeOffset(2026, 10, todayInOctober, 8, 0, 0, TimeSpan.Zero));
+
+            var act = () => booking.Reschedule(new DateOnly(2026, 11, 10), new DateOnly(2026, 11, 12), asOf);
+
+            var exception = Assert.Throws<DomainRuleViolationException>(act);
+            Assert.Equal("Cannot edit — booking has already started.", exception.Message);
         }
     }
 }

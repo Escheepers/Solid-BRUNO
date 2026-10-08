@@ -1,0 +1,49 @@
+<app-modal [open]="open()" title="Edit Booking Dates" (closeRequest)="onModalCloseRequest()">
+  <form [formGroup]="form" (ngSubmit)="onSubmit()" class="flex flex-col gap-4">
+    @if (serverErrorMessage()) {
+      <div
+        role="alert"
+        aria-live="polite"
+        class="rounded-md bg-danger-bg px-3 py-2 text-caption text-danger-text"
+      >
+        {{ serverErrorMessage() }}
+      </div>
+    }
+
+    <div class="flex gap-4">
+      <app-input
+        type="date"
+        formControlName="startDate"
+        label="Start Date"
+        [min]="today()"
+        [error]="startDateError()"
+      />
+      <app-input
+        type="date"
+        formControlName="endDate"
+        label="End Date"
+        [min]="endDateMin()"
+        [error]="endDateError()"
+      />
+    </div>
+
+    <div class="flex flex-col gap-1">
+      <span class="text-section-label uppercase tracking-wide text-text-faint">Total Price</span>
+      <div
+        data-testid="total-price"
+        aria-live="polite"
+        class="rounded-md border border-border bg-surface-alt px-3 py-2 text-body text-text-body"
+      >
+        @if (totalPriceDisplay(); as display) {
+          {{ display }}
+        } @else {
+          <span class="text-text-faint">Choose valid dates</span>
+        }
+      </div>
+    </div>
+
+    <div class="flex justify-end gap-4 pt-2">
+      <app-button type="submit" [loading]="isSubmitting()">Save Dates</app-button>
+    </div>
+  </form>
+</app-modal>

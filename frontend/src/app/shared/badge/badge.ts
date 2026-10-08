@@ -2,6 +2,12 @@ import { Component, computed, input } from '@angular/core';
 
 export type BookingStatus = 'Active' | 'Completed' | 'Cancelled';
 
+/**
+ * What a badge can show: the three real statuses plus "Upcoming", a display-only label for an Active
+ * booking that has not started yet (derived in the Bookings feature, never sent by the API).
+ */
+export type BadgeStatus = BookingStatus | 'Upcoming';
+
 interface BadgeVariant {
   bgClass: string;
   textClass: string;
@@ -15,7 +21,10 @@ interface BadgeVariant {
  * it's just closed"), Cancelled -> danger. A plain lookup table, not a switch --
  * the single place this status-to-color mapping exists (DRY).
  */
-const VARIANTS: Record<BookingStatus, BadgeVariant> = {
+const VARIANTS: Record<BadgeStatus, BadgeVariant> = {
+  // Upcoming reuses the design system's existing link-blue (AA-contrast in light and dark) on the
+  // neutral surface, so it reads as "scheduled, not started" without adding a new color token.
+  Upcoming: { bgClass: 'bg-surface-alt', textClass: 'text-link', dotClass: 'bg-link' },
   Active: { bgClass: 'bg-success-bg', textClass: 'text-success-text', dotClass: 'bg-success-dot' },
   Completed: { bgClass: 'bg-neutral-bg', textClass: 'text-neutral-text', dotClass: 'bg-neutral-dot' },
   Cancelled: { bgClass: 'bg-danger-bg', textClass: 'text-danger-text', dotClass: 'bg-danger-dot' },
@@ -39,7 +48,7 @@ const VARIANTS: Record<BookingStatus, BadgeVariant> = {
   templateUrl: './badge.html',
 })
 export class Badge {
-  readonly status = input.required<BookingStatus>();
+  readonly status = input.required<BadgeStatus>();
 
   protected readonly variant = computed(() => VARIANTS[this.status()]);
 }

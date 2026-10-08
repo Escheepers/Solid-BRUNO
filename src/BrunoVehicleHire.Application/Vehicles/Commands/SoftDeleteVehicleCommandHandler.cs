@@ -3,6 +3,7 @@ using BrunoVehicleHire.Application.Common;
 using BrunoVehicleHire.Domain;
 using BrunoVehicleHire.Domain.Exceptions;
 using MediatR;
+using Microsoft.EntityFrameworkCore;
 
 namespace BrunoVehicleHire.Application.Vehicles.Commands;
 
@@ -42,6 +43,17 @@ public class SoftDeleteVehicleCommandHandler(
 
         vehicle.SoftDelete();
 
-        await unitOfWork.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await unitOfWork.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            // Two near-simultaneous deactivates (e.g. a double-click) both read the active row; the
+            // loser's xmin-guarded UPDATE matches nothing. Re-reading through the filtered lookup now
+            // finds nothing (the winner deactivated it) -> the same 404 a sequential second click gets.
+            throw await ConcurrencyConflict.ResolveAsync(
+                nameof(Vehicle), request.VehicleId, () => repository.GetByIdAsync(request.VehicleId, cancellationToken));
+        }
     }
 }
